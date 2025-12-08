@@ -7,6 +7,7 @@ import {
   BackgroundPatternType,
   SafeZoneConfig,
   ClothesParams,
+  PixelStyle
 } from "../types";
 
 /**
@@ -123,20 +124,52 @@ export const buildClothesPrompt = (
     }
   }
 
-  // 2. Render Mode (Model vs Asset)
+  // 2. Identify Roles based on Tags
+  const mannequins = referenceAssets.filter(r => r.roleNote && /mannequin|pose|body base/i.test(r.roleNote));
+  const styles = referenceAssets.filter(r => r.roleNote && /style|texture|color/i.test(r.roleNote));
+  const untagged = referenceAssets.filter(r => !r.roleNote || (!/mannequin|pose|body base/i.test(r.roleNote) && !/style|texture|color/i.test(r.roleNote)));
+
+  // If strict roles are set, use them. If everything is untagged, fallback to Mannequin logic.
+  const hasMannequins = mannequins.length > 0;
+  
+  // 3. Render Mode Logic (The Core)
   const isAssetMode = clothesParams?.renderMode === 'asset';
 
   if (isAssetMode) {
+    // --- GHOST ASSET MODE ---
     fullPrompt += `\nMODE: GHOST MANNEQUIN / 3D ASSET\n`;
-    fullPrompt += `Generate the clothing item as a standalone 3D asset in 'Ghost Mannequin' style.\n`;
-    fullPrompt += `The clothing must appear filled/volumetric as if worn, but the body itself must be INVISIBLE.\n`;
-    fullPrompt += `CRITICAL: NO HUMAN SKIN, NO HEAD, NO HANDS, NO FEET. Just the hollow fabric shell.\n`;
+    fullPrompt += `Generate the clothing item as a standalone asset in 'Ghost Mannequin' or 'Hollow' style.\n`;
+    fullPrompt += `CRITICAL: The body must be INVISIBLE. Show the neck opening and hollow structure. NO SKIN, NO HEAD, NO HANDS.\n`;
+    
+    if (hasMannequins) {
+        fullPrompt += `\nSHAPE & FIT INSTRUCTION:\n`;
+        fullPrompt += `Use the provided 'Mannequin' reference(s) STRICTLY for the POSE, SCALE, and BODY VOLUME.\n`;
+        fullPrompt += `The generated ghost cloth must fit the exact silhouette of this reference character.\n`;
+        fullPrompt += `Do NOT render the character. Only the hollow clothes fitting that invisible body.\n`;
+    } else {
+        // "Upload only clothes and make something similar" workflow
+        if (styles.length > 0 || untagged.length > 0) {
+            fullPrompt += `\nVARIATION INSTRUCTION:\n`;
+            fullPrompt += `Create a high-fidelity variation of the clothing shown in the Reference Image(s).\n`;
+            fullPrompt += `Maintain the general cut and type, but apply the style/modifications described in the prompt.\n`;
+        } else {
+            fullPrompt += `Display the hollow clothing in a standard upright fashion pose.\n`;
+        }
+    }
   } else {
+    // --- ON MODEL MODE (TRY-ON) ---
     fullPrompt += `\nMODE: ON MODEL / CHARACTER\n`;
-    fullPrompt += `Generate the outfit worn by a character/mannequin.\n`;
+    fullPrompt += `Generate the outfit worn by a character.\n`;
+    
+    if (hasMannequins) {
+        fullPrompt += `\nCHARACTER CONSISTENCY:\n`;
+        fullPrompt += `Use the 'Mannequin' reference as the base character.\n`;
+        fullPrompt += `Maintain the identity, body type, and pose of this character.\n`;
+        fullPrompt += `REPLACE their existing outfit with the new design: ${basePrompt}.\n`;
+    }
   }
 
-  // 3. Subject (The Outfit)
+  // 4. Design & Style
   fullPrompt += `\nDESIGN TARGET: ${basePrompt}\n`;
   fullPrompt += "Focus on high-fidelity material rendering (fabric texture, metal shine, leather grain).\n";
 
@@ -144,51 +177,22 @@ export const buildClothesPrompt = (
     fullPrompt += `STYLE: ${styleSnippet}\n`;
   }
 
-  // 4. Smart Reference Logic (Mannequin vs Style)
-  const styles = referenceAssets.filter(r => r.roleNote && /style|texture|palette|color/i.test(r.roleNote));
-  const mannequins = referenceAssets.filter(r => !r.roleNote || !/style|texture|palette|color/i.test(r.roleNote));
-
-  // Mannequin Logic
-  if (mannequins.length > 0) {
-    fullPrompt += `\nFIT TO REFERENCE ANATOMY (CRITICAL):\n`;
-    if (isAssetMode) {
-        fullPrompt += `Use the provided reference image(s) (marked as Mannequin/Base) ONLY for size, scale, and pose data.\n`;
-        fullPrompt += `MOLD the ghost clothing to fit the EXACT body proportions and pose of this reference.\n`;
-        fullPrompt += `DO NOT render the character from the reference. Only the clothes fitting that invisible body.\n`;
-    } else {
-        fullPrompt += `Use the provided reference image(s) (marked as Mannequin/Base) as the BODY BASE.\n`;
-        fullPrompt += `1. POSE & ANATOMY: Strictly maintain the pose, body shape, and proportions of the character in the reference.\n`;
-        fullPrompt += `2. OUTFIT REPLACEMENT: Replace the character's existing clothes with the new design described above.\n`;
-        fullPrompt += `3. FACE/HEAD: Keep the face and head consistent with the reference if visible, or treat as a mannequin if generic.\n`;
-    }
-  } else {
-    if (isAssetMode) {
-       fullPrompt += `\nPRESENTATION:\n`;
-       fullPrompt += `Display the hollow clothing in a standard upright fashion pose.\n`;
-    } else {
-       fullPrompt += `\nPRESENTATION:\n`;
-       fullPrompt += `Display the clothing on a neutral mannequin or model in a standard A-pose or fashion pose.\n`;
-    }
-  }
-
-  // Style Logic
   if (styles.length > 0) {
-    fullPrompt += `\nSTYLE REFERENCES:\n`;
-    fullPrompt += `Use the additional reference images (marked as Style/Texture) to inform the rendering style, fabric texture, or color palette.\n`;
+    fullPrompt += `\nSTYLE SOURCE:\n`;
+    fullPrompt += `Use the 'Style' reference image(s) for texture, palette, and material details.\n`;
   }
 
   // 5. Safe Zone
   if (safeZone && safeZone.enabled) {
-    fullPrompt += `\nCOMPOSITION (IMPORTANT):\n`;
-    fullPrompt += `Keep the entire subject strictly strictly contained within the CENTRAL ${Math.round(safeZone.width)}% area of the canvas.\n`;
-    fullPrompt += `Leave the outer edges empty or filled with background extension.\n`;
+    fullPrompt += `\nCOMPOSITION:\n`;
+    fullPrompt += `Keep the entire subject strictly contained within the CENTRAL ${Math.round(safeZone.width)}% area.\n`;
   }
 
-  // 6. Background (Critical for assets)
+  // 6. Background
   fullPrompt += `\nBACKGROUND:\n`;
   if (bgConfig.mode === "transparent") {
     fullPrompt += `ISOLATION: The subject must be completely isolated on a PURE SOLID WHITE background.\n`;
-    fullPrompt += `CRITICAL: Do not cast shadows on the floor. Do not render a floor. Floating isolation.\n`;
+    fullPrompt += `CRITICAL: No cast shadows on the floor. No floor. Floating asset.\n`;
     fullPrompt += `Clean, sharp silhouette for easy background removal.\n`;
   } else if (bgConfig.mode === "solid") {
     fullPrompt += `Use a flat, solid background color: ${bgConfig.color}. No details.\n`;
@@ -200,10 +204,12 @@ export const buildClothesPrompt = (
 
   const referenceParts: { text?: string }[] = [];
   referenceAssets.forEach((asset, index) => {
-    const isStyle = styles.some(s => s.id === asset.id);
-    const label = isStyle ? "Style/Texture Ref" : "Mannequin/Base";
+    let role = "Reference";
+    if (asset.roleNote.toLowerCase().includes('mannequin')) role = "Mannequin (Shape/Pose)";
+    else if (asset.roleNote.toLowerCase().includes('style')) role = "Style/Texture Source";
+    
     referenceParts.push({
-      text: `Reference ${index + 1} (${label}): ${asset.roleNote || (isStyle ? 'Use for style' : 'Use pose and body shape.')}`,
+      text: `Reference ${index + 1} (${role}): ${asset.roleNote || 'Use as visual guide.'}`,
     });
   });
 
@@ -390,7 +396,6 @@ export const buildRefinementPrompt = (currentPrompt: string): string => {
   `;
 };
 
-// Magic Resizer / Outpainting prompt with strict content-aware rules
 export const buildOutpaintPrompt = (
   userInstructions: string,
   gameContext: GameContext,
@@ -497,6 +502,38 @@ export const buildOutpaintPrompt = (
     prompt += "\nDEFAULT INSTRUCTION:\n";
     prompt +=
       "Extend the current background and any existing surfaces so they naturally fill the new canvas size, with no additional objects, no flat color bands, and no added blur.\n";
+  }
+
+  return prompt;
+};
+
+export const buildPixelizePrompt = (
+  style: PixelStyle,
+  userInstructions: string = ""
+): string => {
+  let prompt = "Image Editing Task: Style Transfer / Pixel Art Conversion.\n";
+  
+  // Style Definition
+  let styleDesc = "";
+  if (style === '8bit') {
+      styleDesc = "8-bit retro pixel art style (NES/Gameboy era). Limited color palette, low resolution, chunky pixels, flat shading, no anti-aliasing.";
+  } else if (style === '16bit') {
+      styleDesc = "16-bit classic pixel art style (SNES/Genesis era). Vibrant colors, detailed sprites, clean outlines, moderate pixel density.";
+  } else if (style === '32bit') {
+      styleDesc = "32-bit high-quality pixel art style (PS1/GBA era). High color depth, dithering, detailed textures, isometric or perspective depth.";
+  } else {
+      styleDesc = "Modern indie pixel art style. High resolution, fluid, dynamic lighting, very detailed, artistic.";
+  }
+
+  prompt += `TARGET STYLE: ${styleDesc}\n`;
+  prompt += `INSTRUCTIONS:\n`;
+  prompt += `1. Convert the image content into strict PIXEL ART.\n`;
+  prompt += `2. Maintain the EXACT composition, pose, and subject of the original image.\n`;
+  prompt += `3. Do NOT change the content, only the rendering style.\n`;
+  prompt += `4. Ensure pixels are crisp and aligned to a grid visually.\n`;
+  
+  if (userInstructions) {
+      prompt += `ADDITIONAL INSTRUCTIONS: ${userInstructions}\n`;
   }
 
   return prompt;

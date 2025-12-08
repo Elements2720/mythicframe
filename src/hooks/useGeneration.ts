@@ -1,8 +1,9 @@
 
+
 import { useState, useRef } from 'react';
 import { generateIllustration, editImage } from '../services/geminiService';
-import { removeBackground, createCompositeImage } from '../utils/imageUtils';
-import { buildOutpaintPrompt, buildBackgroundRegenPrompt } from '../services/promptTemplates';
+import { removeBackground, createCompositeImage, blobUrlToBase64 } from '../utils/imageUtils';
+import { buildOutpaintPrompt, buildBackgroundRegenPrompt, buildPixelizePrompt } from '../services/promptTemplates';
 import { GenerationModel, PixelDimensions } from '../types';
 import { ART_STYLES } from '../constants';
 
@@ -17,16 +18,51 @@ export const useGeneration = (
   addHistoryEntry: (entry: any) => Promise<void>,
   setResizeQueue: (fn: (q: any[]) => any[]) => void,
   setBgReplaceQueue: (fn: (q: any[]) => any[]) => void,
+  setPixelizeQueue: (fn: (q: any[]) => any[]) => void,
   logConsole: (msg: string) => void,
   getTargetDimensions: () => PixelDimensions
 ) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const startTimer = (prefix: string = "Generating") => {
+    clearTimer();
+    const startTime = Date.now();
+    // Initial status before timer ticks
+    setStatusMessage(`${prefix}... (Preparing assets...)`);
+    
+    timerRef.current = setInterval(() => {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      
+      // Dynamic context messages based on time elapsed
+      if (elapsed < 2) {
+         setStatusMessage(`${prefix}... (Optimizing assets)`);
+      } else if (elapsed < 5) {
+         setStatusMessage(`${prefix}... (Sending request: ${elapsed}s)`);
+      } else if (elapsed < 15) {
+         setStatusMessage(`${prefix}... (Processing: ${elapsed}s)`);
+      } else if (elapsed < 30) {
+         setStatusMessage(`${prefix}... (Still working: ${elapsed}s)`);
+      } else {
+         setStatusMessage(`${prefix}... (Taking longer than usual: ${elapsed}s)`);
+      }
+    }, 1000);
+  };
 
   const handleCancel = () => {
      if (abortControllerRef.current) { abortControllerRef.current.abort(); abortControllerRef.current = null; }
-     setIsGenerating(false); setStatusMessage('');
+     clearTimer();
+     setIsGenerating(false); 
+     setStatusMessage('');
   };
 
   const handleGenerate = async (append = false) => {
@@ -35,6 +71,8 @@ export const useGeneration = (
        if (!activeTab.selectedResizeId) return; 
     } else if (activeTab.mode === 'bg-replace') {
        if (!activeTab.selectedBgReplaceId) return;
+    } else if (activeTab.mode === 'pixelize') {
+       if (!activeTab.selectedPixelizeId) return;
     } else {
        if (!activeTab.prompt && !activeTab.generatedImage) return; 
     }
@@ -42,7 +80,6 @@ export const useGeneration = (
     if (!apiKeyReady) { alert("Please connect your API Key in settings."); return; }
 
     setIsGenerating(true);
-    setStatusMessage('Initializing...');
     abortControllerRef.current = new AbortController();
     
     if (!append) setSessionImages(() => []);
@@ -50,11 +87,15 @@ export const useGeneration = (
     try {
        const styleSnippet = activeTab.selectedStyleId !== 'none' ? ART_STYLES.find((s:any) => s.id === activeTab.selectedStyleId)?.promptSnippet || '' : '';
        const model = useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_2_5;
-       const count = (append || ['resize', 'animation', 'fullcard', 'bg-replace'].includes(activeTab.mode)) ? 1 : batchSize;
+       const count = (append || ['resize', 'animation', 'fullcard', 'bg-replace', 'pixelize'].includes(activeTab.mode)) ? 1 : batchSize;
 
        for (let i = 0; i < count; i++) {
            if (abortControllerRef.current?.signal.aborted) break;
-           setStatusMessage(count > 1 ? `Generating ${i+1}/${count}...` : 'Generating...');
+           
+           // Start timer for this specific generation item
+           const prefix = count > 1 ? `Generating ${i+1}/${count}` : "Generating";
+           startTimer(prefix);
+
            let resultUrl = '';
            let finalPrompt = '';
 
@@ -72,28 +113,16 @@ export const useGeneration = (
                setResizeQueue(q => q.map(x => x.id === activeTab.selectedResizeId ? { ...x, status: 'done', resultUrl } : x));
                setGeneratedImage(resultUrl);
 
-               // History ...
-
            } else if (activeTab.mode === 'bg-replace') {
                // --- BG REPLACE LOGIC ---
                const item = activeTab.bgReplaceQueue.find((x:any) => x.id === activeTab.selectedBgReplaceId);
                if (!item) throw new Error("Item not found");
                
-               // Use item's prompt/config if available (synced to activeTab by selection)
-               // The hook ensures activeTab.bgConfig matches selected item.
+               const base64Input = await blobUrlToBase64(item.url);
                const prompt = buildBackgroundRegenPrompt(gameContext, activeTab.bgConfig);
-               
                logConsole(`[BG-REPLACE] ${prompt}`);
-               // Note: activeTab.prompt is the user's specific instruction for the background
-               // buildBackgroundRegenPrompt uses bgConfig.promptFragment usually, but if user typed in main prompt box, we can append it?
-               // Actually buildBackgroundRegenPrompt uses bgConfig properties. The "Prompt" input in UI maps to bgConfig.promptFragment or generic prompt?
-               // Let's assume activeTab.bgConfig is fully populated.
                
-               // We need to pass the prompt which includes user text.
-               // We pass activeTab.prompt as the explicit text instruction if generic prompt is needed.
-               // But editImage takes prompt string.
-               
-               resultUrl = await editImage(item.url, prompt, activeTab.bgConfig, gameContext);
+               resultUrl = await editImage(base64Input, prompt, activeTab.bgConfig, gameContext);
                finalPrompt = prompt;
 
                setBgReplaceQueue(q => q.map(x => x.id === activeTab.selectedBgReplaceId ? { ...x, status: 'done', resultUrl } : x));
@@ -112,11 +141,41 @@ export const useGeneration = (
                   aspectRatio: activeTab.selectedAspectRatio
                });
 
+           } else if (activeTab.mode === 'pixelize') {
+               // --- PIXELIZE LOGIC ---
+               const item = activeTab.pixelizeQueue.find((x:any) => x.id === activeTab.selectedPixelizeId);
+               if (!item) throw new Error("Item not found");
+
+               const base64Input = await blobUrlToBase64(item.url);
+               const prompt = buildPixelizePrompt(item.pixelStyle, ""); 
+               logConsole(`[PIXELIZE] ${prompt}`);
+
+               resultUrl = await editImage(base64Input, prompt, undefined, gameContext);
+               finalPrompt = prompt;
+
+               setPixelizeQueue(q => q.map(x => x.id === activeTab.selectedPixelizeId ? { ...x, status: 'done', resultUrl } : x));
+               setGeneratedImage(resultUrl);
+
+               await addHistoryEntry({
+                  mode: 'pixelize',
+                  thumbnailUrl: resultUrl,
+                  fullPrompt: finalPrompt,
+                  userPrompt: `Pixelize (${item.pixelStyle})`,
+                  gameContext,
+                  styleId: 'none',
+                  bgConfig: { ...activeTab.bgConfig },
+                  referenceAssets: [],
+                  size: activeTab.selectedSize,
+                  aspectRatio: activeTab.selectedAspectRatio,
+                  pixelStyle: item.pixelStyle
+               });
+
            } else if (activeTab.isEditMode && activeTab.generatedImage) {
-               // --- EDIT LOGIC ---
-               resultUrl = await editImage(activeTab.generatedImage, activeTab.prompt, activeTab.bgConfig, gameContext);
+               // --- EDIT LOGIC (Standard) ---
+               const base64Input = await blobUrlToBase64(activeTab.generatedImage);
+               resultUrl = await editImage(base64Input, activeTab.prompt, activeTab.bgConfig, gameContext);
                finalPrompt = activeTab.prompt;
-               // History ...
+               
            } else {
                // --- CREATE LOGIC ---
                const { image, metadata } = await generateIllustration(
@@ -130,9 +189,11 @@ export const useGeneration = (
                
                if (activeTab.bgConfig.mode === 'transparent') {
                    setStatusMessage('Removing Background...');
+                   // Pause timer for post-processing display
+                   clearTimer(); 
                    resultUrl = await removeBackground(resultUrl);
                }
-               // History ...
+               
                await addHistoryEntry({
                   mode: activeTab.mode,
                   thumbnailUrl: resultUrl,
@@ -161,7 +222,10 @@ export const useGeneration = (
           logConsole(`ERROR: ${e.message}`);
        }
     } finally {
-       setIsGenerating(false); setStatusMessage(''); abortControllerRef.current = null;
+       clearTimer();
+       setIsGenerating(false); 
+       setStatusMessage(''); 
+       abortControllerRef.current = null;
     }
   };
 

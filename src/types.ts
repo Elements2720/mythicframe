@@ -1,5 +1,5 @@
 
-export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'frame' | 'illustration' | 'background' | 'fullcard' | 'animation' | 'resize' | 'clothes' | 'bg-replace';
+export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'frame' | 'illustration' | 'background' | 'fullcard' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize';
 
 export interface GameContext {
   setting: string; // "Cozy alchemy shop"
@@ -69,6 +69,7 @@ export interface HistoryEntry {
   customName?: string;
   safeZone?: SafeZoneConfig;
   clothesParams?: ClothesParams;
+  pixelStyle?: PixelStyle;
 }
 
 export interface ExportConfig {
@@ -192,6 +193,12 @@ export interface BgReplaceItem extends ResizeItem {
   bgConfig: BackgroundConfig;
 }
 
+export type PixelStyle = '8bit' | '16bit' | '32bit' | 'modern';
+
+export interface PixelizeItem extends ResizeItem {
+  pixelStyle: PixelStyle;
+}
+
 export interface CharacterToolState {
   enabled: boolean;
   poseDescription: string;
@@ -245,6 +252,11 @@ export interface WorkspaceTab {
   // Bg Replace
   bgReplaceQueue: BgReplaceItem[];
   selectedBgReplaceId: string | null;
+
+  // Pixelize
+  pixelizeQueue: PixelizeItem[];
+  selectedPixelizeId: string | null;
+  selectedPixelStyle: PixelStyle;
 
   // Editor
   isEditMode: boolean;

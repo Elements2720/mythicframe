@@ -5,7 +5,7 @@ import { createNewTab, getHashMode } from '../utils/tabFactory';
 
 export const useTabs = () => {
   const initialMode = getHashMode();
-  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace'].includes(initialMode);
+  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize'].includes(initialMode);
   
   const [tabs, setTabs] = useState<WorkspaceTab[]>([
      createNewTab('1', 'Project 1', isStudioMode ? initialMode : 'illustration')
@@ -33,7 +33,7 @@ export const useTabs = () => {
       const newMode = getHashMode();
       setRouteMode(newMode);
       
-      const isStudio = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace'].includes(newMode);
+      const isStudio = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize'].includes(newMode);
       if (isStudio) {
           setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, mode: newMode } : t));
       }

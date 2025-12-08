@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { useLanguage } from '../../i18n/LanguageContext';
+import FullScreenPreview from '../ui/FullScreenPreview';
 
 interface BgReplaceCanvasProps {
   generatedImage: string | null;     // Result
@@ -12,6 +13,7 @@ const BgReplaceCanvas: React.FC<BgReplaceCanvasProps> = ({ generatedImage, origi
   const { t } = useLanguage();
   const [isDragOver, setIsDragOver] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); };
   const handleDragLeave = () => setIsDragOver(false);
@@ -50,9 +52,22 @@ const BgReplaceCanvas: React.FC<BgReplaceCanvasProps> = ({ generatedImage, origi
           </div>
       )}
 
-      <div className="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 inline-flex items-center justify-center bg-black max-w-full max-h-full">
+      <div className="relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 inline-flex items-center justify-center bg-black max-w-full max-h-full group">
          {displayImage ? (
-            <img src={displayImage} alt="Canvas" className="max-w-full max-h-[70vh] object-contain block" />
+            <>
+               <img src={displayImage} alt="Canvas" className="max-w-full max-h-[70vh] object-contain block" />
+               
+               {/* Preview Button Overlay */}
+               <div className="absolute top-3 right-3 z-50 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                   <button
+                      onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
+                      className="w-8 h-8 bg-black/50 hover:bg-blue-600 text-white rounded-full flex items-center justify-center backdrop-blur border border-white/10 transition-colors shadow-lg"
+                      title="Full Screen Preview"
+                   >
+                      <i className="fa-solid fa-expand text-xs" />
+                   </button>
+               </div>
+            </>
          ) : (
             <div className="w-96 h-64 flex flex-col items-center justify-center gap-4 border-2 border-dashed border-purple-500/30 rounded p-10 select-none bg-slate-900/50">
                <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center text-purple-500">
@@ -65,6 +80,8 @@ const BgReplaceCanvas: React.FC<BgReplaceCanvasProps> = ({ generatedImage, origi
             </div>
          )}
       </div>
+
+      <FullScreenPreview isOpen={showPreview} onClose={() => setShowPreview(false)} imageUrl={displayImage} />
     </div>
   );
 };

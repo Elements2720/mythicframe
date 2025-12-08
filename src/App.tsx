@@ -21,7 +21,7 @@ export default function App() {
   const engine = useAppEngine();
 
   // Resize is now part of the unified Studio Layout
-  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace'].includes(engine.mode);
+  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize'].includes(engine.mode);
 
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans selection:bg-purple-500 selection:text-white">

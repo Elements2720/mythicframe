@@ -14,6 +14,7 @@ export const translations = {
     resize: "Magic Resizer",
     clothes: "Clothes Designer",
     "bg-replace": "Background Replacer",
+    pixelize: "Pixel Studio",
     
     // Header
     pro_model: "Pro Model (Gemini 3)",
@@ -48,6 +49,12 @@ export const translations = {
     refine: "Refine",
     undo: "Undo",
     context_active: "Context Active",
+    
+    // Reference Roles
+    ref_role_mannequin: "Set as Mannequin",
+    ref_role_style: "Set as Style",
+    ref_role_mannequin_short: "Mannequin",
+    ref_role_style_short: "Style",
 
     // Right Panel
     ai_model: "AI Model",
@@ -55,6 +62,8 @@ export const translations = {
     output_ratio: "Output Aspect Ratio",
     background_setting: "Background",
     regenerate: "Regenerate",
+    enhance: "Enhance",
+    enhancing: "Enhancing...",
     pattern_type: "Pattern Type",
     frame_elements: "Frame Elements to Include",
     batch_count: "Batch Count",
@@ -109,10 +118,11 @@ export const translations = {
     upload_frame: "Upload Image to Frame",
     duplicate: "Duplicate Frame",
     
-    // Resize
+    // Resize & Batch
     batch_queue: "Batch Queue",
     bg_replace_queue: "Batch Queue",
     bg_replace_prompt_hint: "Describe new background for selected image...",
+    pixelize_queue: "Pixel Queue",
     add_images: "Add Images",
     queue_empty: "Queue is empty.\nAdd images to start.",
     drop_here: "Drop Here",
@@ -179,6 +189,7 @@ export const translations = {
     resize: "Магический Ресайз",
     clothes: "Дизайн Одежды",
     "bg-replace": "Замена Фона",
+    pixelize: "Пиксель Студия",
 
     // Header
     pro_model: "Pro Модель (Gemini 3)",
@@ -213,6 +224,12 @@ export const translations = {
     refine: "Улучшить",
     undo: "Отменить",
     context_active: "Контекст активен",
+    
+    // Reference Roles
+    ref_role_mannequin: "Манекен / Поза",
+    ref_role_style: "Стиль / Текстура",
+    ref_role_mannequin_short: "Манекен",
+    ref_role_style_short: "Стиль",
 
     // Right Panel
     ai_model: "ИИ Модель",
@@ -220,6 +237,8 @@ export const translations = {
     output_ratio: "Соотношение сторон",
     background_setting: "Задний фон",
     regenerate: "Пересоздать",
+    enhance: "Улучшить",
+    enhancing: "Улучшение...",
     pattern_type: "Тип узора",
     frame_elements: "Элементы рамки",
     batch_count: "Количество (Batch)",
@@ -278,6 +297,7 @@ export const translations = {
     batch_queue: "Очередь (Batch)",
     bg_replace_queue: "Очередь",
     bg_replace_prompt_hint: "Опишите новый фон для выбранного изображения...",
+    pixelize_queue: "Очередь (Pixel)",
     add_images: "Добавить",
     queue_empty: "Очередь пуста.\nДобавьте изображения.",
     drop_here: "Бросай сюда",

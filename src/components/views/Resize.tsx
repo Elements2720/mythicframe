@@ -48,6 +48,7 @@ const Resize: React.FC<ResizeViewProps> = ({ engine }) => {
     if (e.target.files && e.target.files.length > 0) {
       onAddResizeFiles(e.target.files);
     }
+    e.target.value = ''; // Reset input
   };
 
   return (

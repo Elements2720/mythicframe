@@ -1,5 +1,7 @@
+
 import React, { useRef, useState, useEffect } from 'react';
 import ResizableBox from '../ui/ResizableBox';
+import FullScreenPreview from '../ui/FullScreenPreview';
 import { UIMode, AspectRatio, PixelDimensions, SafeZoneConfig, CharacterToolState } from '../../types';
 import { exportSingleImage } from '../../services/exportService';
 
@@ -39,6 +41,7 @@ interface IllustrationCanvasProps {
   onClearSession?: () => void;
   onRemoveSessionImage?: (url: string) => void;
   isGenerating?: boolean;
+  statusMessage?: string;
 
   // Character Tool
   characterTool?: CharacterToolState;
@@ -51,14 +54,16 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
   isEditMode, editRegion, setEditRegion, mode, aspectRatio, customRes,
   isPlaying, currentFrameIndex, totalFrames, onionSkinImage,
   safeZone, setSafeZone, onImageUpload, onClearImage,
-  sessionImages, onSelectSessionImage, onGenerateMore, onClearSession, onRemoveSessionImage, isGenerating,
+  sessionImages, onSelectSessionImage, onGenerateMore, onClearSession, onRemoveSessionImage, isGenerating, statusMessage,
   characterTool, onCharacterLookClick
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [contentDims, setContentDims] = useState({ width: 0, height: 0 });
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Pan/Zoom State
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
@@ -80,20 +85,31 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
     return () => observer.disconnect();
   }, [generatedImage, aspectRatio, mode, customRes]);
 
+  // Monitor Container Size to auto-fit placeholder
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        // Basic debounce via state equality check
+        setContainerSize(prev => (prev.width === width && prev.height === height) ? prev : { width, height });
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   // Pan/Zoom Handlers
   const handleWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
-        // Prevent default browser zoom if ctrl is held (optional, but good UX)
         e.preventDefault();
     }
-    // Zoom Logic
     const scaleAmount = -e.deltaY * 0.001;
     const newScale = Math.min(Math.max(0.1, view.scale + scaleAmount), 5);
     setView(prev => ({ ...prev, scale: newScale }));
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Middle Mouse Button (1)
     if (e.button === 1) {
        e.preventDefault();
        setIsPanning(true);
@@ -143,13 +159,12 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
      if (e.target.files && e.target.files.length > 0 && onImageUpload) {
         onImageUpload(e.target.files[0]);
      }
+     e.target.value = ''; // Reset input to allow re-uploading same file
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-      // Only trigger if we are actively setting the target
       if (characterTool?.enabled && characterTool.isSettingLookTarget && onCharacterLookClick && contentRef.current) {
           const rect = contentRef.current.getBoundingClientRect();
-          // Adjust for scale
           const x = ((e.clientX - rect.left) / rect.width) * 100;
           const y = ((e.clientY - rect.top) / rect.height) * 100;
           onCharacterLookClick(x, y);
@@ -161,50 +176,55 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
     const baseStyle: React.CSSProperties = {
         transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
         transformOrigin: 'center center',
-        transition: isPanning ? 'none' : 'transform 0.1s ease-out'
+        transition: isPanning ? 'none' : 'transform 0.1s ease-out',
+        position: 'relative'
     };
 
-    // If we have an image, let it define the ratio naturally (auto) to avoid letterboxing
-    if (generatedImage) {
+    // ALWAYS calculate dimensions to FILL the container based on the selected aspect ratio.
+    if (containerSize.width > 0 && containerSize.height > 0) {
+        let r = 1;
+        if (ratio === 'custom' && customRes) {
+             r = customRes.width / customRes.height;
+        } else {
+             const ratioMap: Record<string, number> = { "1:1": 1, "3:4": 3/4, "4:3": 4/3, "9:16": 9/16, "16:9": 16/9, "21:9": 21/9 };
+             r = ratioMap[ratio] || 1;
+        }
+
+        const containerRatio = containerSize.width / containerSize.height;
+        let w, h;
+
+        if (containerRatio > r) {
+            // Container is wider than target -> Height is the limiter
+            h = containerSize.height;
+            w = h * r;
+        } else {
+            // Container is narrower -> Width is the limiter
+            w = containerSize.width;
+            h = w / r;
+        }
+
         return {
-           ...baseStyle,
-           width: 'auto',
-           height: 'auto',
-           maxWidth: '100%',
-           maxHeight: '70vh'
+            ...baseStyle,
+            width: w,
+            height: h
         };
     }
 
-    // Otherwise use placeholder ratio
-    if (ratio === 'custom' && customRes) {
-        const ratioVal = customRes.width / customRes.height;
-        return {
-           ...baseStyle,
-           width: `min(100%, 70vh * ${ratioVal})`,
-           height: `min(70vh, 100% / ${ratioVal})`,
-           aspectRatio: `${ratioVal}`,
-           maxWidth: '100%',
-           maxHeight: '70vh'
-       };
-    }
-    const ratioMap: Record<string, number> = { "1:1": 1, "3:4": 3/4, "4:3": 4/3, "9:16": 9/16, "16:9": 16/9, "21:9": 21/9 };
-    const numericRatio = ratioMap[ratio] || 1;
+    // Fallback if container size isn't ready
     return {
       ...baseStyle,
-      width: `min(100%, 70vh * ${numericRatio})`,
-      height: `min(70vh, 100% / ${numericRatio})`,
-      aspectRatio: `${numericRatio}`,
-      maxWidth: '100%',
-      maxHeight: '70vh'
+      width: '100%',
+      height: '100%',
+      aspectRatio: '1 / 1' 
     };
   };
 
-  const containerBgClass = 'bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]';
+  const containerBgClass = 'bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] min-h-0';
 
   return (
     <div 
       ref={containerRef}
-      className={`flex-1 bg-slate-900 relative flex items-center justify-center p-8 overflow-hidden min-h-[400px] transition-colors ${containerBgClass} ${isPanning ? 'cursor-grabbing' : ''}`}
+      className={`w-full h-full bg-slate-900 relative flex items-center justify-center p-8 overflow-hidden transition-colors ${containerBgClass} ${isPanning ? 'cursor-grabbing' : ''}`}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -214,7 +234,7 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
       
       {/* View Reset Button */}
       {(view.scale !== 1 || view.x !== 0 || view.y !== 0) && (
-          <div className="absolute bottom-6 left-6 z-50 animate-in fade-in">
+          <div className="absolute bottom-6 left-6 z-30 animate-in fade-in">
              <button 
                 onClick={() => setView({ scale: 1, x: 0, y: 0 })}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-full border border-slate-600 shadow-lg text-xs font-bold flex items-center gap-2"
@@ -224,7 +244,7 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
           </div>
       )}
 
-      {/* TOP SESSION GALLERY (Variations) */}
+      {/* TOP SESSION GALLERY */}
       {sessionImages && sessionImages.length > 0 && (
          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 animate-in slide-in-from-top-4 fade-in">
              <div className="bg-black/60 backdrop-blur rounded-full p-1.5 flex gap-2 border border-white/10 shadow-xl overflow-x-auto max-w-[80vw] custom-scrollbar">
@@ -237,7 +257,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                            <img src={img} className="w-full h-full object-cover" />
                         </button>
                         
-                        {/* Download Button Overlay */}
                         <button
                            onClick={(e) => { 
                                e.stopPropagation(); 
@@ -250,7 +269,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                            <i className="fa-solid fa-download" />
                         </button>
 
-                        {/* Delete Button Overlay */}
                         {onRemoveSessionImage && (
                            <button
                               onClick={(e) => { 
@@ -266,7 +284,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                     </div>
                 ))}
                 
-                {/* Add Variation Button */}
                 {onGenerateMore && (
                     <button 
                       onClick={onGenerateMore}
@@ -279,12 +296,14 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                 )}
              </div>
 
-             {/* Clear Session Button - Clears ALL */}
-             {sessionImages.length > 1 && onClearSession && (
+             {sessionImages.length > 0 && onClearSession && (
                 <button 
-                   onClick={() => { if(confirm("Clear current session gallery?")) onClearSession(); }}
-                   className="w-8 h-8 rounded-full bg-slate-800 hover:bg-red-900/50 text-slate-500 hover:text-red-400 border border-slate-700 flex items-center justify-center transition-colors shadow-lg"
-                   title="Clear Gallery (All)"
+                   onClick={(e) => { 
+                       e.stopPropagation(); 
+                       setTimeout(() => onClearSession && onClearSession(), 0);
+                   }}
+                   className="w-8 h-8 rounded-full bg-slate-800 hover:bg-red-900/80 text-slate-500 hover:text-red-400 border border-slate-700 flex items-center justify-center transition-colors shadow-lg active:scale-95 cursor-pointer z-50"
+                   title="Clear All Variations"
                 >
                    <i className="fa-solid fa-trash text-xs" />
                 </button>
@@ -295,15 +314,24 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
       <div 
         ref={contentRef}
         className={`relative group shadow-2xl shadow-purple-900/20 rounded-lg overflow-hidden border border-slate-700 inline-flex items-center justify-center ${isPlaying ? 'ring-2 ring-green-500' : ''}`}
-        style={{ ...getAspectRatioStyle(aspectRatio), minWidth: generatedImage ? 'auto' : '300px' }}
+        style={getAspectRatioStyle(aspectRatio)}
       >
-        {/* CHARACTER TOOL OVERLAY (Click Capture) */}
+        {/* LOADING OVERLAY */}
+        {isGenerating && (
+           <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+              <i className="fa-solid fa-circle-notch fa-spin text-4xl text-purple-500 mb-4 drop-shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
+              <p className="text-white font-bold text-lg drop-shadow-md px-4 text-center animate-pulse">
+                 {statusMessage || 'Generating...'}
+              </p>
+           </div>
+        )}
+
+        {/* CHARACTER TOOL OVERLAY */}
         {characterTool?.enabled && generatedImage && (
             <div 
                 className={`absolute inset-0 z-50 ${characterTool.isSettingLookTarget ? 'cursor-crosshair bg-black/10' : 'pointer-events-none'}`}
                 onClick={handleCanvasClick}
             >
-                {/* Visual Feedback for Look Target */}
                 {characterTool.lookTarget && (
                     <div 
                         className="absolute w-6 h-6 -ml-3 -mt-3 border-2 border-green-400 rounded-full flex items-center justify-center pointer-events-none shadow-lg animate-in zoom-in duration-200 z-50"
@@ -334,21 +362,28 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
              <img 
                src={generatedImage} 
                alt="Generated" 
-               className="max-h-[70vh] max-w-full object-contain block relative z-0"
+               className="w-full h-full object-contain block relative z-0"
              />
              
-             {/* Close / Clear Image Button */}
-             {onClearImage && (
-                <div className="absolute top-3 right-3 z-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                   <button 
-                      onClick={(e) => { e.stopPropagation(); onClearImage(); }}
-                      className="w-8 h-8 bg-black/50 hover:bg-red-500 text-white rounded-full flex items-center justify-center backdrop-blur border border-white/10 transition-colors shadow-lg"
-                      title="Remove Image"
-                   >
-                      <i className="fa-solid fa-times" />
-                   </button>
-                </div>
-             )}
+             {/* Toolbar Overlay */}
+             <div className="absolute top-3 right-3 z-50 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                 <button
+                    onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
+                    className="w-8 h-8 bg-black/50 hover:bg-blue-600 text-white rounded-full flex items-center justify-center backdrop-blur border border-white/10 transition-colors shadow-lg"
+                    title="Full Screen Preview"
+                 >
+                    <i className="fa-solid fa-expand text-xs" />
+                 </button>
+                 {onClearImage && (
+                    <button 
+                       onClick={(e) => { e.stopPropagation(); onClearImage(); }}
+                       className="w-8 h-8 bg-black/50 hover:bg-red-500 text-white rounded-full flex items-center justify-center backdrop-blur border border-white/10 transition-colors shadow-lg"
+                       title="Remove Image"
+                    >
+                       <i className="fa-solid fa-times text-xs" />
+                    </button>
+                 )}
+             </div>
            </>
         ) : (
            // PLACEHOLDER / DROP ZONE
@@ -373,7 +408,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                       : aspectRatio}
                  </p>
                  
-                 {/* Explicitly Check Mode and Callback for Upload Button */}
                  {(mode === 'illustration' || mode === 'clothes') && onImageUpload && (
                     <div className="mt-4">
                        <button 
@@ -396,14 +430,14 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
            </div>
         )}
         
-        {/* Animation Playback Overlay Info */}
+        {/* Animation Playback Info */}
         {mode === 'animation' && (generatedImage || isPlaying) && (
            <div className="absolute top-2 right-2 px-2 py-1 bg-black/60 text-white text-[10px] font-mono rounded backdrop-blur pointer-events-none z-20">
               {isPlaying ? 'PLAYING' : 'PAUSED'} {typeof currentFrameIndex === 'number' ? `[${currentFrameIndex + 1}/${totalFrames}]` : ''}
            </div>
         )}
 
-        {/* Frame Mode Visual Guide */}
+        {/* Frame Mode Guide */}
         {mode === 'frame' && (
           <div className="absolute inset-0 pointer-events-none flex flex-col z-20">
              <div className="h-[15%] w-full border-b border-dashed border-white/20 flex items-center justify-center">
@@ -420,7 +454,7 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
           </div>
         )}
 
-        {/* OVERLAYS (Text) */}
+        {/* Text Overlays */}
         {showOverlays && generatedImage && (cardName || cardEffects) && mode !== 'frame' && mode !== 'background' && mode !== 'animation' && (
           <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 z-20">
             {cardName && (
@@ -436,7 +470,7 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
           </div>
         )}
 
-        {/* --- SAFE ZONE OVERLAY (Zoom-Out Tool) - Illustration & Clothes Mode Only --- */}
+        {/* Safe Zone Overlay */}
         {safeZone.enabled && contentDims.width > 0 && (mode === 'illustration' || mode === 'clothes') && (
            <>
               <div className="absolute top-0 left-0 right-0 bg-black/70 z-30 pointer-events-none transition-all duration-200 backdrop-grayscale-[30%]" style={{ height: `${safeZone.y}%` }} />
@@ -444,7 +478,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
               <div className="absolute left-0 bg-black/70 z-30 pointer-events-none transition-all duration-200" style={{ top: `${safeZone.y}%`, height: `${safeZone.height}%`, width: `${safeZone.x}%` }} />
               <div className="absolute right-0 bg-black/70 z-30 pointer-events-none transition-all duration-200" style={{ top: `${safeZone.y}%`, height: `${safeZone.height}%`, width: `${100 - (safeZone.x + safeZone.width)}%` }} />
               
-              {/* Only show handles if Character Tool is disabled (avoid conflict) */}
               <div className={`absolute inset-0 z-40 ${characterTool?.enabled ? 'pointer-events-none' : ''}`}>
                  <ResizableBox 
                     x={safeZone.x}
@@ -512,6 +545,7 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
         )}
       </div>
 
+      <FullScreenPreview isOpen={showPreview} onClose={() => setShowPreview(false)} imageUrl={generatedImage} />
     </div>
   );
 };

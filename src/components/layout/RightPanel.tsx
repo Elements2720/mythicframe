@@ -32,6 +32,7 @@ interface RightPanelProps {
   generatedImage: string | null;
   isGenerating: boolean;
   handleRegenerateBackground: () => void;
+  handleEnhance: () => void;
   
   // Resolution & Model Props
   selectedAspectRatio: AspectRatio;
@@ -133,7 +134,7 @@ const FontSelector = ({ label, value, onChange }: any) => (
 const RightPanel: React.FC<RightPanelProps> = ({
   mode, cardLayout, setCardLayout, selectedLayoutElement, setSelectedLayoutElement, updateLayout,
   cardName, setCardName, cardMana, setCardMana, cardEffects, setCardEffects, cardType, setCardType,
-  selectedStyleId, setSelectedStyleId, bgConfig, setBgConfig, generatedImage, isGenerating, handleRegenerateBackground,
+  selectedStyleId, setSelectedStyleId, bgConfig, setBgConfig, generatedImage, isGenerating, handleRegenerateBackground, handleEnhance,
   selectedAspectRatio, setSelectedAspectRatio, useCustomResBox, setUseCustomResBox, customRes, setCustomRes,
   useProModel, setUseProModel, selectedSize, setSelectedSize,
   isEditMode, setIsEditMode, showOverlays, setShowOverlays,
@@ -418,7 +419,7 @@ const RightPanel: React.FC<RightPanelProps> = ({
     );
   }
 
-  // --- STANDARD STUDIO MODES (Illustration, Frame, Background, Animation, Clothes, BG Replace) ---
+  // --- STANDARD STUDIO MODES (Illustration, Frame, Background, Animation, Clothes, BG Replace, Pixelize) ---
   return (
     <div className="w-80 bg-slate-900 border-l border-slate-800 p-6 flex flex-col gap-6 overflow-y-auto custom-scrollbar shrink-0 z-20">
        <div className="space-y-6 pb-20">
@@ -553,27 +554,39 @@ const RightPanel: React.FC<RightPanelProps> = ({
                  </div>
               )}
 
-              {/* Art Style */}
-              <div>
-                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{t('art_style')}</label>
-                 <select value={selectedStyleId} onChange={(e) => setSelectedStyleId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200">
-                    {ART_STYLES.map(style => <option key={style.id} value={style.id}>{style.name}</option>)}
-                 </select>
-              </div>
+              {/* Art Style - Not for Pixelize */}
+              {mode !== 'pixelize' && (
+                 <div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{t('art_style')}</label>
+                    <select value={selectedStyleId} onChange={(e) => setSelectedStyleId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200">
+                        {ART_STYLES.map(style => <option key={style.id} value={style.id}>{style.name}</option>)}
+                    </select>
+                 </div>
+              )}
 
               {/* Background Config (Illustration, Background, Clothes, Animation Illustration, Bg Replace) */}
               {(mode === 'illustration' || mode === 'background' || mode === 'clothes' || mode === 'bg-replace' || (mode === 'animation' && animConfig.type === 'illustration')) && (
                  <div className="bg-slate-800 p-3 rounded border border-slate-700 space-y-3">
-                     <div className="flex justify-between items-center">
+                     <div className="flex justify-between items-center flex-wrap gap-2">
                          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">{t('background_setting')}</label>
                          {generatedImage && (mode === 'illustration' || mode === 'clothes' || mode === 'bg-replace') && (
-                             <button 
-                                 onClick={handleRegenerateBackground} 
-                                 disabled={isGenerating}
-                                 className="text-[10px] bg-purple-600 hover:bg-purple-500 text-white px-2 py-1 rounded transition-colors disabled:opacity-50 flex items-center gap-1 shadow-sm"
-                             >
-                                 {isGenerating ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-wand-magic"></i>} {t('regenerate')}
-                             </button>
+                             <div className="flex gap-2">
+                                <button 
+                                    onClick={handleEnhance} 
+                                    disabled={isGenerating}
+                                    className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded transition-colors disabled:opacity-50 flex items-center gap-1 shadow-sm"
+                                    title="Enhance Quality / Upscale"
+                                >
+                                    {isGenerating ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-wand-sparkles"></i>} {t('enhance')}
+                                </button>
+                                <button 
+                                    onClick={handleRegenerateBackground} 
+                                    disabled={isGenerating}
+                                    className="text-[10px] bg-purple-600 hover:bg-purple-500 text-white px-2 py-1 rounded transition-colors disabled:opacity-50 flex items-center gap-1 shadow-sm"
+                                >
+                                    {isGenerating ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-wand-magic"></i>} {t('regenerate')}
+                                </button>
+                             </div>
                          )}
                      </div>
 

@@ -2,7 +2,7 @@
 import { CardLayout, ArtStyle, BackgroundConfig } from "./types";
 
 export const APP_NAME = "MythicFrame";
-export const APP_VERSION = "0.3.6-beta";
+export const APP_VERSION = "0.4.2-beta";
 
 export const PLACEHOLDER_FRAME = "https://picsum.photos/300/400"; // Just a placeholder for the frame UI
 
@@ -66,8 +66,20 @@ export const MODE_CONFIG = {
     title: "BG Replacer",
     icon: "fa-panorama",
     description: "Batch replace backgrounds for multiple assets."
+  },
+  pixelize: {
+    title: "Pixel Studio",
+    icon: "fa-gamepad",
+    description: "Transform art into retro pixel style."
   }
 };
+
+export const PIXEL_STYLES = [
+  { id: '8bit', label: '8-Bit (NES/GB)', desc: 'Limited palette, blocky, retro console style.' },
+  { id: '16bit', label: '16-Bit (SNES)', desc: 'Vibrant, detailed sprites, classic RPG style.' },
+  { id: '32bit', label: '32-Bit (PS1)', desc: 'High color depth, dithering, detailed textures.' },
+  { id: 'modern', label: 'Modern Indie', desc: 'High-res pixel art, fluid, detailed lighting.' },
+];
 
 export const BACKGROUND_PATTERNS = [
   { id: 'scene', label: 'Environmental Scene', description: 'A full scene with depth (e.g., Forest, Dungeon)' },

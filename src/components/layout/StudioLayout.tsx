@@ -1,4 +1,6 @@
 
+
+
 import React from 'react';
 import AppHeader from './AppHeader';
 import RightPanel from './RightPanel';
@@ -6,10 +8,12 @@ import PromptPanel from '../ui/PromptPanel';
 import AnimationTimeline from '../ui/AnimationTimeline';
 import ResizeBottomPanel from '../ui/ResizeBottomPanel';
 import BgReplaceBottomPanel from '../ui/BgReplaceBottomPanel';
+import PixelizeBottomPanel from '../ui/PixelizeBottomPanel';
 import IllustrationCanvas from '../canvas/IllustrationCanvas';
 import FullCardCanvas from '../canvas/FullCardCanvas';
 import ResizeCanvas from '../canvas/ResizeCanvas';
 import BgReplaceCanvas from '../canvas/BgReplaceCanvas';
+import PixelizeCanvas from '../canvas/PixelizeCanvas';
 import HistoryPanel from '../ui/HistoryPanel';
 import { WorkspaceTab } from '../../types';
 
@@ -103,6 +107,8 @@ export const StudioLayout = ({ engine }: { engine: any }) => {
             useCustomResBox={engine.useCustomResBox}
             customResBox={engine.customResBox}
             setCustomResBox={engine.setCustomResBox}
+            isGenerating={engine.isGenerating}
+            statusMessage={engine.statusMessage}
          />
       );
     } else if (engine.mode === 'bg-replace') {
@@ -111,6 +117,14 @@ export const StudioLayout = ({ engine }: { engine: any }) => {
             generatedImage={engine.generatedImage}
             originalImage={engine.bgReplaceQueue.find((i: any) => i.id === engine.selectedBgReplaceId)?.url || null}
             onAddFiles={engine.onAddBgReplaceFiles}
+         />
+      );
+    } else if (engine.mode === 'pixelize') {
+      return (
+         <PixelizeCanvas
+            generatedImage={engine.generatedImage}
+            originalImage={engine.pixelizeQueue.find((i: any) => i.id === engine.selectedPixelizeId)?.url || null}
+            onAddFiles={engine.onAddPixelizeFiles}
          />
       );
     } else {
@@ -143,6 +157,7 @@ export const StudioLayout = ({ engine }: { engine: any }) => {
             onClearSession={engine.handleClearSession}
             onRemoveSessionImage={engine.handleRemoveSessionImage}
             isGenerating={engine.isGenerating}
+            statusMessage={engine.statusMessage}
             characterTool={engine.characterTool}
             onCharacterLookClick={engine.handleCharacterLookClick}
          />
@@ -208,12 +223,30 @@ export const StudioLayout = ({ engine }: { engine: any }) => {
              prompt={engine.prompt} // Global prompt synced to selected item
              setPrompt={(val) => { 
                  engine.setPrompt(val); 
-                 // Since setPrompt updates main state, the hook effect will sync it to the item
              }}
              isGenerating={engine.isGenerating}
              onGenerate={engine.handleGenerate}
              onGenerateAll={engine.handleGenerateAllBgReplace}
              onExportAll={engine.handleExportAllResize} // Reusing export logic (same struct)
+             onCancel={engine.handleCancel}
+          />
+       );
+    } else if (engine.mode === 'pixelize') {
+       return (
+          <PixelizeBottomPanel
+             queue={engine.pixelizeQueue}
+             selectedId={engine.selectedPixelizeId}
+             onSelect={engine.onSelectPixelizeItem}
+             onRemove={engine.onRemovePixelizeItem}
+             onAddFiles={engine.onAddPixelizeFiles}
+             onClearResult={engine.handleClearPixelizeResult}
+             onRename={engine.handlePixelizeRename}
+             selectedStyle={engine.selectedPixelStyle}
+             onSelectStyle={engine.setSelectedPixelStyle}
+             isGenerating={engine.isGenerating}
+             onGenerate={engine.handleGenerate}
+             onGenerateAll={engine.handleGenerateAllPixelize}
+             onExportAll={engine.handleExportAllResize}
              onCancel={engine.handleCancel}
           />
        );
@@ -247,7 +280,7 @@ export const StudioLayout = ({ engine }: { engine: any }) => {
       <div className="flex-1 flex flex-col relative overflow-hidden bg-black">
          <AppHeader 
              mode={engine.mode}
-             title={engine.mode === 'resize' ? 'Magic Resizer' : engine.mode === 'clothes' ? 'Clothes Designer' : engine.mode === 'bg-replace' ? 'BG Replacer' : engine.mode} 
+             title={engine.mode === 'resize' ? 'Magic Resizer' : engine.mode === 'clothes' ? 'Clothes Designer' : engine.mode === 'bg-replace' ? 'BG Replacer' : engine.mode === 'pixelize' ? 'Pixel Studio' : engine.mode} 
              useProModel={engine.useProModel}
              apiKeyReady={engine.apiKeyReady}
              onConnect={engine.handleConnect}
@@ -275,8 +308,8 @@ export const StudioLayout = ({ engine }: { engine: any }) => {
          />
 
          {/* Canvas Area */}
-         {/* Increased padding-bottom to ensure canvas scrollability above the floating panel */}
-         <div className="flex-1 flex overflow-hidden pb-[400px] relative bg-slate-900">
+         {/* Using flex layout to prevent overlap - Canvas takes remaining space above panel */}
+         <div className="flex-1 flex overflow-hidden relative bg-slate-900">
             {renderCanvas()}
          </div>
 
@@ -290,6 +323,7 @@ export const StudioLayout = ({ engine }: { engine: any }) => {
             onClearAll={engine.handleClearHistory}
          />
 
+         {/* Bottom Panel is now part of the flex flow, not absolute */}
          {renderBottomPanel()}
       </div>
 

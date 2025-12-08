@@ -13,17 +13,20 @@ import {
   GenerationModel, ImageSize, AspectRatio, CardLayout, LayoutElement, 
   PixelDimensions, ReferenceAsset, GameContext,
   FrameElement, BackgroundPatternType, CsvCardData, SafeZoneConfig, ResizeItem,
-  WorkspaceTab, ClothesParams, BgReplaceItem, BackgroundConfig
+  WorkspaceTab, ClothesParams, BgReplaceItem, BackgroundConfig, PixelStyle, PixelizeItem
 } from '../types';
 import { ART_STYLES, DEFAULT_CARD_LAYOUT, CARD_TEMPLATES, DEFAULT_BACKGROUND_CONFIG } from '../constants';
 import { useTabs } from './useTabs';
 import { useHistory } from './useHistory';
 import { useResize } from './useResize';
 import { useBgReplace } from './useBgReplace';
+import { usePixelize } from './usePixelize';
 import { useAnimation } from './useAnimation';
 import { useGeneration } from './useGeneration';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export const useAppEngine = () => {
+  const { t } = useLanguage();
   // --- SUB-HOOKS ---
   const {
     tabs, activeTabId, activeTab, effectiveMode, setMode,
@@ -97,6 +100,8 @@ export const useAppEngine = () => {
   const useCustomResBox = activeTab.useCustomResBox; const setUseCustomResBox = (v:boolean)=>setTabProp('useCustomResBox',v);
   const customResBox = activeTab.customResBox; const setCustomResBox = (v:any)=>setTabProp('customResBox',v);
   const lastPrompt = activeTab.lastPrompt; const setLastPrompt = (v:string|null)=>setTabProp('lastPrompt',v);
+  
+  const selectedPixelStyle = activeTab.selectedPixelStyle; const setSelectedPixelStyle = (v:PixelStyle) => setTabProp('selectedPixelStyle', v);
 
   const fullCardRef = useRef<HTMLDivElement>(null);
 
@@ -110,6 +115,11 @@ export const useAppEngine = () => {
       updateActiveTab({ prompt: p, bgConfig: conf });
   });
 
+  // Hook for Pixelize
+  const pixelizeLogic = usePixelize(activeTab, updateActiveTab, setGeneratedImage, (style) => {
+      setSelectedPixelStyle(style);
+  });
+
   // Sync effect: When prompt or bgConfig changes in bg-replace mode, update the selected item
   useEffect(() => {
       if (activeTab.mode === 'bg-replace' && activeTab.selectedBgReplaceId) {
@@ -119,6 +129,14 @@ export const useAppEngine = () => {
           });
       }
   }, [activeTab.prompt, activeTab.bgConfig, activeTab.mode, activeTab.selectedBgReplaceId]);
+
+  useEffect(() => {
+      if (activeTab.mode === 'pixelize' && activeTab.selectedPixelizeId) {
+          pixelizeLogic.updateSelectedItem({
+              pixelStyle: activeTab.selectedPixelStyle
+          });
+      }
+  }, [activeTab.selectedPixelStyle, activeTab.mode, activeTab.selectedPixelizeId]);
 
   // --- HELPERS ---
   const logConsole = (msg: string) => setConsoleLogs(p => [msg, ...p]);
@@ -133,7 +151,7 @@ export const useAppEngine = () => {
   const generation = useGeneration(
     activeTab, apiKeyReady, useProModel, gameContext, batchSize,
     setGeneratedImage, setSessionImages, addHistoryEntry, 
-    resizeLogic.setResizeQueue, bgReplaceLogic.setBgReplaceQueue, 
+    resizeLogic.setResizeQueue, bgReplaceLogic.setBgReplaceQueue, pixelizeLogic.setPixelizeQueue,
     logConsole, getTargetDimensions
   );
 
@@ -141,7 +159,15 @@ export const useAppEngine = () => {
      const pending = activeTab.bgReplaceQueue.filter(i => i.status === 'pending');
      for (const item of pending) {
          bgReplaceLogic.onSelectBgReplaceItem(item.id);
-         // Wait a tick for state to sync
+         await new Promise(r => setTimeout(r, 50));
+         await generation.handleGenerate();
+     }
+  };
+
+  const handleGenerateAllPixelize = async () => {
+     const pending = activeTab.pixelizeQueue.filter(i => i.status === 'pending');
+     for (const item of pending) {
+         pixelizeLogic.onSelectPixelizeItem(item.id);
          await new Promise(r => setTimeout(r, 50));
          await generation.handleGenerate();
      }
@@ -361,6 +387,30 @@ ${characterTool.poseDescription ? `ADDITIONAL: ${characterTool.poseDescription}`
       } catch(e: any) { console.error(e); alert(e.message); } finally { generation.setIsGenerating(false); generation.setStatusMessage(""); }
   };
 
+  const handleEnhance = async () => {
+      if (!generatedImage || !apiKeyReady) return;
+      generation.setIsGenerating(true);
+      generation.setStatusMessage(t('enhancing')); // "Enhancing..."
+      try {
+         const enhancePrompt = "Enhance the visual quality of this image. Increase resolution, sharpness, and texture details. Remove blur and artifacts. Make it look like a high-fidelity game asset. Keep exact composition and subject.";
+         const res = await editImage(generatedImage, enhancePrompt, undefined, gameContext);
+         setGeneratedImage(res);
+         setSessionImages(prev => [res, ...prev]);
+         await addHistoryEntry({
+            mode: activeTab.mode,
+            thumbnailUrl: res,
+            fullPrompt: enhancePrompt,
+            userPrompt: 'Enhanced Asset',
+            gameContext,
+            styleId: selectedStyleId,
+            bgConfig,
+            referenceAssets,
+            size: selectedSize,
+            aspectRatio: selectedAspectRatio
+         });
+      } catch(e: any) { console.error(e); alert(e.message); } finally { generation.setIsGenerating(false); generation.setStatusMessage(""); }
+  };
+
   // --- GENERIC HANDLERS ---
   const handleAssetSelect = (url: string) => {
      if (activeTab.mode === 'fullcard') {
@@ -388,6 +438,19 @@ ${characterTool.poseDescription ? `ADDITIONAL: ${characterTool.poseDescription}`
             selectedBgReplaceId: newItem.id,
             generatedImage: newItem.url
          });
+     } else if (activeTab.mode === 'pixelize') {
+         const newItem: PixelizeItem = {
+             id: Date.now().toString(),
+             url,
+             name: 'Library Asset',
+             status: 'pending',
+             pixelStyle: '16bit'
+         };
+         pixelizeLogic.setPixelizeQueue((prev) => [...prev, newItem]);
+         updateActiveTab({
+             selectedPixelizeId: newItem.id,
+             generatedImage: newItem.url
+         });
      } else {
          setGeneratedImage(url);
      }
@@ -404,7 +467,11 @@ ${characterTool.poseDescription ? `ADDITIONAL: ${characterTool.poseDescription}`
   };
 
   const handleClearImage = () => setGeneratedImage(null);
-  const handleClearSession = () => setSessionImages([]);
+  
+  const handleClearSession = () => {
+      setSessionImages([]);
+      setGeneratedImage(null);
+  };
   
   const handleRemoveSessionImage = (urlToRemove: string) => {
       const newImages = activeTab.sessionImages.filter(url => url !== urlToRemove);
@@ -588,6 +655,11 @@ ${characterTool.poseDescription ? `ADDITIONAL: ${characterTool.poseDescription}`
     bgReplaceQueue: bgReplaceLogic.bgReplaceQueue, setBgReplaceQueue: bgReplaceLogic.setBgReplaceQueue,
     selectedBgReplaceId: bgReplaceLogic.selectedBgReplaceId, setSelectedBgReplaceId: bgReplaceLogic.onSelectBgReplaceItem,
     
+    // Pixelize
+    pixelizeQueue: pixelizeLogic.pixelizeQueue, setPixelizeQueue: pixelizeLogic.setPixelizeQueue,
+    selectedPixelizeId: pixelizeLogic.selectedPixelizeId, setSelectedPixelizeId: pixelizeLogic.onSelectPixelizeItem,
+    selectedPixelStyle, setSelectedPixelStyle,
+
     // Card & Tool
     cardName, setCardName, cardMana, setCardMana, cardEffects, setCardEffects, cardType, setCardType,
     cardLayout, setCardLayout, templateImage, setTemplateImage,
@@ -621,7 +693,8 @@ ${characterTool.poseDescription ? `ADDITIONAL: ${characterTool.poseDescription}`
     onRemoveResizeItem: resizeLogic.onRemoveResizeItem,
     handleClearResizeResult: resizeLogic.handleClearResizeResult,
     handleResizeRename: resizeLogic.handleResizeRename,
-    handleGenerateAll: resizeLogic.handleGenerateAll, handleExportAllResize: resizeLogic.handleExportAllResize,
+    handleGenerateAll,
+    handleExportAllResize,
     
     // Bg Replace Handlers
     onAddBgReplaceFiles: bgReplaceLogic.onAddBgReplaceFiles,
@@ -630,6 +703,14 @@ ${characterTool.poseDescription ? `ADDITIONAL: ${characterTool.poseDescription}`
     handleClearBgReplaceResult: bgReplaceLogic.handleClearBgReplaceResult,
     handleBgReplaceRename: bgReplaceLogic.handleBgReplaceRename,
     handleGenerateAllBgReplace,
+
+    // Pixelize Handlers
+    onAddPixelizeFiles: pixelizeLogic.onAddPixelizeFiles,
+    onSelectPixelizeItem: pixelizeLogic.onSelectPixelizeItem,
+    onRemovePixelizeItem: pixelizeLogic.onRemovePixelizeItem,
+    handleClearPixelizeResult: pixelizeLogic.handleClearPixelizeResult,
+    handlePixelizeRename: pixelizeLogic.handlePixelizeRename,
+    handleGenerateAllPixelize,
 
     onCsvUpload: handleCsvUpload, onCsvNavigate,
     handleMatchReferenceSize, handleRefinePrompt, handleUndoPrompt,
@@ -647,7 +728,7 @@ ${characterTool.poseDescription ? `ADDITIONAL: ${characterTool.poseDescription}`
     handleCharacterLookClick, handleRegeneratePose, handleAnalyzeStyle,
     handleImageUpload, handleClearImage, handleClearSession, handleRemoveSessionImage,
     handleCompositeExport, handleSetAsTemplate, handleUseInLayout,
-    handleSaveCard, handleCardSuggestions, handleSaveToDrive, handleRegenerateBackground,
+    handleSaveCard, handleCardSuggestions, handleSaveToDrive, handleRegenerateBackground, handleEnhance,
     handleMagicCrop, fullCardRef, getTargetDimensions,
     
     // History

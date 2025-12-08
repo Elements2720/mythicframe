@@ -41,6 +41,10 @@ export const createNewTab = (id: string, name: string, mode: UIMode = 'illustrat
 
   bgReplaceQueue: [],
   selectedBgReplaceId: null,
+
+  pixelizeQueue: [],
+  selectedPixelizeId: null,
+  selectedPixelStyle: '16bit',
   
   isEditMode: false,
   editRegion: { x: 25, y: 25, width: 50, height: 50 },
@@ -55,7 +59,7 @@ export const getHashMode = (): UIMode => {
     if (typeof window === 'undefined') return 'dashboard';
     try {
       const hash = window.location.hash.replace(/^#\/?/, '');
-      const validModes: UIMode[] = ['dashboard', 'library', 'settings', 'frame', 'illustration', 'background', 'fullcard', 'animation', 'resize', 'tutorials', 'clothes', 'bg-replace'];
+      const validModes: UIMode[] = ['dashboard', 'library', 'settings', 'frame', 'illustration', 'background', 'fullcard', 'animation', 'resize', 'tutorials', 'clothes', 'bg-replace', 'pixelize'];
       return validModes.includes(hash as UIMode) ? (hash as UIMode) : 'dashboard';
     } catch (e) {
       return 'dashboard';

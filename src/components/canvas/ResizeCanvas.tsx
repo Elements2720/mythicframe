@@ -2,6 +2,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { PixelDimensions, SafeZoneConfig } from '../../types';
 import ResizableBox from '../ui/ResizableBox';
+import FullScreenPreview from '../ui/FullScreenPreview';
 import { useLanguage } from '../../i18n/LanguageContext';
 
 interface ResizeCanvasProps {
@@ -27,13 +28,18 @@ interface ResizeCanvasProps {
   useCustomResBox: boolean;
   customResBox: any;
   setCustomResBox: (val: any) => void;
+
+  // Status
+  isGenerating?: boolean;
+  statusMessage?: string;
 }
 
 const ResizeCanvas: React.FC<ResizeCanvasProps> = ({
   generatedImage, resizeOriginalImage, targetDimensions,
   resizeZoom, setResizeZoom, resizePan, setResizePan,
   onAddFiles,
-  safeZone, setSafeZone, useCustomResBox, customResBox, setCustomResBox
+  safeZone, setSafeZone, useCustomResBox, customResBox, setCustomResBox,
+  isGenerating, statusMessage
 }) => {
   const { t } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,6 +50,7 @@ const ResizeCanvas: React.FC<ResizeCanvasProps> = ({
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
   const [isDragOver, setIsDragOver] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Monitor Content Size for accurate overlay positioning
   useEffect(() => {
@@ -187,13 +194,34 @@ const ResizeCanvas: React.FC<ResizeCanvasProps> = ({
 
       <div 
         ref={contentRef}
-        className={`relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 inline-flex items-center justify-center transition-all duration-300 bg-black`}
+        className={`relative shadow-2xl rounded-lg overflow-hidden border border-slate-800 inline-flex items-center justify-center transition-all duration-300 bg-black group`}
         style={getCanvasStyle()}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
       >
+         {/* LOADING OVERLAY */}
+         {isGenerating && (
+            <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+               <i className="fa-solid fa-circle-notch fa-spin text-4xl text-purple-500 mb-4 drop-shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
+               <p className="text-white font-bold text-lg drop-shadow-md px-4 text-center animate-pulse">
+                  {statusMessage || 'Generating...'}
+               </p>
+            </div>
+         )}
+
          {hasImage ? (
             <>
+               {/* Preview Button Overlay */}
+               <div className="absolute top-3 right-3 z-50 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                   <button
+                      onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
+                      className="w-8 h-8 bg-black/50 hover:bg-blue-600 text-white rounded-full flex items-center justify-center backdrop-blur border border-white/10 transition-colors shadow-lg"
+                      title="Full Screen Preview"
+                   >
+                      <i className="fa-solid fa-expand text-xs" />
+                   </button>
+               </div>
+
                {showResult ? (
                   <img 
                     src={generatedImage!} 
@@ -278,6 +306,7 @@ const ResizeCanvas: React.FC<ResizeCanvasProps> = ({
          )}
       </div>
 
+      <FullScreenPreview isOpen={showPreview} onClose={() => setShowPreview(false)} imageUrl={generatedImage || resizeOriginalImage} />
     </div>
   );
 };

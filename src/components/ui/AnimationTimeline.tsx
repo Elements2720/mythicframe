@@ -112,6 +112,7 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
   const handleRefUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) processRefFile(file);
+    e.target.value = ''; // Reset input
   };
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); };
@@ -161,7 +162,7 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
 
   return (
     <div 
-       className={`absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-40 flex flex-col shadow-[0_-5px_15px_rgba(0,0,0,0.3)] transition-all duration-300`}
+       className={`w-full bg-slate-900 border-t border-slate-800 z-40 flex flex-col shadow-[0_-5px_15px_rgba(0,0,0,0.3)] transition-all duration-300 shrink-0 relative`}
        style={{ height: isMinimized ? '50px' : panelHeight }}
     >
       {/* Resizer Handle */}
@@ -321,6 +322,7 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
                                  if (e.target.files?.[0] && onUploadFrameImage) {
                                     onUploadFrameImage(activeFrame.id, e.target.files[0]);
                                  }
+                                 e.target.value = ''; // Reset input
                               }} 
                            />
                            <button onClick={() => onDuplicateFrame(activeFrame.id)} className="text-xs text-slate-400 hover:text-white px-2 py-1" title={t('duplicate')}><i className="fa-solid fa-copy" /></button>

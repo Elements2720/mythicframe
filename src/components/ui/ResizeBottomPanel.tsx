@@ -104,7 +104,7 @@ const ResizeBottomPanel: React.FC<ResizeBottomPanelProps> = ({
 
   return (
     <div 
-       className="absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-40 flex flex-col shadow-[0_-5px_15px_rgba(0,0,0,0.3)]"
+       className="w-full bg-slate-900 border-t border-slate-800 z-40 flex flex-col shadow-[0_-5px_15px_rgba(0,0,0,0.3)] shrink-0"
        style={{ height: height }}
     >
        {/* Resizer Handle */}
@@ -243,7 +243,10 @@ const ResizeBottomPanel: React.FC<ResizeBottomPanelProps> = ({
                    className="hidden" 
                    ref={fileInputRef} 
                    accept="image/*"
-                   onChange={(e) => { if(e.target.files && e.target.files.length > 0) onAddFiles(e.target.files); }}
+                   onChange={(e) => { 
+                      if(e.target.files && e.target.files.length > 0) onAddFiles(e.target.files); 
+                      e.target.value = ''; // Reset input to allow re-adding same file
+                   }}
                 />
              </button>
           </div>

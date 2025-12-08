@@ -24,6 +24,57 @@ export const resizeToCustomSize = (srcDataUrl: string, width: number, height: nu
   });
 };
 
+// New Optimization Helper: Resize to max dimension and compress
+export const optimizeBase64Image = (
+  base64Str: string, 
+  maxDimension: number = 1024, 
+  quality: number = 0.8
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      // Calculate new dimensions
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        // Fallback if context fails
+        resolve(base64Str);
+        return;
+      }
+
+      // High quality smoothing
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Return as JPEG for better compression than PNG for photos/art
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = (e) => {
+        // Fallback to original if loading fails
+        console.warn("Image optimization failed, using original", e);
+        resolve(base64Str);
+    };
+    img.src = base64Str;
+  });
+};
+
 // Create a composite for outpainting: Place source image in center of new canvas with Zoom and Pan
 // UPDATED: Uses Blur-Fill for the background instead of black
 export const createCompositeImage = (
@@ -36,6 +87,7 @@ export const createCompositeImage = (
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "Anonymous";
     img.onload = () => {
       const canvas = document.createElement('canvas');
       canvas.width = targetWidth;
@@ -209,4 +261,21 @@ export const removeBackground = (srcDataUrl: string, tolerance: number = 25): Pr
     img.onerror = reject;
     img.src = srcDataUrl;
   });
+};
+
+export const blobUrlToBase64 = async (url: string): Promise<string> => {
+  if (url.startsWith('data:')) return url;
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error("Failed to convert blob URL to base64", e);
+    throw e;
+  }
 };

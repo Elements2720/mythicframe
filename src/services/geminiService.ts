@@ -1,5 +1,6 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { GenerationModel, ImageSize, AspectRatio, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams } from "../types";
 import { 
   buildIllustrationPrompt, 
@@ -12,6 +13,7 @@ import {
   buildCardSuggestionsPrompt, 
   buildRefinementPrompt
 } from "./promptTemplates";
+import { optimizeBase64Image } from "../utils/imageUtils";
 
 // Helper to get client
 const getClient = () => {
@@ -20,6 +22,31 @@ const getClient = () => {
   const apiKey = manualKey || process.env.API_KEY;
   if (!apiKey) throw new Error("API Key not found. Please connect or enter a key in Settings.");
   return new GoogleGenAI({ apiKey });
+};
+
+// --- RETRY LOGIC ---
+const callWithRetry = async <T>(fn: () => Promise<T>, retries = 2, delay = 1000): Promise<T> => {
+  try {
+    return await fn();
+  } catch (error: any) {
+    const msg = error.message || '';
+    // Retry on 500 (Server Error), 503 (Service Unavailable), or generic Network/XHR errors
+    const isRetryable = retries > 0 && (
+        msg.includes('500') || 
+        msg.includes('503') || 
+        msg.includes('xhr') || 
+        msg.includes('fetch failed') || 
+        msg.includes('network') ||
+        msg.includes('Rpc failed')
+    );
+    
+    if (isRetryable) {
+      console.warn(`API call failed (${msg}). Retrying in ${delay}ms... (${retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return callWithRetry(fn, retries - 1, delay * 1.5);
+    }
+    throw error;
+  }
 };
 
 // Check for AI Studio Key Selection or Manual Key
@@ -41,10 +68,10 @@ export const requestApiKey = async (): Promise<void> => {
 export const verifyManualApiKey = async (key: string): Promise<boolean> => {
   try {
     const ai = new GoogleGenAI({ apiKey: key });
-    await ai.models.generateContent({
+    await callWithRetry(() => ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: { parts: [{ text: 'Ping' }] }
-    });
+    }));
     return true;
   } catch (e) {
     console.warn("Key verification failed", e);
@@ -59,16 +86,25 @@ function base64ImageToBase64(dataUrl: string): string {
   return dataUrl;
 }
 
+function getMimeType(dataUrl: string): string {
+  const match = dataUrl.match(/^data:(.*);base64,/);
+  return match ? match[1] : 'image/png';
+}
+
 export const analyzeImageStyle = async (base64Image: string): Promise<{ description: string; promptSnippet: string }> => {
   const ai = getClient();
   const prompt = buildStyleAnalysisPrompt();
-  const cleanBase64 = base64ImageToBase64(base64Image);
+  
+  // Optimize input image for analysis
+  const optimizedInput = await optimizeBase64Image(base64Image, 512, 0.7);
+  const cleanBase64 = base64ImageToBase64(optimizedInput);
+  const mimeType = getMimeType(optimizedInput);
 
-  const response = await ai.models.generateContent({
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: {
       parts: [
-        { inlineData: { mimeType: 'image/png', data: cleanBase64 } },
+        { inlineData: { mimeType: mimeType, data: cleanBase64 } },
         { text: prompt }
       ]
     },
@@ -82,7 +118,7 @@ export const analyzeImageStyle = async (base64Image: string): Promise<{ descript
         }
       }
     }
-  });
+  }));
 
   const text = response.text;
   if (!text) throw new Error("No analysis returned");
@@ -120,28 +156,35 @@ export const generateIllustration = async (
      const built = buildClothesPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone, clothesParams);
      finalPrompt = built.textPrompt;
      parts.push({ text: finalPrompt });
-     
-     for (const ref of referenceAssets) {
-        parts.push({ 
-           inlineData: { 
-             mimeType: 'image/png',
-             data: base64ImageToBase64(ref.url)
-           } 
-        });
-     }
   } else {
      const built = buildIllustrationPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone);
      finalPrompt = built.textPrompt;
      parts.push({ text: finalPrompt });
-     
-     for (const ref of referenceAssets) {
-        parts.push({ 
-           inlineData: { 
-             mimeType: 'image/png',
-             data: base64ImageToBase64(ref.url)
-           } 
-        });
-     }
+  }
+
+  // --- ASSET OPTIMIZATION LOOP ---
+  if (referenceAssets.length > 0) {
+      console.log(`[GeminiService] Optimizing ${referenceAssets.length} reference assets...`);
+      for (const ref of referenceAssets) {
+         try {
+             // Optimize: Max 1024px, 80% JPEG quality
+             const optimizedUrl = await optimizeBase64Image(ref.url, 1024, 0.8);
+             parts.push({ 
+                inlineData: { 
+                  mimeType: getMimeType(optimizedUrl),
+                  data: base64ImageToBase64(optimizedUrl)
+                } 
+             });
+         } catch(e) {
+             console.warn("Failed to optimize reference asset, sending original.", e);
+             parts.push({ 
+                inlineData: { 
+                  mimeType: getMimeType(ref.url),
+                  data: base64ImageToBase64(ref.url)
+                } 
+             });
+         }
+      }
   }
 
   let validAspectRatio = aspectRatio;
@@ -157,11 +200,11 @@ export const generateIllustration = async (
      imageConfig.imageSize = size;
   }
 
-  const response = await ai.models.generateContent({
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
     model: model,
     contents: { parts },
     config: { imageConfig }
-  });
+  }));
 
   // --- ROBUST RESPONSE HANDLING ---
   if (!response.candidates || response.candidates.length === 0) {
@@ -205,22 +248,31 @@ export const editImage = async (
   gameContext: GameContext
 ): Promise<string> => {
   const ai = getClient();
-  const cleanBase64 = base64ImageToBase64(base64Image);
+  
+  // Optimize input image for editing (Max 1024 to keep speed high)
+  const optimizedInput = await optimizeBase64Image(base64Image, 1024, 0.9);
+  const cleanBase64 = base64ImageToBase64(optimizedInput);
+  const mimeType = getMimeType(optimizedInput);
 
   let finalPrompt = prompt;
   if (!finalPrompt && bgConfig) {
       finalPrompt = buildBackgroundRegenPrompt(gameContext, bgConfig);
   }
 
-  const response = await ai.models.generateContent({
+  // Fallback to ensure prompt is never empty (API requires at least one text part usually)
+  if (!finalPrompt || finalPrompt.trim() === "") {
+      finalPrompt = "Edit this image.";
+  }
+
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
      model: 'gemini-2.5-flash-image', 
      contents: {
        parts: [
-         { text: finalPrompt },
-         { inlineData: { mimeType: 'image/png', data: cleanBase64 } }
+         { inlineData: { mimeType: mimeType, data: cleanBase64 } },
+         { text: finalPrompt }
        ]
      }
-  });
+  }));
 
   // --- ERROR HANDLING ---
   if (!response.candidates || response.candidates.length === 0) throw new Error("No response from edit model.");
@@ -254,7 +306,7 @@ export const generateCardSuggestions = async (
   const ai = getClient();
   const prompt = buildCardSuggestionsPrompt(artPrompt, currentName);
   
-  const response = await ai.models.generateContent({
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: { parts: [{ text: prompt }] },
     config: {
@@ -267,7 +319,7 @@ export const generateCardSuggestions = async (
         }
       }
     }
-  });
+  }));
 
   const text = response.text;
   if (!text) return { names: [], effects: [] };
@@ -282,10 +334,10 @@ export const refinePrompt = async (currentPrompt: string): Promise<string> => {
   const ai = getClient();
   const prompt = buildRefinementPrompt(currentPrompt);
   
-  const response = await ai.models.generateContent({
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: { parts: [{ text: prompt }] }
-  });
+  }));
 
   return response.text || currentPrompt;
 };

@@ -58,6 +58,7 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
     if (file) {
       processFile(file);
     }
+    e.target.value = ''; // Reset input to allow re-selecting same file
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -117,7 +118,7 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
 
   return (
     <div 
-       className="absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-40 flex flex-col shadow-[0_-5px_15px_rgba(0,0,0,0.3)]"
+       className="w-full bg-slate-900 border-t border-slate-800 z-40 flex flex-col shadow-[0_-5px_15px_rgba(0,0,0,0.3)] shrink-0"
        style={{ height: height }}
     >
        {/* Resizer Handle */}
@@ -192,6 +193,27 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
                               <i className="fa-solid fa-times" />
                             </button>
                         </div>
+                        
+                        {/* Clothes Mode Quick Toggles */}
+                        {mode === 'clothes' && (
+                           <div className="flex gap-1 mb-1">
+                              <button 
+                                 onClick={() => updateReferenceNote(asset.id, "Mannequin/Body Base (Use Pose)")}
+                                 className={`flex-1 text-[9px] py-1 rounded border transition-colors ${asset.roleNote.includes('Mannequin') ? 'bg-purple-600 text-white border-purple-500' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                                 title={t('ref_role_mannequin')}
+                              >
+                                 <i className="fa-solid fa-person" /> {t('ref_role_mannequin_short')}
+                              </button>
+                              <button 
+                                 onClick={() => updateReferenceNote(asset.id, "Style/Texture Source")}
+                                 className={`flex-1 text-[9px] py-1 rounded border transition-colors ${asset.roleNote.includes('Style') ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                                 title={t('ref_role_style')}
+                              >
+                                 <i className="fa-solid fa-palette" /> {t('ref_role_style_short')}
+                              </button>
+                           </div>
+                        )}
+
                         <textarea 
                             placeholder="How should this image be used? (e.g. 'Use this character', 'Copy palette')"
                             value={asset.roleNote}
@@ -209,7 +231,7 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
                  className={`shrink-0 w-32 h-32 border-2 border-dashed rounded-lg cursor-pointer flex flex-col items-center justify-center text-xs text-slate-400 gap-2 transition-all group mt-2 ${isDragOver ? 'border-purple-500 bg-purple-500/10' : 'border-slate-700 hover:border-purple-500 hover:bg-slate-800/30'}`}
                >
                  <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isDragOver ? 'bg-purple-500 text-white' : 'bg-slate-800 group-hover:bg-purple-500/20'}`}>
-                   <i className={`fa-solid fa-plus text-lg ${isDragOver ? 'text-white' : 'group-hover:text-purple-400'}`} />
+                   <i className="fa-solid fa-plus text-lg ${isDragOver ? 'text-white' : 'group-hover:text-purple-400'}" />
                  </div>
                  <span className="font-medium">{isDragOver ? 'Drop Image' : t('add_ref')}</span>
                  <input type="file" className="hidden" accept="image/*" onChange={handleRefUpload} />

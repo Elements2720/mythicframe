@@ -39,7 +39,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
     </button>
   );
 
-  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'tutorials', 'clothes', 'bg-replace'].includes(mode);
+  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'tutorials', 'clothes', 'bg-replace', 'pixelize'].includes(mode);
 
   return (
     <div className="w-64 bg-slate-950 border-r border-slate-900 flex flex-col shrink-0 overflow-y-auto custom-scrollbar z-50">
@@ -63,6 +63,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
          <NavButton targetMode="illustration" />
          <NavButton targetMode="clothes" />
          <NavButton targetMode="bg-replace" />
+         <NavButton targetMode="pixelize" />
          <NavButton targetMode="resize" />
          <NavButton targetMode="background" />
          <NavButton targetMode="frame" />
