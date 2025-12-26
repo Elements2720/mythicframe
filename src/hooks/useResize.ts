@@ -70,6 +70,7 @@ export const useResize = (
     resizePan: activeTab.resizePan,
     setResizeZoom,
     setResizePan,
+    setResizeOriginalImage,
     onAddResizeFiles,
     onSelectResizeItem,
     onRemoveResizeItem,

@@ -79,7 +79,7 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({ isOpen, onClose, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95">
       <div className="bg-slate-900 border border-slate-700 rounded-xl w-[500px] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
         
         {/* Header */}

@@ -1,4 +1,3 @@
-
 import { WorkspaceTab, AnimationProject } from '../types';
 
 export const useAnimation = (
@@ -35,6 +34,7 @@ export const useAnimation = (
   const handleClearFrames = () => { setAnimConfig((prev: AnimationProject) => ({ ...prev, frames: [{ id: Date.now().toString(), prompt: '', imageUrl: null }] })); };
   
   const handleFrameImageUpload = (id: string, file: File) => {
+      if (!(file instanceof Blob)) return;
       const reader = new FileReader();
       reader.onload = () => {
          const url = reader.result as string;

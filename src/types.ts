@@ -1,59 +1,67 @@
+export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'illustration' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize' | 'frame' | 'background' | 'fullcard' | 'gacha' | 'ui-reimagine';
 
-export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'frame' | 'illustration' | 'background' | 'fullcard' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize';
+export type FrameElement = 'name_banner' | 'mana_cost' | 'description_box' | 'power_toughness';
+
+export type Rarity = 'R' | 'SR' | 'SSR' | 'UR';
+
+export type BackgroundPatternType = 'texture' | 'abstract' | 'ui_backdrop' | 'muted' | 'scene';
+
+export type ChibiProportion = 'standard' | 'deformed_4h' | 'chibi_3h' | 'micro_2h';
+
+export interface ChibiConfig {
+  enabled: boolean;
+  proportions: 'simple' | 'semi'; // 2h vs 3h
+  headStyle: 'moe' | 'realistic'; // Ultra-cute vs Defined
+  bodyStyle: 'geometric' | 'defined'; // Cylinders vs Defined anatomy
+  focus: 'kawaii' | 'detailed'; // Simple vs Textured
+}
 
 export interface GameContext {
-  setting: string; // "Cozy alchemy shop"
-  tone: string; // "Whimsical, warm"
-  visualConstraints: string; // "No sci-fi, no modern tech"
+  setting: string;
+  tone: string;
+  visualConstraints: string;
 }
 
-export interface StyleProfile {
+export interface RaceArchetype {
   id: string;
   name: string;
-  description: string;
-  promptSnippet: string;
-  thumbnailUrl?: string;
+  trueName: string;
+  desc: string;
+  traitPromptMale: string;
+  traitPromptFemale: string;
 }
 
-export interface ArtStyle {
+export interface GachaAsset {
   id: string;
   name: string;
-  promptSnippet: string;
-}
-
-export interface GeneratedImage {
-  id: string;
-  url: string;
-  prompt: string;
-  model: string;
-  createdAt: number;
-}
-
-export interface ReferenceAsset {
-  id: string;
-  url: string;
-  roleNote: string; // "Use this character", "Use this palette", etc.
+  aspectRatio: AspectRatio;
+  size: ImageSize;
+  promptSuffix: string;
+  imageUrl: string | null;
+  status: 'pending' | 'processing' | 'done' | 'failed';
+  bgConfig?: BackgroundConfig;
+  locked?: boolean;
+  chibiProportions?: ChibiProportion;
+  chibiConfig?: ChibiConfig;
 }
 
 export interface BackgroundConfig {
-  mode: 'solid' | 'scene' | 'none' | 'pattern' | 'transparent'; // 'none' = let AI decide
-  color: string; // Hex
+  mode: 'solid' | 'scene' | 'none' | 'pattern' | 'transparent';
+  color: string;
+  secondaryColor?: string;
+  gradientType?: 'none' | 'linear' | 'radial';
   allowTransparency: boolean;
-  promptFragment: string; // "muted blue background", "stormy sky"
+  promptFragment: string;
   patternType?: BackgroundPatternType;
-}
-
-export type BackgroundPatternType = 'scene' | 'texture' | 'abstract' | 'ui_backdrop' | 'muted';
-
-export interface ClothesParams {
-  renderMode: 'model' | 'asset'; // 'model' = on character, 'asset' = ghost mannequin
+  removeHoles?: boolean;
+  healingPower?: number;
 }
 
 export interface HistoryEntry {
   id: string;
   timestamp: number;
   mode: UIMode;
-  thumbnailUrl: string; // Base64 or URL
+  thumbnailUrl: string;
   fullPrompt: string;
   userPrompt: string;
   gameContext: GameContext;
@@ -62,41 +70,33 @@ export interface HistoryEntry {
   referenceAssets: ReferenceAsset[];
   size: ImageSize;
   aspectRatio: AspectRatio;
+  gachaAssets?: GachaAsset[];
+  characterTraits?: string;
+  characterName?: string;
+  characterSubtitle?: string;
+  characterRace?: string;
+  rarity?: Rarity;
+  gender?: string;
+  chibiProportions?: ChibiProportion;
+  customName?: string;
   frameElements?: FrameElement[];
   bgPatternType?: BackgroundPatternType;
-  animationData?: AnimationProject;
-  cardData?: any; // For full card mode
-  customName?: string;
   safeZone?: SafeZoneConfig;
-  clothesParams?: ClothesParams;
-  pixelStyle?: PixelStyle;
+  continuityFlags?: Record<string, boolean>;
 }
 
 export interface ExportConfig {
   includeImage: boolean;
   includePrompts: boolean;
   includeProjectContext: boolean;
+  selectedTabIds: string[];
   format: 'png' | 'zip' | 'txt';
 }
 
-export interface AppState {
-  mode: UIMode;
-  projectTitle: string;
-  gameContext: GameContext;
-  generatedImages: GeneratedImage[];
-  currentImage: GeneratedImage | null;
-  styleProfile: StyleProfile | null;
-  isGenerating: boolean;
-  isAnalyzing: boolean;
-  apiKeySet: boolean;
-}
-
-// Global declaration for the AI Studio key selection
-declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
+export interface ReferenceAsset {
+  id: string;
+  url: string;
+  roleNote: string;
 }
 
 export enum GenerationModel {
@@ -117,46 +117,6 @@ export type AspectRatio = "1:1" | "3:4" | "4:3" | "9:16" | "16:9" | "21:9" | "cu
 export interface PixelDimensions {
   width: number;
   height: number;
-}
-
-export interface LayoutElement {
-  x: number; // Percentage 0-100
-  y: number; // Percentage 0-100
-  width: number; // Percentage 0-100
-  height?: number; // Percentage 0-100 (optional for text)
-  fontSize?: number; // px
-  textAlign?: 'left' | 'center' | 'right';
-  color?: string;
-  zIndex?: 'behind' | 'front' | number; // Specific for art
-  // New: Inner content manipulation for Art
-  imageScale?: number; // 1.0 = fit/cover default
-  imageOffsetX?: number; // Percentage offset within the box
-  imageOffsetY?: number; // Percentage offset within the box
-  visible?: boolean;
-  locked?: boolean;
-  fontFamily?: string;
-  textShadow?: string;
-}
-
-export interface CardLayout {
-  art: LayoutElement;
-  name: LayoutElement;
-  type: LayoutElement;
-  description: LayoutElement;
-  mana: LayoutElement;
-}
-
-export interface CardTemplate {
-  id: string;
-  name: string;
-  imageUrl: string | null;
-  defaultLayout: CardLayout;
-}
-
-export type FrameElement = 'name_banner' | 'mana_cost' | 'description_box' | 'power_toughness';
-
-export interface CsvCardData {
-  [key: string]: string;
 }
 
 export interface AnimationFrame {
@@ -206,12 +166,65 @@ export interface CharacterToolState {
   isSettingLookTarget: boolean;
 }
 
+export interface LayoutElement {
+  x: number;
+  y: number;
+  width: number;
+  height?: number;
+  fontSize?: number;
+  textAlign?: 'left' | 'center' | 'right';
+  color?: string;
+  zIndex?: 'behind' | 'front' | number;
+  imageScale?: number;
+  imageOffsetX?: number;
+  imageOffsetY?: number;
+  visible?: boolean;
+  locked?: boolean;
+  fontFamily?: string;
+  textShadow?: string;
+}
+
+export interface CardLayout {
+  art: LayoutElement;
+  name: LayoutElement;
+  description: LayoutElement;
+  mana: LayoutElement;
+  type: LayoutElement;
+}
+
+export interface ClothesParams {
+  renderMode: 'model' | 'asset';
+  layout?: 'assembled' | 'spread';
+  lockPose?: boolean;
+}
+
+export interface ArtStyle {
+  id: string;
+  name: string;
+  promptSnippet: string;
+  description?: string;
+}
+
+export interface CsvCardData {
+  [key: string]: string;
+}
+
+declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+
+  interface Window {
+    aistudio?: AIStudio;
+  }
+}
+
 export interface WorkspaceTab {
   id: string;
   name: string;
   mode: UIMode;
   
-  // Prompt & Generation
   prompt: string;
   generatedImage: string | null;
   sessionImages: string[];
@@ -220,14 +233,49 @@ export interface WorkspaceTab {
   selectedSize: ImageSize;
   selectedAspectRatio: AspectRatio;
   bgConfig: BackgroundConfig;
-  frameElements: FrameElement[];
   bgPatternType: BackgroundPatternType;
   
-  // Animation
   animConfig: AnimationProject;
   selectedFrameId: string | null;
 
-  // Full Card
+  safeZone: SafeZoneConfig;
+  characterTool: CharacterToolState;
+  clothesParams: ClothesParams;
+
+  resizeQueue: ResizeItem[];
+  selectedResizeId: string | null;
+  resizeOriginalImage: string | null;
+  resizeZoom: number;
+  resizePan: { x: number; y: number };
+
+  bgReplaceQueue: BgReplaceItem[];
+  selectedBgReplaceId: string | null;
+
+  pixelizeQueue: PixelizeItem[];
+  selectedPixelizeId: string | null;
+  selectedPixelStyle: PixelStyle;
+
+  gachaAssets: GachaAsset[];
+  characterTraits: string;
+  characterName: string;
+  characterSubtitle: string;
+  characterRace: string;
+  characterRarity: Rarity;
+  characterGender: string;
+  chibiProportions: ChibiProportion;
+  selectedGachaAssetId: string | null;
+  continuityFlags: Record<string, boolean>;
+  gachaShowRefs: boolean;
+
+  isEditMode: boolean;
+  editRegion: { x: number; y: number; width: number; height: number };
+  customRes: PixelDimensions;
+  useCustomResBox: boolean;
+  customResBox: { x: number; y: number; width: number; height: number };
+  
+  lastPrompt: string | null;
+
+  frameElements: FrameElement[];
   cardName: string;
   cardMana: string;
   cardEffects: string;
@@ -237,33 +285,13 @@ export interface WorkspaceTab {
   selectedTemplateId: string;
   selectedLayoutElement: keyof CardLayout | null;
 
-  // Tools
-  safeZone: SafeZoneConfig;
-  characterTool: CharacterToolState;
-  clothesParams: ClothesParams;
-
-  // Resize
-  resizeQueue: ResizeItem[];
-  selectedResizeId: string | null;
-  resizeOriginalImage: string | null;
-  resizeZoom: number;
-  resizePan: { x: number; y: number };
-
-  // Bg Replace
-  bgReplaceQueue: BgReplaceItem[];
-  selectedBgReplaceId: string | null;
-
-  // Pixelize
-  pixelizeQueue: PixelizeItem[];
-  selectedPixelizeId: string | null;
-  selectedPixelStyle: PixelStyle;
-
-  // Editor
-  isEditMode: boolean;
-  editRegion: { x: number; y: number; width: number; height: number };
-  customRes: PixelDimensions;
-  useCustomResBox: boolean;
-  customResBox: { x: number; y: number; width: number; height: number };
-  
-  lastPrompt: string | null;
+  // UI Reimagine feature
+  uiReimagineChangeBg: boolean;
+  uiThemeMood: string;
+  uiElements: string[];
+  uiMoodEnabled: boolean;
+  uiElementsEnabled: boolean;
+  uiColorsEnabled: boolean;
+  uiArchetype: string;
+  uiMaterial: string;
 }

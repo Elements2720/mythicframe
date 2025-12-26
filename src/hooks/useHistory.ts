@@ -24,17 +24,34 @@ export const useHistory = (
   const handleRestore = (entry: HistoryEntry) => {
      setMode(entry.mode);
      // Reconstruct tab state from history
-     updateActiveTab({
-        prompt: entry.userPrompt,
-        generatedImage: entry.thumbnailUrl,
-        bgConfig: entry.bgConfig,
-        selectedStyleId: entry.styleId,
-        referenceAssets: entry.referenceAssets,
-        selectedSize: entry.size,
-        selectedAspectRatio: entry.aspectRatio,
-        frameElements: entry.frameElements || [],
-        bgPatternType: entry.bgPatternType || 'scene',
-        safeZone: entry.safeZone || { enabled: false, x: 20, y: 20, width: 60, height: 60, aspectRatioLock: false }
+     updateActiveTab((prev: any) => {
+        const updates: any = {
+           prompt: entry.userPrompt,
+           generatedImage: entry.thumbnailUrl,
+           bgConfig: entry.bgConfig,
+           selectedStyleId: entry.styleId,
+           referenceAssets: entry.referenceAssets,
+           selectedSize: entry.size,
+           selectedAspectRatio: entry.aspectRatio,
+           frameElements: entry.frameElements || [],
+           bgPatternType: entry.bgPatternType || 'scene',
+           safeZone: entry.safeZone || { enabled: false, x: 20, y: 20, width: 60, height: 60, aspectRatioLock: false },
+           sessionImages: prev.sessionImages.includes(entry.thumbnailUrl) 
+              ? prev.sessionImages 
+              : [entry.thumbnailUrl, ...prev.sessionImages]
+        };
+
+        // Gacha specific restoration
+        if (entry.mode === 'gacha') {
+           updates.gachaAssets = entry.gachaAssets || [];
+           updates.characterTraits = entry.characterTraits || '';
+           updates.characterName = entry.characterName || '';
+           updates.characterSubtitle = entry.characterSubtitle || '';
+           updates.characterRarity = entry.rarity || 'SSR';
+           updates.characterGender = entry.gender || '';
+        }
+
+        return updates;
      });
   };
 
@@ -57,6 +74,6 @@ export const useHistory = (
     handleClearHistory,
     handleDeleteHistoryItem,
     handleRenameHistoryItem,
-    createHistoryEntry // Export helper
+    createHistoryEntry 
   };
 };

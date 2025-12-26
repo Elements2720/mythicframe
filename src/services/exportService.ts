@@ -1,10 +1,8 @@
 
 import JSZip from 'jszip';
-import html2canvas from 'html2canvas';
-import { HistoryEntry, ExportConfig, GameContext, ResizeItem } from "../types";
+import { HistoryEntry, ExportConfig, GameContext, ResizeItem, WorkspaceTab } from "../types";
 import { APP_NAME, APP_VERSION } from "../constants";
 
-// Helper to download a blob
 const downloadBlob = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -16,10 +14,11 @@ const downloadBlob = (blob: Blob, filename: string) => {
   URL.revokeObjectURL(url);
 };
 
-// Base64 to Blob helper
-const base64ToBlob = async (base64: string): Promise<Blob> => {
-  const res = await fetch(base64);
-  return await res.blob();
+const urlToBlob = async (url: string): Promise<Blob> => {
+  if (!url) throw new Error("URL is empty");
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+  return await response.blob();
 };
 
 export const exportSingleImage = (imageDataUrl: string, filename: string) => {
@@ -31,42 +30,90 @@ export const exportSingleImage = (imageDataUrl: string, filename: string) => {
   document.body.removeChild(link);
 };
 
-export const exportCompositeCard = async (element: HTMLElement, filename: string) => {
-  try {
-    const canvas = await html2canvas(element, {
-      backgroundColor: null, // Transparent background if possible
-      scale: 2, // Higher quality
-      useCORS: true, // Allow loading cross-origin images (like placeholders)
-      logging: false
-    });
-    
-    const dataUrl = canvas.toDataURL('image/png');
-    exportSingleImage(dataUrl, filename);
-  } catch (error) {
-    console.error("Failed to export composite card", error);
-    throw error;
-  }
-};
-
-export const exportSessionImages = async (images: string[], baseName: string) => {
-  if (!images || images.length === 0) return;
-  
+/**
+ * Advanced Project Export
+ * Iterates through selected tabs and organizes them into character-specific folders.
+ */
+export const exportProjectBatch = async (tabs: WorkspaceTab[], config: ExportConfig) => {
   const zip = new JSZip();
-  const folder = zip.folder("session_images");
-  
-  if (folder) {
-    for (let i = 0; i < images.length; i++) {
-      try {
-        const blob = await base64ToBlob(images[i]);
-        folder.file(`${baseName}_${i + 1}.png`, blob);
-      } catch (e) {
-        console.error(`Failed to add image ${i} to zip`, e);
-      }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const baseName = `${APP_NAME}_Project_${timestamp}`;
+
+  // Use selected tabs if provided, otherwise all tabs
+  const selectedTabs = config.selectedTabIds && config.selectedTabIds.length > 0 
+    ? tabs.filter(t => config.selectedTabIds.includes(t.id))
+    : tabs;
+
+  for (const tab of selectedTabs) {
+    // Generate a unique safe name for the character folder
+    const safeCharName = (tab.characterName || tab.name || "Untitled").replace(/[^a-z0-9]/gi, '_');
+    const folder = zip.folder(safeCharName);
+    if (!folder) continue;
+
+    if (tab.mode === 'gacha') {
+       // Export Gacha Slots for Character Bible
+       for (const asset of tab.gachaAssets) {
+          if (asset.imageUrl && config.includeImage) {
+             try {
+                const blob = await urlToBlob(asset.imageUrl);
+                const safeAssetName = (asset.name || "asset").replace(/[^a-z0-9]/gi, '_');
+                folder.file(`${safeAssetName}.png`, blob);
+             } catch (e) {
+                console.error(`Failed to export asset ${asset.name} for ${safeCharName}`, e);
+             }
+          }
+       }
+    } else {
+       // Export main result image for other workspace modes
+       if (tab.generatedImage && config.includeImage) {
+          try {
+             const blob = await urlToBlob(tab.generatedImage);
+             folder.file(`main_result.png`, blob);
+          } catch (e) {
+             console.error(`Failed to export main image for ${safeCharName}`, e);
+          }
+       }
+    }
+
+    // Include metadata for each character tab
+    if (config.includePrompts) {
+       const metadata = {
+          character_info: {
+             name: tab.characterName,
+             subtitle: tab.characterSubtitle,
+             race: tab.characterRace,
+             gender: tab.characterGender,
+             traits: tab.characterTraits,
+          },
+          workspace_info: {
+             mode: tab.mode,
+             style_id: tab.selectedStyleId,
+             aspect_ratio: tab.selectedAspectRatio,
+             size: tab.selectedSize,
+             base_prompt: tab.prompt
+          },
+          export_info: {
+             app: APP_NAME,
+             version: APP_VERSION,
+             timestamp: new Date().toISOString()
+          }
+       };
+       folder.file('character_metadata.json', JSON.stringify(metadata, null, 2));
     }
   }
 
+  // Add global project context if requested
+  if (config.includeProjectContext) {
+     const projectMeta = {
+        project_name: baseName,
+        total_tabs: selectedTabs.length,
+        tabs: selectedTabs.map(t => ({ id: t.id, name: t.name, mode: t.mode }))
+     };
+     zip.file('project_overview.json', JSON.stringify(projectMeta, null, 2));
+  }
+
   const content = await zip.generateAsync({ type: "blob" });
-  downloadBlob(content, `${baseName}_batch.zip`);
+  downloadBlob(content, `${baseName}.zip`);
 };
 
 export const exportZip = async (
@@ -77,164 +124,70 @@ export const exportZip = async (
 ) => {
   const timestamp = new Date(entry.timestamp).toISOString().replace(/[:.]/g, '-');
   const baseName = `${APP_NAME}_${entry.mode}_${timestamp}`;
-
-  // Smart Export: If only image is requested AND no animation/data, download directly as PNG
-  const hasAnimation = !!entry.animationData && entry.animationData.frames.length > 0;
-  const isCardProject = entry.mode === 'fullcard';
-  
-  // Use override image if provided (the one currently on screen), otherwise entry thumbnail
   const imageToExport = currentImageOverride || entry.thumbnailUrl;
 
-  if (config.includeImage && !config.includePrompts && !hasAnimation && !isCardProject) {
-    if (imageToExport) {
-      exportSingleImage(imageToExport, `${baseName}.png`);
-    } else {
-      console.error("No image data found to export.");
-    }
-    return;
-  }
-
   const zip = new JSZip();
-
-  // 1. Add Thumbnail Image
   if (config.includeImage && imageToExport) {
     try {
-      const blob = await base64ToBlob(imageToExport);
+      const blob = await urlToBlob(imageToExport);
       zip.file(`${baseName}_result.png`, blob);
     } catch (e) {
-      console.error("Failed to add image to zip", e);
+       console.error("ZIP single image export failed", e);
     }
   }
 
-  // 2. Add Animation Frames (If applicable)
-  if (config.includeImage && hasAnimation && entry.animationData) {
-     const framesFolder = zip.folder("animation_frames");
-     if (framesFolder) {
-        let idx = 0;
-        for (const frame of entry.animationData.frames) {
-           if (frame.imageUrl) {
-              try {
-                const blob = await base64ToBlob(frame.imageUrl);
-                const name = `frame_${String(idx + 1).padStart(3, '0')}.png`;
-                framesFolder.file(name, blob);
-              } catch(e) {
-                 console.error(`Failed to export frame ${idx}`, e);
-              }
-           }
-           idx++;
-        }
-     }
-  }
-
-  // 3. Add Prompt/Metadata
   if (config.includePrompts) {
-    const metadata = {
-      app: APP_NAME,
-      version: APP_VERSION,
-      timestamp: entry.timestamp,
-      mode: entry.mode,
-      prompts: {
-        user_prompt: entry.userPrompt,
-        full_constructed_prompt: entry.fullPrompt,
-      },
-      settings: {
-        style_id: entry.styleId,
-        size: entry.size,
-        aspect_ratio: entry.aspectRatio,
-        bg_config: entry.bgConfig,
-      },
-      references: entry.referenceAssets.map(r => ({ note: r.roleNote })),
-      game_context: config.includeProjectContext ? entry.gameContext : undefined,
-      animation: entry.animationData ? {
-         type: entry.animationData.type,
-         fps: entry.animationData.fps,
-         total_frames: entry.animationData.frames.length,
-         frame_prompts: entry.animationData.frames.map(f => f.prompt)
-      } : undefined,
-      card_data: entry.cardData
+    const metadata = { 
+       app: APP_NAME, 
+       version: APP_VERSION, 
+       mode: entry.mode, 
+       user_prompt: entry.userPrompt,
+       full_prompt: entry.fullPrompt,
+       timestamp: entry.timestamp
     };
-
-    zip.file(`${baseName}_metadata.json`, JSON.stringify(metadata, null, 2));
-    
-    // Also add a readable TXT file
-    let txtContent = `
-MYTHICFRAME EXPORT
-------------------
-Date: ${new Date(entry.timestamp).toLocaleString()}
-Mode: ${entry.mode}
-
-USER PROMPT:
-${entry.userPrompt}
-`;
-    if(entry.fullPrompt) {
-      txtContent += `
-FULL GENERATED PROMPT:
-${entry.fullPrompt}
-`;
-    }
-
-    txtContent += `
-SETTINGS:
-Style: ${entry.styleId}
-Size: ${entry.size}
-Background: ${entry.bgConfig.mode} ${entry.bgConfig.color}
-`;
-
-    if (entry.animationData) {
-       txtContent += `
-ANIMATION INFO:
-Type: ${entry.animationData.type}
-FPS: ${entry.animationData.fps}
-Frames: ${entry.animationData.frames.length}
-       `;
-    }
-
-    if (entry.cardData) {
-       txtContent += `
-CARD DATA:
-Name: ${entry.cardData.name}
-Mana: ${entry.cardData.mana}
-Type: ${entry.cardData.type}
-Description: ${entry.cardData.description}
-       `;
-    }
-
-    zip.file(`${baseName}_info.txt`, txtContent.trim());
+    zip.file(`metadata.json`, JSON.stringify(metadata, null, 2));
   }
 
-  // Generate and download
   const content = await zip.generateAsync({ type: "blob" });
   downloadBlob(content, `${baseName}.zip`);
 };
 
-export const exportResizeBatch = async (queue: ResizeItem[]) => {
-  const completedItems = queue.filter(item => item.status === 'done' && item.resultUrl);
-  
-  if (completedItems.length === 0) {
-    console.warn("No completed items to export");
-    return;
-  }
-
+export const exportSessionImages = async (images: string[], baseName: string) => {
+  if (!images || images.length === 0) return;
   const zip = new JSZip();
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const folderName = `${APP_NAME}_resize_batch_${timestamp}`;
-  const folder = zip.folder(folderName);
-
-  if (!folder) return;
-
-  for (const item of completedItems) {
-    if (item.resultUrl) {
+  const folder = zip.folder("batch_export");
+  if (folder) {
+    for (let i = 0; i < images.length; i++) {
       try {
-        const blob = await base64ToBlob(item.resultUrl);
-        // Sanitize filename
-        const safeName = item.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        folder.file(`resized_${safeName}.png`, blob);
+        const blob = await urlToBlob(images[i]);
+        folder.file(`${baseName}_${i + 1}.png`, blob);
       } catch (e) {
-        console.error(`Failed to add ${item.name} to zip`, e);
+         console.error(`Batch image ${i} export failed`, e);
       }
     }
   }
-
   const content = await zip.generateAsync({ type: "blob" });
-  downloadBlob(content, `${folderName}.zip`);
+  downloadBlob(content, `${baseName}_batch.zip`);
+};
+
+export const exportResizeBatch = async (queue: ResizeItem[]) => {
+  const completedItems = queue.filter(item => item.status === 'done' && item.resultUrl);
+  if (completedItems.length === 0) return;
+  const zip = new JSZip();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const folder = zip.folder(`resize_batch_${timestamp}`);
+  if (!folder) return;
+  for (const item of completedItems) {
+    if (item.resultUrl) {
+      try {
+        const blob = await urlToBlob(item.resultUrl);
+        const safeName = (item.name || "untitled").replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        folder.file(`resized_${safeName}.png`, blob);
+      } catch (e) {
+         console.error(`Resize batch item ${item.id} failed`, e);
+      }
+    }
+  }
+  const content = await zip.generateAsync({ type: "blob" });
+  downloadBlob(content, `resize_batch_${timestamp}.zip`);
 };

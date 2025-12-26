@@ -64,11 +64,20 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [isDragOver, setIsDragOver] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
 
   // Pan/Zoom State
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
+
+  // Reset confirmation state after a timeout
+  useEffect(() => {
+    if (isConfirmingClear) {
+      const timer = setTimeout(() => setIsConfirmingClear(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isConfirmingClear]);
 
   // Monitor the actual size of the image/placeholder content
   useEffect(() => {
@@ -91,7 +100,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        // Basic debounce via state equality check
         setContainerSize(prev => (prev.width === width && prev.height === height) ? prev : { width, height });
       }
     });
@@ -159,7 +167,7 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
      if (e.target.files && e.target.files.length > 0 && onImageUpload) {
         onImageUpload(e.target.files[0]);
      }
-     e.target.value = ''; // Reset input to allow re-uploading same file
+     e.target.value = ''; 
   };
 
   const handleCanvasClick = (e: React.MouseEvent) => {
@@ -171,7 +179,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
       }
   };
 
-  // Helper to convert aspect ratio string to CSS style
   const getAspectRatioStyle = (ratio: AspectRatio): React.CSSProperties => {
     const baseStyle: React.CSSProperties = {
         transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
@@ -180,7 +187,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
         position: 'relative'
     };
 
-    // ALWAYS calculate dimensions to FILL the container based on the selected aspect ratio.
     if (containerSize.width > 0 && containerSize.height > 0) {
         let r = 1;
         if (ratio === 'custom' && customRes) {
@@ -194,11 +200,9 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
         let w, h;
 
         if (containerRatio > r) {
-            // Container is wider than target -> Height is the limiter
             h = containerSize.height;
             w = h * r;
         } else {
-            // Container is narrower -> Width is the limiter
             w = containerSize.width;
             h = w / r;
         }
@@ -210,7 +214,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
         };
     }
 
-    // Fallback if container size isn't ready
     return {
       ...baseStyle,
       width: '100%',
@@ -229,7 +232,7 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
+      onMouseLeave={handleMouseUp}
     >
       
       {/* View Reset Button */}
@@ -246,8 +249,8 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
 
       {/* TOP SESSION GALLERY */}
       {sessionImages && sessionImages.length > 0 && (
-         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 animate-in slide-in-from-top-4 fade-in">
-             <div className="bg-black/60 backdrop-blur rounded-full p-1.5 flex gap-2 border border-white/10 shadow-xl overflow-x-auto max-w-[80vw] custom-scrollbar">
+         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 animate-in slide-in-from-top-4 fade-in pointer-events-none">
+             <div className="bg-black/60 backdrop-blur rounded-full p-1.5 flex gap-2 border border-white/10 shadow-xl overflow-x-auto max-w-[80vw] custom-scrollbar pointer-events-auto">
                 {sessionImages.map((img, idx) => (
                     <div key={idx} className="relative group/thumb">
                         <button 
@@ -273,7 +276,7 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                            <button
                               onClick={(e) => { 
                                   e.stopPropagation(); 
-                                  if(confirm('Delete this image?')) onRemoveSessionImage(img); 
+                                  onRemoveSessionImage(img); 
                               }}
                               className="absolute -top-1 -right-1 w-5 h-5 bg-slate-800 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[10px] shadow-md border border-slate-600 opacity-0 group-hover/thumb:opacity-100 transition-opacity z-20"
                               title="Delete Variation"
@@ -297,16 +300,30 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
              </div>
 
              {sessionImages.length > 0 && onClearSession && (
-                <button 
-                   onClick={(e) => { 
-                       e.stopPropagation(); 
-                       setTimeout(() => onClearSession && onClearSession(), 0);
-                   }}
-                   className="w-8 h-8 rounded-full bg-slate-800 hover:bg-red-900/80 text-slate-500 hover:text-red-400 border border-slate-700 flex items-center justify-center transition-colors shadow-lg active:scale-95 cursor-pointer z-50"
-                   title="Clear All Variations"
-                >
-                   <i className="fa-solid fa-trash text-xs" />
-                </button>
+                <div className="flex flex-col items-center pointer-events-auto">
+                   <button 
+                      onClick={(e) => { 
+                          console.log("[QA TEST] Clear Session Button Clicked");
+                          e.preventDefault();
+                          e.stopPropagation(); 
+                          if (isConfirmingClear) {
+                             console.log("[QA TEST] Clear Action Confirmed via UI.");
+                             onClearSession();
+                             setIsConfirmingClear(false);
+                          } else {
+                             console.log("[QA TEST] Clear Action Armed (Requires 2nd click).");
+                             setIsConfirmingClear(true);
+                          }
+                      }}
+                      className={`w-8 h-8 rounded-full border transition-all shadow-lg active:scale-95 cursor-pointer z-[210] flex items-center justify-center group/trash ${isConfirmingClear ? 'bg-red-600 border-red-400 text-white scale-110 animate-pulse' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-red-900 hover:text-white'}`}
+                      title={isConfirmingClear ? "Confirm Clear All?" : "Clear All Variations"}
+                   >
+                      <i className={`fa-solid ${isConfirmingClear ? 'fa-check' : 'fa-trash'} text-xs`} />
+                   </button>
+                   {isConfirmingClear && (
+                      <span className="text-[7px] font-black text-red-500 uppercase tracking-widest mt-1 bg-black/50 px-1 rounded backdrop-blur">Confirm?</span>
+                   )}
+                </div>
              )}
          </div>
       )}
@@ -386,20 +403,20 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
              </div>
            </>
         ) : (
-           // PLACEHOLDER / DROP ZONE
            <div 
               className={`w-full h-full flex items-center justify-center flex-col gap-4 border-2 border-dashed rounded p-10 relative z-0 select-none transition-colors ${isDragOver ? 'bg-purple-900/20 border-purple-500' : 'bg-slate-800/50 border-slate-700'}`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
            >
-              <i className={`fa-solid ${mode === 'frame' ? 'fa-border-all' : mode === 'background' ? 'fa-image' : mode === 'animation' ? 'fa-film' : mode === 'clothes' ? 'fa-shirt' : 'fa-paintbrush'} text-6xl opacity-50 ${isDragOver ? 'text-purple-400' : 'text-slate-500'}`} />
+              <i className={`fa-solid ${mode === 'frame' ? 'fa-border-all' : mode === 'background' ? 'fa-image' : mode === 'animation' ? 'fa-film' : mode === 'clothes' ? 'fa-shirt' : mode === 'ui-reimagine' ? 'fa-window-restore' : 'fa-paintbrush'} text-6xl opacity-50 ${isDragOver ? 'text-purple-400' : 'text-slate-500'}`} />
               <div className="text-center">
                  <p className="text-lg font-bold text-slate-200 mb-1">
                     {mode === 'frame' ? "Generate a card frame" : 
                      mode === 'background' ? "Generate a background" : 
                      mode === 'animation' ? "Animation Preview" :
                      mode === 'clothes' ? "Generate an outfit" :
+                     mode === 'ui-reimagine' ? "Redesign UI Components" :
                      "Generate an illustration"}
                  </p>
                  <p className="text-sm text-slate-400">
@@ -408,13 +425,13 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                       : aspectRatio}
                  </p>
                  
-                 {(mode === 'illustration' || mode === 'clothes') && onImageUpload && (
+                 {(mode === 'illustration' || mode === 'clothes' || mode === 'ui-reimagine') && onImageUpload && (
                     <div className="mt-4">
                        <button 
                           onClick={() => fileInputRef.current?.click()}
                           className="text-xs bg-slate-700 hover:bg-purple-600 text-white px-3 py-1.5 rounded transition-colors flex items-center gap-2 mx-auto"
                        >
-                          <i className="fa-solid fa-upload" /> Upload Image
+                          <i className="fa-solid fa-upload" /> Upload Base Image
                        </button>
                        <input 
                           type="file" 
@@ -435,39 +452,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
            <div className="absolute top-2 right-2 px-2 py-1 bg-black/60 text-white text-[10px] font-mono rounded backdrop-blur pointer-events-none z-20">
               {isPlaying ? 'PLAYING' : 'PAUSED'} {typeof currentFrameIndex === 'number' ? `[${currentFrameIndex + 1}/${totalFrames}]` : ''}
            </div>
-        )}
-
-        {/* Frame Mode Guide */}
-        {mode === 'frame' && (
-          <div className="absolute inset-0 pointer-events-none flex flex-col z-20">
-             <div className="h-[15%] w-full border-b border-dashed border-white/20 flex items-center justify-center">
-                <span className="text-white/20 text-[10px] uppercase font-bold tracking-widest bg-black/50 px-2 rounded">Header Area</span>
-             </div>
-             <div className="flex-1 w-full flex items-center justify-center">
-                 <div className="border border-white/10 w-[80%] h-[70%] rounded flex items-center justify-center">
-                    <span className="text-white/10 text-[10px] uppercase font-bold tracking-widest text-center">Transparent<br/>Content Area</span>
-                 </div>
-             </div>
-             <div className="h-[25%] w-full border-t border-dashed border-white/20 flex items-center justify-center">
-                <span className="text-white/20 text-[10px] uppercase font-bold tracking-widest bg-black/50 px-2 rounded">Text Box Area</span>
-             </div>
-          </div>
-        )}
-
-        {/* Text Overlays */}
-        {showOverlays && generatedImage && (cardName || cardEffects) && mode !== 'frame' && mode !== 'background' && mode !== 'animation' && (
-          <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 z-20">
-            {cardName && (
-              <div className="bg-black/60 backdrop-blur-sm p-2 rounded border border-white/20 self-start max-w-full">
-                <h3 className="text-white font-serif text-lg font-bold drop-shadow-md">{cardName}</h3>
-              </div>
-            )}
-            {cardEffects && (
-              <div className="bg-black/70 backdrop-blur-sm p-3 rounded border border-white/20 mt-auto">
-                <p className="text-white text-sm font-serif leading-relaxed drop-shadow-md whitespace-pre-wrap">{cardEffects}</p>
-              </div>
-            )}
-          </div>
         )}
 
         {/* Safe Zone Overlay */}
@@ -499,9 +483,6 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                        <div className="absolute top-1/2 left-1/2 w-4 h-4 -translate-x-1/2 -translate-y-1/2 opacity-70">
                           <div className="absolute top-1/2 left-0 right-0 h-px bg-green-400"></div>
                           <div className="absolute left-1/2 top-0 bottom-0 w-px bg-green-400"></div>
-                       </div>
-                       <div className="absolute top-2 left-2 text-[9px] text-green-300 font-bold bg-black/50 px-1 rounded uppercase tracking-wider backdrop-blur">
-                          Main Content
                        </div>
                     </div>
                  </ResizableBox>

@@ -17,7 +17,7 @@ const AssetPicker: React.FC<AssetPickerProps> = ({ isOpen, onClose, history, onS
   const filtered = history.filter(h => filterMode === 'all' || h.mode === filterMode);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm">
       <div className="bg-slate-900 border border-slate-700 rounded-xl w-[800px] h-[600px] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}

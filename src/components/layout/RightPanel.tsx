@@ -1,40 +1,23 @@
 
-import React from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
-  UIMode, CardLayout, LayoutElement, BackgroundConfig, PixelDimensions,
-  FrameElement, BackgroundPatternType, AspectRatio, CsvCardData, AnimationProject, ImageSize, SafeZoneConfig, ResizeItem, CharacterToolState, ClothesParams
+  UIMode, BackgroundConfig, PixelDimensions,
+  BackgroundPatternType, AspectRatio, ImageSize, SafeZoneConfig, CharacterToolState
 } from '../../types';
-import { ART_STYLES, DEFAULT_CARD_LAYOUT, CARD_FONTS, FRAME_ELEMENTS, BACKGROUND_PATTERNS } from '../../constants';
+import { ART_STYLES, BACKGROUND_PATTERNS } from '../../constants';
 import UnityInput from '../ui/UnityInput';
 import { useLanguage } from '../../i18n/LanguageContext';
 
 interface RightPanelProps {
   mode: UIMode;
-  cardLayout: CardLayout;
-  setCardLayout: React.Dispatch<React.SetStateAction<CardLayout>>;
-  selectedLayoutElement: keyof CardLayout | null;
-  setSelectedLayoutElement: (key: keyof CardLayout | null) => void;
-  updateLayout: (key: keyof CardLayout, field: keyof LayoutElement, value: any) => void;
-  cardName: string;
-  setCardName: (val: string) => void;
-  cardMana: string;
-  setCardMana: (val: string) => void;
-  cardEffects: string;
-  setCardEffects: (val: string) => void;
-  cardType?: string;
-  setCardType?: (val: string) => void;
-  
   selectedStyleId: string;
   setSelectedStyleId: (val: string) => void;
-  
   bgConfig: BackgroundConfig;
   setBgConfig: React.Dispatch<React.SetStateAction<BackgroundConfig>>;
   generatedImage: string | null;
   isGenerating: boolean;
   handleRegenerateBackground: () => void;
   handleEnhance: () => void;
-  
-  // Resolution & Model Props
   selectedAspectRatio: AspectRatio;
   setSelectedAspectRatio: (val: AspectRatio) => void;
   useCustomResBox: boolean;
@@ -43,755 +26,284 @@ interface RightPanelProps {
   setCustomRes: React.Dispatch<React.SetStateAction<PixelDimensions>>;
   useProModel: boolean;
   setUseProModel: (val: boolean) => void;
-  selectedSize: ImageSize;
-  setSelectedSize: (val: ImageSize) => void;
-  
   isEditMode: boolean;
   setIsEditMode: (val: boolean) => void;
-  showOverlays: boolean;
-  setShowOverlays: (val: boolean) => void;
-
-  frameElements: FrameElement[];
-  setFrameElements: (val: FrameElement[]) => void;
   bgPatternType: BackgroundPatternType;
   setBgPatternType: (val: BackgroundPatternType) => void;
-  batchSize?: number;
-  setBatchSize?: (val: number) => void;
-
-  // CSV Props
-  csvData: CsvCardData[];
-  csvIndex: number;
-  onCsvUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onCsvNavigate: (index: number) => void;
-
-  // Animation Props
-  animConfig: AnimationProject;
-  setAnimConfig: (val: AnimationProject) => void;
-  showOnionSkin: boolean;
-  setShowOnionSkin: (val: boolean) => void;
-
-  // New Integration Props
-  onOpenAssetPicker: () => void;
-  onOpenCrop?: () => void;
-
-  // Safe Zone
   safeZone: SafeZoneConfig;
   setSafeZone: (val: SafeZoneConfig) => void;
-  onMatchSafeZoneToCustom: () => void;
-
-  // Character Tool
   characterTool?: CharacterToolState;
   setCharacterTool?: React.Dispatch<React.SetStateAction<CharacterToolState>>;
-  onRegeneratePose?: () => void;
-
-  // Clothes Mode
-  clothesParams?: ClothesParams;
-  setClothesParams?: (val: ClothesParams) => void;
-
-  // Resize Mode
-  resizeZoom: number;
-  setResizeZoom: (val: number) => void;
-  resizePan: { x: number; y: number };
-  setResizePan: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
-  handleMagicCrop: () => void;
-  resizeQueue?: ResizeItem[];
-  selectedResizeId?: string | null;
-  onSelectResizeItem?: (id: string) => void;
-  onRemoveResizeItem?: (id: string) => void;
-  onAddResizeFiles?: (files: FileList) => void;
-  onClearResult?: (id: string) => void;
+  isRightMinimized: boolean;
+  setIsRightMinimized: (val: boolean) => void;
 }
 
-const Icon = ({ name }: { name: string }) => <i className={`fa-solid ${name}`} />;
+const Icon = ({ name, className = "" }: { name: string, className?: string }) => <i className={`fa-solid ${name} ${className}`} />;
 
-const SliderControl = ({ label, value, onChange, min=0, max=100, step=0.1 }: any) => (
-  <div className="flex items-center gap-2 text-xs">
-    <label className="w-20 text-slate-400 truncate" title={label}>{label}</label>
-    <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="flex-1 accent-purple-500 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
-    <span className="w-8 text-right text-slate-300">{Number.isInteger(step) ? value : Math.round(value * 10) / 10}</span>
-  </div>
-);
+// --- Color Helpers ---
+function hsvToRgb(h: number, s: number, v: number) {
+  let r=0, g=0, b=0;
+  let i = Math.floor(h * 6);
+  let f = h * 6 - i;
+  let p = v * (1 - s);
+  let q = v * (1 - f * s);
+  let t = v * (1 - (1 - f) * s);
+  switch (i % 6) {
+    case 0: r = v, g = t, b = p; break;
+    case 1: r = q, g = v, b = p; break;
+    case 2: r = p, g = v, b = t; break;
+    case 3: r = p, g = q, b = v; break;
+    case 4: r = t, g = p, b = q; break;
+    case 5: r = v, g = p, b = q; break;
+  }
+  return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+}
+function rgbToHex(r: number, g: number, b: number) { return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase(); }
+function hexToRgb(hex: string) { let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : { r: 255, g: 255, b: 255 }; }
+function rgbToHsv(r: number, g: number, b: number) {
+  r /= 255, g /= 255, b /= 255;
+  let max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h=0, s=0, v = max, d = max - min;
+  s = max === 0 ? 0 : d / max;
+  if (max !== min) {
+    switch (max) { case r: h = (g - b) / d + (g < b ? 6 : 0); break; case g: h = (b - r) / d + 2; break; case b: h = (r - g) / d + 4; break; }
+    h /= 6;
+  }
+  return { h, s, v };
+}
 
-const ColorPicker = ({ label, value, onChange }: any) => (
-  <div className="flex items-center gap-2 text-xs">
-     <label className="w-20 text-slate-400 truncate">{label}</label>
-     <div className="flex-1 flex items-center gap-2 bg-slate-800 rounded p-1 border border-slate-700">
-        <input type="color" value={value || '#ffffff'} onChange={(e) => onChange(e.target.value)} className="w-6 h-6 rounded cursor-pointer bg-transparent border-none" />
-        <span className="text-slate-300 text-[10px]">{value}</span>
-     </div>
-  </div>
-);
-
-const FontSelector = ({ label, value, onChange }: any) => (
-  <div className="flex flex-col gap-1 text-xs">
-     <label className="text-slate-400">{label}</label>
-     <select value={value || 'Inter'} onChange={(e) => onChange(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded p-1 text-slate-200">
-        {CARD_FONTS.map(f => <option key={f.name} value={f.family}>{f.name} ({f.type})</option>)}
-     </select>
-  </div>
-);
-
-const RightPanel: React.FC<RightPanelProps> = ({
-  mode, cardLayout, setCardLayout, selectedLayoutElement, setSelectedLayoutElement, updateLayout,
-  cardName, setCardName, cardMana, setCardMana, cardEffects, setCardEffects, cardType, setCardType,
-  selectedStyleId, setSelectedStyleId, bgConfig, setBgConfig, generatedImage, isGenerating, handleRegenerateBackground, handleEnhance,
-  selectedAspectRatio, setSelectedAspectRatio, useCustomResBox, setUseCustomResBox, customRes, setCustomRes,
-  useProModel, setUseProModel, selectedSize, setSelectedSize,
-  isEditMode, setIsEditMode, showOverlays, setShowOverlays,
-  frameElements, setFrameElements, bgPatternType, setBgPatternType, batchSize, setBatchSize,
-  csvData, csvIndex, onCsvUpload, onCsvNavigate,
-  animConfig, setAnimConfig, showOnionSkin, setShowOnionSkin,
-  onOpenAssetPicker, onOpenCrop,
-  safeZone, setSafeZone, onMatchSafeZoneToCustom,
-  characterTool, setCharacterTool, onRegeneratePose,
-  clothesParams, setClothesParams,
-  resizeZoom, setResizeZoom, resizePan, setResizePan, handleMagicCrop,
-  resizeQueue = [], selectedResizeId = null, onSelectResizeItem = () => {}, onRemoveResizeItem = () => {}, onAddResizeFiles = () => {}, onClearResult
-}) => {
+const RightPanel: React.FC<RightPanelProps> = (props) => {
   const { t } = useLanguage();
+  const { 
+    isRightMinimized, setIsRightMinimized, mode,
+    useProModel, setUseProModel, selectedStyleId, setSelectedStyleId,
+    bgConfig, setBgConfig, characterTool, setCharacterTool,
+    selectedAspectRatio, setSelectedAspectRatio, useCustomResBox, setUseCustomResBox,
+    isEditMode, setIsEditMode, customRes, setCustomRes,
+    bgPatternType, setBgPatternType,
+    generatedImage, handleRegenerateBackground, handleEnhance, isGenerating
+  } = props;
 
-  const toggleFrameElement = (id: FrameElement) => {
-    if (frameElements.includes(id)) {
-      setFrameElements(frameElements.filter(e => e !== id));
-    } else {
-      setFrameElements([...frameElements, id]);
+  const [showAdvancedPicker, setShowAdvancedPicker] = useState(false);
+  const [activePickingTarget, setActivePickingTarget] = useState<'primary' | 'secondary'>('primary');
+  const [pickerTop, setPickerTop] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const toggleBtnRef = useRef<HTMLButtonElement>(null);
+  const secondaryToggleBtnRef = useRef<HTMLButtonElement>(null);
+  const [hsv, setHsv] = useState({ h: 0, s: 1, v: 1 });
+  const [isDraggingMixer, setIsDraggingMixer] = useState(false);
+  const [isDraggingHue, setIsDraggingHue] = useState(false);
+
+  const currentWorkingColor = activePickingTarget === 'primary' ? bgConfig.color : (bgConfig.secondaryColor || '#000000');
+
+  useEffect(() => {
+    if (showAdvancedPicker) {
+      const rgb = hexToRgb(currentWorkingColor);
+      setHsv(rgbToHsv(rgb.r, rgb.g, rgb.b));
+    }
+  }, [showAdvancedPicker, activePickingTarget, currentWorkingColor]);
+
+  const updateColorFromHsv = useCallback((newHsv: { h: number, s: number, v: number }) => {
+    const rgb = hsvToRgb(newHsv.h, newHsv.s, newHsv.v);
+    const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+    if (activePickingTarget === 'primary') setBgConfig(prev => ({ ...prev, color: hex }));
+    else setBgConfig(prev => ({ ...prev, secondaryColor: hex }));
+  }, [activePickingTarget, setBgConfig]);
+
+  const handleMixerMove = useCallback((e: MouseEvent) => {
+    if (!pickerRef.current || !isDraggingMixer) return;
+    const mixerRect = pickerRef.current.querySelector('.mixer-square')?.getBoundingClientRect();
+    if (!mixerRect) return;
+    let s = (e.clientX - mixerRect.left) / mixerRect.width, v = 1 - (e.clientY - mixerRect.top) / mixerRect.height;
+    s = Math.max(0, Math.min(1, s)); v = Math.max(0, Math.min(1, v));
+    const nextHsv = { ...hsv, s, v }; setHsv(nextHsv); updateColorFromHsv(nextHsv);
+  }, [isDraggingMixer, hsv, updateColorFromHsv]);
+
+  const handleHueMove = useCallback((e: MouseEvent) => {
+    if (!pickerRef.current || !isDraggingHue) return;
+    const hueRect = pickerRef.current.querySelector('.hue-slider')?.getBoundingClientRect();
+    if (!hueRect) return;
+    let h = (e.clientX - hueRect.left) / hueRect.width; h = Math.max(0, Math.min(1, h));
+    const nextHsv = { ...hsv, h }; setHsv(nextHsv); updateColorFromHsv(nextHsv);
+  }, [isDraggingHue, hsv, updateColorFromHsv]);
+
+  useEffect(() => {
+    if (isDraggingMixer) { window.addEventListener('mousemove', handleMixerMove); window.addEventListener('mouseup', () => setIsDraggingMixer(false)); }
+    if (isDraggingHue) { window.addEventListener('mousemove', handleHueMove); window.addEventListener('mouseup', () => setIsDraggingHue(false)); }
+    return () => { window.removeEventListener('mousemove', handleMixerMove); window.removeEventListener('mouseup', () => setIsDraggingMixer(false)); window.removeEventListener('mousemove', handleHueMove); window.removeEventListener('mouseup', () => setIsDraggingHue(false)); };
+  }, [isDraggingMixer, isDraggingHue, handleMixerMove, handleHueMove]);
+
+  const handleTogglePicker = (target: 'primary' | 'secondary') => {
+    if (showAdvancedPicker && activePickingTarget === target) setShowAdvancedPicker(false);
+    else {
+      setActivePickingTarget(target);
+      const btn = target === 'primary' ? toggleBtnRef.current : secondaryToggleBtnRef.current;
+      if (btn && rootRef.current) { let btnRect = btn.getBoundingClientRect(), rootRect = rootRef.current.getBoundingClientRect(); setPickerTop(btnRect.top - rootRect.top); }
+      setShowAdvancedPicker(true);
     }
   };
 
-  // --- RESIZE MODE PANEL ---
-  if (mode === 'resize') {
-     return (
-       <div className="w-80 bg-slate-900 border-l border-slate-800 p-6 flex flex-col gap-6 overflow-y-auto custom-scrollbar shrink-0 z-20">
-          <div className="animate-in fade-in space-y-6">
-             {/* ... Resize Mode Content ... */}
-             <div>
-                  <div className="flex justify-between items-center mb-2">
-                     <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{t('ai_model')}</label>
-                  </div>
-                  <div className="flex bg-slate-900 rounded p-1 border border-slate-700 mb-3">
-                     <button 
-                        onClick={() => setUseProModel(false)} 
-                        className={`flex-1 py-1.5 text-xs rounded transition-colors ${!useProModel ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                     >
-                        Nano (Fast)
-                     </button>
-                     <button 
-                        disabled
-                        className="flex-1 py-1.5 text-xs rounded transition-colors text-slate-600 cursor-not-allowed opacity-50"
-                        title="Pro model not available for outpainting"
-                     >
-                        Pro (N/A)
-                     </button>
-                  </div>
-              </div>
+  const updateBgProp = (prop: keyof BackgroundConfig, value: any) => {
+    setBgConfig(prev => ({ ...prev, [prop]: value }));
+  };
 
-             {/* Target Settings */}
-             <div className="bg-slate-800 p-3 rounded border border-slate-700 space-y-3">
-                 <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-                    <Icon name="fa-bullseye" /> {t('output_ratio')}
-                 </h4>
-                 
-                 <div>
-                    <label className="block text-[10px] text-slate-500 mb-1">{t('output_ratio')}</label>
-                    <select value={selectedAspectRatio} onChange={(e) => setSelectedAspectRatio(e.target.value as AspectRatio)} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200">
-                        <option value="1:1">Square (1:1)</option>
-                        <option value="3:4">Portrait (3:4)</option>
-                        <option value="4:3">Landscape (4:3)</option>
-                        <option value="9:16">Mobile (9:16)</option>
-                        <option value="16:9">Cinematic (16:9)</option>
-                        <option value="custom">Custom</option>
-                    </select>
-                 </div>
+  if (isRightMinimized) return (
+    <div className="w-10 h-full bg-[#0b1120] border-l border-slate-900 flex flex-col items-center py-4 shrink-0 z-[100]">
+       <button onClick={() => setIsRightMinimized(false)} className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors shadow-lg"><Icon name="fa-chevron-left text-xs" /></button>
+    </div>
+  );
 
-                 {(selectedAspectRatio === 'custom' || useCustomResBox) && (
-                     <div className="flex gap-2">
-                        <div className="flex-1">
-                          <UnityInput 
-                            label="W" 
-                            value={customRes.width} 
-                            onChange={(val) => setCustomRes(p => ({...p, width: val}))} 
-                            min={64} max={4096} step={8}
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <UnityInput 
-                            label="H" 
-                            value={customRes.height} 
-                            onChange={(val) => setCustomRes(p => ({...p, height: val}))} 
-                            min={64} max={4096} step={8}
-                          />
-                        </div>
-                     </div>
-                 )}
-             </div>
+  const baseHueRgb = hsvToRgb(hsv.h, 1, 1), baseHueHex = rgbToHex(baseHueRgb.r, baseHueRgb.g, baseHueRgb.b);
 
-             {/* Transform Controls */}
-             <div className="bg-slate-800 p-3 rounded border border-slate-700 space-y-3">
-                 <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-                        <Icon name="fa-arrows-up-down-left-right" /> {t('transform')}
-                    </h4>
-                    <button 
-                        onClick={() => { setResizeZoom(1); setResizePan({x:0, y:0}); }}
-                        className="text-[10px] text-slate-500 hover:text-white transition-colors"
-                        title={t('reset_transform')}
-                    >
-                        <i className="fa-solid fa-rotate-left" />
-                    </button>
-                 </div>
-                 
-                 <UnityInput 
-                    label={t('zoom')}
-                    value={Math.round(resizeZoom * 100)} 
-                    onChange={(val) => setResizeZoom(val / 100)}
-                    min={10} max={300} step={1}
-                    icon="fa-magnifying-glass"
-                    suffix="%"
-                 />
-
-                 <div className="flex gap-2">
-                     <div className="flex-1">
-                        <UnityInput 
-                            label={t('pan_x')}
-                            value={Math.round(resizePan.x)} 
-                            onChange={(val) => setResizePan(p => ({...p, x: val}))}
-                            min={-2048} max={2048} step={1}
-                            icon="fa-arrows-left-right"
-                            sensitivity={1}
-                        />
-                     </div>
-                     <div className="flex-1">
-                        <UnityInput 
-                            label={t('pan_y')}
-                            value={Math.round(resizePan.y)} 
-                            onChange={(val) => setResizePan(p => ({...p, y: val}))}
-                            min={-2048} max={2048} step={1}
-                            icon="fa-arrows-up-down"
-                            sensitivity={1}
-                        />
-                     </div>
-                 </div>
-             </div>
-
-             {/* Post Process */}
-             <div className="border-t border-slate-800 pt-4 space-y-3">
-                 <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-                    <Icon name="fa-sliders" /> {t('post_process')}
-                 </h4>
-                 
-                 <label className="flex items-center justify-between p-2 bg-slate-800 rounded border border-slate-700 cursor-pointer hover:bg-slate-700 transition-colors">
-                    <div className="flex items-center gap-2 text-xs text-slate-300">
-                       <Icon name="fa-vector-square" />
-                       <span>{t('show_safe_zone')}</span>
-                    </div>
-                    <input type="checkbox" checked={safeZone.enabled} onChange={(e) => setSafeZone({...safeZone, enabled: e.target.checked})} className="rounded bg-slate-900 border-slate-600 text-green-500" />
-                 </label>
-                 
-                 <label className="flex items-center justify-between p-2 bg-slate-800 rounded border border-slate-700 cursor-pointer hover:bg-slate-700 transition-colors">
-                    <div className="flex items-center gap-2 text-xs text-slate-300">
-                       <Icon name="fa-crop-simple" />
-                       <span>{t('custom_crop_box')}</span>
-                    </div>
-                    <input type="checkbox" checked={useCustomResBox} onChange={(e) => setUseCustomResBox(e.target.checked)} className="rounded bg-slate-900 border-slate-600 text-cyan-500" />
-                 </label>
-
-                 {(safeZone.enabled || useCustomResBox) && generatedImage && (
-                     <button 
-                        onClick={handleMagicCrop}
-                        className="w-full bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 rounded py-2 text-xs font-bold transition-all flex items-center justify-center gap-2 mt-2"
-                     >
-                        <Icon name="fa-scissors" /> {t('crop_result')}
-                     </button>
-                 )}
-             </div>
-          </div>
-       </div>
-     );
-  }
-
-  // --- FULL CARD MODE PANEL ---
-  if (mode === 'fullcard') {
-    return (
-       <div className="w-80 bg-slate-900 border-l border-slate-800 p-6 flex flex-col gap-6 overflow-y-auto custom-scrollbar shrink-0 z-20">
-          <div className="space-y-6 pb-20">
-             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                 <h3 className="font-bold text-slate-200">Layout Layers</h3>
-                 <button onClick={() => setCardLayout(DEFAULT_CARD_LAYOUT)} className="text-xs text-red-400 hover:text-red-300">
-                   <Icon name="fa-rotate-left" /> Reset
-                 </button>
-              </div>
-              {/* ... Full Card content ... */}
-              <div className="flex flex-col gap-1">
-                 {['art', 'name', 'type', 'mana', 'description'].map((k) => (
-                    <button 
-                      key={k}
-                      onClick={() => setSelectedLayoutElement(k as any)}
-                      className={`text-left px-3 py-2 rounded text-xs flex justify-between items-center ${selectedLayoutElement === k ? 'bg-blue-900/30 text-blue-200 border border-blue-500/30' : 'text-slate-400 hover:bg-slate-800'}`}
-                    >
-                       <span className="capitalize">{k}</span>
-                       {selectedLayoutElement === k && <Icon name="fa-check" />}
-                    </button>
-                 ))}
-              </div>
-
-              {selectedLayoutElement && (
-                  <div className="bg-slate-900 p-3 rounded border border-blue-500/30 animate-in fade-in">
-                     <h4 className="text-xs font-bold text-blue-400 uppercase mb-2">Properties</h4>
-                     <SliderControl label="X %" value={cardLayout[selectedLayoutElement].x} onChange={(v:number) => updateLayout(selectedLayoutElement, 'x', v)} />
-                     <SliderControl label="Y %" value={cardLayout[selectedLayoutElement].y} onChange={(v:number) => updateLayout(selectedLayoutElement, 'y', v)} />
-                     <SliderControl label="W %" value={cardLayout[selectedLayoutElement].width} onChange={(v:number) => updateLayout(selectedLayoutElement, 'width', v)} />
-                     
-                     {selectedLayoutElement === 'art' && (
-                        <>
-                           <div className="h-px bg-slate-800 my-2"></div>
-                           <p className="text-[10px] text-slate-500 font-bold mb-1">INNER IMAGE</p>
-                           <button 
-                              onClick={onOpenAssetPicker}
-                              className="w-full mb-3 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded py-1.5 text-xs flex items-center justify-center gap-2 transition-colors"
-                           >
-                              <Icon name="fa-images" /> {t('select')}
-                           </button>
-                           <SliderControl label="Zoom" min={0.1} max={3} value={cardLayout.art.imageScale || 1} onChange={(v:number) => updateLayout('art', 'imageScale', v)} />
-                           <SliderControl label="Pan X" min={-100} max={100} value={cardLayout.art.imageOffsetX || 0} onChange={(v:number) => updateLayout('art', 'imageOffsetX', v)} />
-                           <SliderControl label="Pan Y" min={-100} max={100} value={cardLayout.art.imageOffsetY || 0} onChange={(v:number) => updateLayout('art', 'imageOffsetY', v)} />
-                        </>
-                     )}
-                     {selectedLayoutElement !== 'art' && (
-                        <div className="mt-3 space-y-3">
-                           <SliderControl label="Size" value={cardLayout[selectedLayoutElement].fontSize!} max={60} onChange={(v:number) => updateLayout(selectedLayoutElement, 'fontSize', v)} />
-                           <FontSelector label="Font Family" value={cardLayout[selectedLayoutElement].fontFamily} onChange={(v:string) => updateLayout(selectedLayoutElement, 'fontFamily', v)} />
-                           <ColorPicker label="Text Color" value={cardLayout[selectedLayoutElement].color} onChange={(v:string) => updateLayout(selectedLayoutElement, 'color', v)} />
-                        </div>
-                     )}
-                  </div>
-               )}
-               
-               {/* CSV Data Source */}
-               <div className="border-t border-slate-800 pt-4 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase">Data Source</h4>
-                    <span className="text-[10px] text-slate-500">{csvData.length} records</span>
-                  </div>
-                  
-                  {csvData.length === 0 ? (
-                     <label className="flex flex-col items-center justify-center w-full h-16 border border-dashed border-slate-700 rounded cursor-pointer hover:border-purple-500 hover:bg-slate-800/50 transition-colors bg-slate-900/50 text-slate-500 hover:text-purple-400">
-                        <div className="text-xs font-medium"><Icon name="fa-file-csv" /> Upload CSV</div>
-                        <span className="text-[9px]">name, mana, description</span>
-                        <input type="file" className="hidden" accept=".csv" onChange={onCsvUpload} />
-                     </label>
-                  ) : (
-                     <div className="bg-slate-800/50 rounded p-2 border border-slate-700 space-y-2">
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
-                           <button onClick={() => onCsvNavigate(csvIndex - 1)} disabled={csvIndex <= 0} className="hover:text-white disabled:opacity-30"><Icon name="fa-chevron-left"/></button>
-                           <span>Row {csvIndex + 1} of {csvData.length}</span>
-                           <button onClick={() => onCsvNavigate(csvIndex + 1)} disabled={csvIndex >= csvData.length - 1} className="hover:text-white disabled:opacity-30"><Icon name="fa-chevron-right"/></button>
-                        </div>
-                        <input 
-                           type="range" 
-                           min={0} 
-                           max={csvData.length - 1} 
-                           value={csvIndex} 
-                           onChange={(e) => onCsvNavigate(parseInt(e.target.value))}
-                           className="w-full accent-purple-500 h-1 bg-slate-600 rounded appearance-none cursor-pointer"
-                        />
-                        <div className="text-[10px] text-slate-500 flex justify-between">
-                           <button onClick={() => onCsvUpload({target: {files: []}} as any)} className="text-red-400 hover:underline">Clear Data</button>
-                           <label className="text-purple-400 cursor-pointer hover:underline">
-                              Replace File
-                              <input type="file" className="hidden" accept=".csv" onChange={onCsvUpload} />
-                           </label>
-                        </div>
-                     </div>
-                  )}
-               </div>
-
-               <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase">{t('card_content')}</h4>
-                  <input type="text" value={cardName} onChange={e=>setCardName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200" placeholder={t('card_name')}/>
-                  <div className="flex gap-2">
-                      <input type="text" value={cardType || ''} onChange={e=>setCardType && setCardType(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200" placeholder={t('card_type')}/>
-                      <input type="text" value={cardMana} onChange={e=>setCardMana(e.target.value)} className="w-16 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200" placeholder="Cost"/>
-                  </div>
-                  <textarea value={cardEffects} onChange={e=>setCardEffects(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm h-20 text-slate-200" placeholder={t('card_desc')}/>
-               </div>
-          </div>
-       </div>
-    );
-  }
-
-  // --- STANDARD STUDIO MODES (Illustration, Frame, Background, Animation, Clothes, BG Replace, Pixelize) ---
   return (
-    <div className="w-80 bg-slate-900 border-l border-slate-800 p-6 flex flex-col gap-6 overflow-y-auto custom-scrollbar shrink-0 z-20">
-       <div className="space-y-6 pb-20">
-              
-              {/* Model Selection */}
-              <div>
-                  <div className="flex justify-between items-center mb-2">
-                     <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{t('ai_model')}</label>
-                  </div>
-                  <div className="flex bg-slate-900 rounded p-1 border border-slate-700 mb-3">
-                     <button 
-                        onClick={() => setUseProModel(false)} 
-                        className={`flex-1 py-1.5 text-xs rounded transition-colors ${!useProModel ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                     >
-                        Standard (Fast)
-                     </button>
-                     <button 
-                        onClick={() => setUseProModel(true)} 
-                        className={`flex-1 py-1.5 text-xs rounded transition-colors ${useProModel ? 'bg-purple-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                     >
-                        Gemini 3 (Pro)
-                     </button>
-                  </div>
-              </div>
-
-              {/* Clothes Mode Specifics */}
-              {mode === 'clothes' && clothesParams && setClothesParams && (
-                 <div>
-                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{t('clothes_render_mode')}</label>
-                    <div className="flex bg-slate-900 rounded p-1 border border-slate-700">
-                        <button 
-                           onClick={() => setClothesParams({ ...clothesParams, renderMode: 'model' })} 
-                           className={`flex-1 py-1.5 text-xs rounded transition-colors ${clothesParams.renderMode === 'model' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                        >
-                           {t('render_model')}
-                        </button>
-                        <button 
-                           onClick={() => setClothesParams({ ...clothesParams, renderMode: 'asset' })} 
-                           className={`flex-1 py-1.5 text-xs rounded transition-colors ${clothesParams.renderMode === 'asset' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                        >
-                           {t('render_asset')}
-                        </button>
-                    </div>
-                    {clothesParams.renderMode === 'asset' && (
-                       <p className="text-[10px] text-slate-500 mt-1 italic">
-                          Ghost Mannequin mode: Renders hollow clothes without body parts. Ideal for game assets.
-                       </p>
-                    )}
-                 </div>
-              )}
-
-              {/* Animation Mode Specifics */}
-              {mode === 'animation' && (
-                 <div className="space-y-4">
-                     <div className="bg-slate-800 p-3 rounded border border-slate-700">
-                        <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">Animation Settings</h4>
-                        <div className="space-y-3">
-                           <div>
-                              <label className="block text-xs text-slate-500 mb-1">Type</label>
-                              <div className="flex bg-slate-900 rounded p-1 border border-slate-700">
-                                 <button 
-                                   onClick={() => setAnimConfig({...animConfig, type: 'illustration'})}
-                                   className={`flex-1 py-1 text-xs rounded transition-colors ${animConfig.type === 'illustration' ? 'bg-slate-700 text-white' : 'text-slate-500'}`}
-                                 >
-                                    {t('illustration')}
-                                 </button>
-                                 <button 
-                                   onClick={() => setAnimConfig({...animConfig, type: 'background'})}
-                                   className={`flex-1 py-1 text-xs rounded transition-colors ${animConfig.type === 'background' ? 'bg-slate-700 text-white' : 'text-slate-500'}`}
-                                 >
-                                    {t('background_setting')}
-                                 </button>
-                              </div>
-                           </div>
-                           <SliderControl label="FPS" min={1} max={12} value={animConfig.fps} onChange={(v:number) => setAnimConfig({...animConfig, fps: v})} />
-                           
-                           <div className="flex items-center justify-between pt-2 border-t border-slate-700 mt-2">
-                               <label className="text-xs text-slate-400">Onion Skin</label>
-                               <label className="relative inline-flex items-center cursor-pointer">
-                                  <input type="checkbox" checked={showOnionSkin} onChange={e => setShowOnionSkin(e.target.checked)} className="sr-only peer" />
-                                  <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                               </label>
-                           </div>
-                        </div>
-                     </div>
-                 </div>
-              )}
-
-              {/* Frame Mode Specifics */}
-              {mode === 'frame' && (
-                <div className="bg-slate-800 p-3 rounded border border-slate-700">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">{t('frame_elements')}</h4>
-                    <div className="space-y-2">
-                      {FRAME_ELEMENTS.map(el => (
-                        <label key={el.id} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer hover:text-white transition-colors">
-                           <input 
-                              type="checkbox" 
-                              checked={frameElements.includes(el.id as FrameElement)} 
-                              onChange={() => toggleFrameElement(el.id as FrameElement)}
-                              className="rounded border-slate-600 bg-slate-700 text-purple-600"
-                           />
-                           {el.label}
-                        </label>
-                      ))}
-                    </div>
-
-                    {/* Batch Size for Frame Mode */}
-                    {batchSize !== undefined && setBatchSize && (
-                        <div className="pt-2 mt-2 border-t border-slate-700">
-                           <SliderControl label={t('batch_count')} value={batchSize} min={1} max={4} step={1} onChange={setBatchSize} />
-                        </div>
-                    )}
+    <div ref={rootRef} className="w-full h-full bg-[#0b1120] border-l border-slate-900 flex flex-col shrink-0 z-[100] overflow-visible relative select-none font-sans">
+       <button onClick={() => setIsRightMinimized(true)} className="absolute top-4 left-2 w-6 h-6 rounded flex items-center justify-center text-slate-600 hover:text-slate-300 z-[110] transition-colors"><Icon name="fa-chevron-right text-xs" /></button>
+       
+       {showAdvancedPicker && (
+          <div ref={pickerRef} className="absolute right-[calc(100%+12px)] w-[240px] z-[999] border border-slate-800 rounded-2xl overflow-hidden shadow-2xl bg-[#0f172a]" style={{ top: Math.max(10, pickerTop - 60) }}>
+             <div className="p-4 space-y-5">
+                <div className="mixer-square relative aspect-square rounded-lg overflow-hidden border border-slate-800 cursor-crosshair" style={{ backgroundColor: baseHueHex }} onMouseDown={() => setIsDraggingMixer(true)}>
+                   <div className="absolute inset-0 bg-gradient-to-r from-white to-transparent" /><div className="absolute inset-0 bg-gradient-to-t from-black to-transparent" />
+                   <div className="absolute w-3 h-3 border-2 border-white rounded-full shadow-lg transform -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }} />
                 </div>
-              )}
+                <div className="hue-slider relative h-3 rounded-full cursor-pointer" style={{ background: 'linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)' }} onMouseDown={() => setIsDraggingHue(true)}>
+                   <div className="absolute top-1/2 w-4 h-4 bg-white rounded-full border border-slate-400 shadow-lg -translate-y-1/2 transform -translate-x-1/2 pointer-events-none" style={{ left: `${hsv.h * 100}%` }} />
+                </div>
+             </div>
+          </div>
+       )}
 
-              {/* Background Mode Specifics (Also for Animation Backgrounds) */}
-              {(mode === 'background' || (mode === 'animation' && animConfig.type === 'background')) && (
-                 <div>
-                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{t('pattern_type')}</label>
-                    <select 
-                       value={bgPatternType} 
-                       onChange={(e) => setBgPatternType(e.target.value as BackgroundPatternType)} 
-                       className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200"
-                    >
-                       {BACKGROUND_PATTERNS.map(p => (
-                          <option key={p.id} value={p.id}>{p.label}</option>
-                       ))}
-                    </select>
-                    <p className="text-[10px] text-slate-500 mt-2">
-                       {BACKGROUND_PATTERNS.find(p => p.id === bgPatternType)?.description}
-                    </p>
-                 </div>
-              )}
+       <div className="flex-1 overflow-y-auto custom-scrollbar p-5 pt-10 space-y-7">
+          <div className="space-y-6">
+             <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">{t('ai_model')}</label>
+                <div className="flex bg-[#161f32] rounded border border-slate-800 p-1">
+                   <button onClick={() => setUseProModel(false)} className={`flex-1 py-1.5 text-[11px] font-bold rounded transition-all ${!useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t('std_model')}</button>
+                   <button onClick={() => setUseProModel(true)} className={`flex-1 py-1.5 text-[11px] font-bold rounded transition-all ${useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t('pro_model').replace('Model', '')}</button>
+                </div>
+             </div>
+             <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">{t('art_style')}</label>
+                <select value={selectedStyleId} onChange={(e) => setSelectedStyleId(e.target.value)} className="w-full bg-[#161f32] border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium">
+                  {ART_STYLES.map(style => <option key={style.id} value={style.id} className="bg-[#161f32]">{style.name}</option>)}
+                </select>
+             </div>
+          </div>
 
-              {/* Art Style - Not for Pixelize */}
-              {mode !== 'pixelize' && (
-                 <div>
-                    <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{t('art_style')}</label>
-                    <select value={selectedStyleId} onChange={(e) => setSelectedStyleId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200">
-                        {ART_STYLES.map(style => <option key={style.id} value={style.id}>{style.name}</option>)}
-                    </select>
-                 </div>
-              )}
+          <div className="space-y-6">
+             <div className="bg-[#121a2b] border border-slate-800 rounded-xl p-4 space-y-4 shadow-sm">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2"><Icon name="fa-image" className="text-blue-400" /> Background Mode</label>
+                <div className="grid grid-cols-2 gap-2">
+                   {(['none', 'solid', 'scene', 'pattern', 'transparent'] as const).map(b => (
+                      <button key={b} onClick={() => updateBgProp('mode', b)} className={`px-2 py-2 rounded border text-[10px] font-bold uppercase transition-all ${bgConfig.mode === b ? 'bg-blue-600/20 border-blue-500 text-blue-100 shadow-lg' : 'bg-[#0b1120] border-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200'}`}>{b}</button>
+                   ))}
+                </div>
 
-              {/* Background Config (Illustration, Background, Clothes, Animation Illustration, Bg Replace) */}
-              {(mode === 'illustration' || mode === 'background' || mode === 'clothes' || mode === 'bg-replace' || (mode === 'animation' && animConfig.type === 'illustration')) && (
-                 <div className="bg-slate-800 p-3 rounded border border-slate-700 space-y-3">
-                     <div className="flex justify-between items-center flex-wrap gap-2">
-                         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">{t('background_setting')}</label>
-                         {generatedImage && (mode === 'illustration' || mode === 'clothes' || mode === 'bg-replace') && (
-                             <div className="flex gap-2">
-                                <button 
-                                    onClick={handleEnhance} 
-                                    disabled={isGenerating}
-                                    className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded transition-colors disabled:opacity-50 flex items-center gap-1 shadow-sm"
-                                    title="Enhance Quality / Upscale"
-                                >
-                                    {isGenerating ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-wand-sparkles"></i>} {t('enhance')}
-                                </button>
-                                <button 
-                                    onClick={handleRegenerateBackground} 
-                                    disabled={isGenerating}
-                                    className="text-[10px] bg-purple-600 hover:bg-purple-500 text-white px-2 py-1 rounded transition-colors disabled:opacity-50 flex items-center gap-1 shadow-sm"
-                                >
-                                    {isGenerating ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-wand-magic"></i>} {t('regenerate')}
-                                </button>
-                             </div>
-                         )}
-                     </div>
-
-                     {/* Batch Size for Illustration/Clothes */}
-                     {(mode === 'illustration' || mode === 'clothes') && batchSize !== undefined && setBatchSize && (
-                         <div className="pb-2 border-b border-slate-700 mb-2">
-                            <SliderControl label={t('batch_count')} value={batchSize} min={1} max={4} step={1} onChange={setBatchSize} />
-                         </div>
-                     )}
-
-                     <div className="flex gap-2 items-center">
-                        {bgConfig.mode === 'solid' && (
-                            <input type="color" value={bgConfig.color} onChange={e => setBgConfig(p => ({...p, color: e.target.value}))} className="w-6 h-6 rounded cursor-pointer bg-transparent border-none shrink-0" title="Pick Color" />
-                        )}
-                        <select 
-                             value={bgConfig.mode} 
-                             onChange={e => setBgConfig(p => ({...p, mode: e.target.value as any}))} 
-                             className="flex-1 bg-slate-900 border border-slate-700 rounded text-xs py-1.5 px-2 text-slate-200 outline-none focus:border-purple-500"
-                         >
-                              <option value="none">AI Decides</option>
-                              <option value="scene">Prompt Only</option>
-                              <option value="pattern">Pattern / Style</option>
-                              <option value="solid">Solid Color</option>
-                              <option value="transparent">Transparent (Auto-Remove)</option>
-                        </select>
-                     </div>
-                     
-                     {/* Pattern Selection Dropdown */}
-                     {bgConfig.mode === 'pattern' && (
-                        <div>
-                           <select
-                              value={bgConfig.patternType || 'abstract'}
-                              onChange={e => setBgConfig(p => ({...p, patternType: e.target.value as any}))}
-                              className="w-full bg-slate-900 border border-slate-700 rounded text-xs py-1.5 px-2 text-slate-200 outline-none focus:border-purple-500"
-                           >
-                              {BACKGROUND_PATTERNS.map(p => (
-                                 <option key={p.id} value={p.id}>{p.label}</option>
-                              ))}
-                           </select>
-                        </div>
-                     )}
-
-                     {(bgConfig.mode === 'scene' || bgConfig.mode === 'none' || bgConfig.mode === 'pattern') && (
-                         <textarea 
-                             placeholder={bgConfig.mode === 'none' ? "Optional hints for AI..." : "Describe the background..."}
-                             value={bgConfig.promptFragment} 
-                             onChange={e => setBgConfig(p => ({...p, promptFragment: e.target.value}))} 
-                             className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-2 text-xs text-slate-200 h-20 resize-none focus:border-purple-500 outline-none custom-scrollbar" 
-                         />
-                     )}
-                  </div>
-              )}
-
-              {/* Character Helper Tool (Illustration Only) */}
-              {mode === 'illustration' && characterTool && setCharacterTool && (
-                  <div className="bg-slate-800 p-3 rounded border border-slate-700 animate-in fade-in">
-                      <div className="flex justify-between items-center mb-3">
-                          <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-                              <Icon name="fa-person" /> {t('character_helper')}
-                          </label>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                              <input 
-                                  type="checkbox" 
-                                  checked={characterTool.enabled} 
-                                  onChange={e => setCharacterTool({...characterTool, enabled: e.target.checked, isSettingLookTarget: false})} 
-                                  className="sr-only peer" 
-                              />
-                              <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                          </label>
+                {bgConfig.mode === 'solid' && (
+                   <div className="flex flex-col gap-3 bg-[#0b1120] p-3 rounded border border-slate-800 animate-in slide-in-from-top-1 duration-200">
+                      <div className="flex items-center gap-3">
+                         <button ref={toggleBtnRef} onClick={() => handleTogglePicker('primary')} className="w-8 h-8 rounded border-2 border-slate-700 shadow-inner" style={{ backgroundColor: bgConfig.color }} />
+                         <span className="text-[11px] font-mono text-slate-200 uppercase font-bold">{bgConfig.color}</span>
                       </div>
-
-                      {characterTool.enabled && (
-                          <div className="space-y-3">
-                              <div>
-                                  <label className="block text-[10px] text-slate-500 uppercase font-bold mb-1">{t('pose_desc')}</label>
-                                  <textarea 
-                                      value={characterTool.poseDescription}
-                                      onChange={e => setCharacterTool({...characterTool, poseDescription: e.target.value})}
-                                      placeholder="e.g. Holding a sword up, crouching..."
-                                      className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs text-slate-200 outline-none focus:border-purple-500 h-16 resize-none custom-scrollbar"
-                                  />
-                              </div>
-                              
-                              <div className="flex items-center justify-between text-xs bg-slate-900 p-2 rounded border border-slate-800">
-                                  <div className="flex flex-col">
-                                      <span className="text-slate-400 mb-1">Look Target:</span>
-                                      {characterTool.lookTarget ? (
-                                          <span className="text-green-400 font-bold flex items-center gap-1 text-[10px]">
-                                              <i className="fa-solid fa-check-circle"/> ({Math.round(characterTool.lookTarget.x)}%, {Math.round(characterTool.lookTarget.y)}%)
-                                          </span>
-                                      ) : (
-                                          <span className="text-slate-500 italic text-[10px]">Not set</span>
-                                      )}
-                                  </div>
-                                  <button 
-                                      onClick={() => setCharacterTool({ ...characterTool, isSettingLookTarget: !characterTool.isSettingLookTarget })}
-                                      className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all border ${
-                                          characterTool.isSettingLookTarget 
-                                          ? 'bg-yellow-600 text-white border-yellow-500 animate-pulse' 
-                                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                                      }`}
-                                  >
-                                      {characterTool.isSettingLookTarget ? 'Click on Canvas...' : t('set_target')}
-                                  </button>
-                              </div>
-
-                              {onRegeneratePose && (
-                                  <button 
-                                      onClick={onRegeneratePose}
-                                      disabled={isGenerating || !generatedImage}
-                                      className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded text-xs font-bold shadow-md transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                                  >
-                                      {isGenerating ? <i className="fa-solid fa-spinner fa-spin"/> : <i className="fa-solid fa-person-rays"/>} Regenerate Pose
-                                  </button>
-                              )}
-                          </div>
-                      )}
-                  </div>
-              )}
-
-              {/* Resolution (Standard Modes) */}
-              <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{t('output_ratio')}</label>
-                  <select value={selectedAspectRatio} onChange={(e) => { 
-                     setSelectedAspectRatio(e.target.value as AspectRatio); 
-                     if(e.target.value === 'custom') setUseCustomResBox(false); 
-                  }} className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200">
-                      <option value="1:1">Square (1:1)</option>
-                      <option value="3:4">Portrait (3:4)</option>
-                      <option value="4:3">Landscape (4:3)</option>
-                      <option value="9:16">Mobile (9:16)</option>
-                      <option value="16:9">Cinematic (16:9)</option>
-                      <option value="21:9">Ultrawide (21:9)</option>
-                      <option value="custom">Custom Size / Crop</option>
-                  </select>
-                  
-                  {(selectedAspectRatio === 'custom' || useCustomResBox) && (
-                     <div className="flex gap-2 mt-2">
-                        <input type="number" value={customRes.width} onChange={e => setCustomRes(p=>({...p, width: parseInt(e.target.value)}))} className="w-1/2 bg-slate-800 border border-slate-700 rounded p-1 text-xs text-center text-slate-200" placeholder="W" />
-                        <input type="number" value={customRes.height} onChange={e => setCustomRes(p=>({...p, height: parseInt(e.target.value)}))} className="w-1/2 bg-slate-800 border border-slate-700 rounded p-1 text-xs text-center text-slate-200" placeholder="H" />
-                     </div>
-                  )}
-
-                  {selectedAspectRatio === 'custom' && generatedImage && onOpenCrop && (
-                     <button 
-                        onClick={onOpenCrop}
-                        className="w-full mt-3 bg-purple-900/30 hover:bg-purple-900/50 text-purple-300 border border-purple-500/30 rounded py-2 text-xs font-bold transition-all flex items-center justify-center gap-2"
-                     >
-                        <i className="fa-solid fa-crop-simple" /> Smart Resize & Crop
-                     </button>
-                  )}
-
-                  {selectedAspectRatio !== 'custom' && (
-                     <div className="space-y-2 mt-3">
-                         <div className="flex items-center gap-2">
-                            <input type="checkbox" checked={useCustomResBox} onChange={(e) => setUseCustomResBox(e.target.checked)} id="customRes" className="rounded bg-slate-800 border-slate-600 text-purple-600" />
-                            <label htmlFor="customRes" className="text-xs text-slate-300">Custom Region Box</label>
+                      <div className="flex flex-col gap-1.5">
+                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Gradient Style</label>
+                         <div className="flex gap-1">
+                            {(['none', 'linear', 'radial'] as const).map(t => (
+                               <button key={t} onClick={() => updateBgProp('gradientType', t)} className={`flex-1 py-1.5 rounded text-[9px] font-bold uppercase border transition-all ${bgConfig.gradientType === t ? 'bg-blue-600/30 border-blue-500 text-blue-200' : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'}`}>{t}</button>
+                            ))}
                          </div>
-                         {useCustomResBox && generatedImage && (
-                             <button 
-                                onClick={handleMagicCrop}
-                                className="w-full bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 rounded py-1.5 text-xs font-bold transition-all flex items-center justify-center gap-2"
-                             >
-                                <Icon name="fa-crop-simple" /> {t('crop_result')}
-                             </button>
-                         )}
-                         
-                         {/* Safe Zone Toggle for Illustration & Clothes Mode */}
-                         {(mode === 'illustration' || mode === 'clothes') && (
-                             <div className="flex items-center gap-2 mt-2">
-                                <input type="checkbox" checked={safeZone.enabled} onChange={(e) => setSafeZone({...safeZone, enabled: e.target.checked})} id="safeZone" className="rounded bg-slate-800 border-slate-600 text-green-500" />
-                                <label htmlFor="safeZone" className="text-xs text-slate-300">{t('show_safe_zone')}</label>
-                             </div>
-                         )}
-                     </div>
-                  )}
-              </div>
-              
-              {/* Text Overlay (Illustration Only) */}
-              {mode === 'illustration' && (
-                <>
-                   <div className="border-t border-slate-800 pt-4 space-y-3">
-                      <div className="flex justify-between items-center">
-                         <h4 className="text-xs font-bold text-slate-400 uppercase">{t('illustration_content')}</h4>
-                         <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                            <input type="checkbox" checked={showOverlays} onChange={e => setShowOverlays(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-purple-600" />
-                            {t('show_text')}
-                         </label>
                       </div>
-                      {showOverlays && (
-                         <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-                            <input type="text" value={cardName} onChange={e=>setCardName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200" placeholder={t('illustration_name')}/>
-                            <textarea value={cardEffects} onChange={e=>setCardEffects(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs h-16 text-slate-200 resize-none" placeholder={t('illustration_desc')}/>
+                      {bgConfig.gradientType !== 'none' && (
+                         <div className="flex items-center gap-3 mt-1 animate-in slide-in-from-top-1">
+                            <button ref={secondaryToggleBtnRef} onClick={() => handleTogglePicker('secondary')} className="w-8 h-8 rounded border-2 border-slate-700 shadow-inner" style={{ backgroundColor: bgConfig.secondaryColor || '#000000' }} />
+                            <span className="text-[11px] font-mono text-slate-200 uppercase font-bold">{bgConfig.secondaryColor || '#000000'}</span>
                          </div>
                       )}
                    </div>
+                )}
 
-                   <div className="flex items-center justify-between p-3 bg-slate-800 rounded border border-slate-700">
-                      <span className="text-sm text-slate-300">{t('edit_region')}</span>
-                      <button onClick={() => setIsEditMode(!isEditMode)} className={`w-10 h-5 rounded-full relative transition-colors ${isEditMode ? 'bg-purple-600' : 'bg-slate-600'}`}>
-                         <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${isEditMode ? 'translate-x-5' : 'translate-x-0'}`} />
-                      </button>
+                {bgConfig.mode === 'transparent' && (
+                   <div className="bg-[#0b1120] p-3 rounded border border-slate-800 space-y-4 animate-in slide-in-from-top-1 duration-200">
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${bgConfig.removeHoles ? 'bg-blue-600 border-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-slate-950 border-slate-700'}`}>
+                            {bgConfig.removeHoles && <Icon name="fa-check" className="text-[9px] text-white" />}
+                         </div>
+                         <input type="checkbox" className="sr-only" checked={bgConfig.removeHoles} onChange={e => updateBgProp('removeHoles', e.target.checked)} />
+                         <span className="text-[11px] font-bold text-slate-200 uppercase group-hover:text-white">Remove Holes (Heal Assets)</span>
+                      </label>
+                      <div className="space-y-2">
+                         <div className="flex justify-between items-center">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Detail Healing Power</span>
+                            <span className="text-blue-300 font-mono text-[11px] font-bold">{bgConfig.healingPower}%</span>
+                         </div>
+                         <input type="range" min="0" max="100" value={bgConfig.healingPower} onChange={e => updateBgProp('healingPower', parseInt(e.target.value))} className="w-full accent-blue-600 h-1 bg-slate-950 rounded appearance-none cursor-pointer" />
+                      </div>
                    </div>
-                </>
-              )}
+                )}
+
+                {bgConfig.mode === 'pattern' && (
+                   <div className="space-y-3 animate-in slide-in-from-top-1 duration-200">
+                      <select value={bgPatternType} onChange={e => setBgPatternType(e.target.value as any)} className="w-full bg-[#0b1120] border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 outline-none hover:border-slate-700 font-medium">
+                         {BACKGROUND_PATTERNS.map(p => <option key={p.id} value={p.id} className="bg-[#0b1120]">{p.name}</option>)}
+                      </select>
+                   </div>
+                )}
+
+                {(bgConfig.mode === 'scene' || bgConfig.mode === 'pattern' || bgConfig.mode === 'solid') && (
+                   <div className="space-y-1.5 animate-in slide-in-from-top-1 duration-200">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Optional BG Context</label>
+                      <input value={bgConfig.promptFragment} onChange={e => updateBgProp('promptFragment', e.target.value)} placeholder="Describe the environment / details..." className="w-full bg-[#0b1120] border border-slate-800 rounded px-3 py-2 text-xs text-white outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600 font-medium" />
+                   </div>
+                )}
+             </div>
+
+             {(mode === 'illustration' || mode === 'gacha') && characterTool && setCharacterTool && (
+                <div className="bg-[#121a2b] border border-slate-800 rounded-xl p-4 space-y-3 shadow-sm">
+                   <div className="flex items-center justify-between"><div className="flex items-center gap-2 text-slate-300"><Icon name="fa-person" className="text-xs" /><label className="text-[11px] font-bold uppercase tracking-wider">{t('character_helper')}</label></div><button onClick={() => setCharacterTool(prev => ({...prev, enabled: !prev.enabled}))} className={`w-10 h-5 rounded-full relative transition-colors ${characterTool.enabled ? 'bg-purple-600' : 'bg-slate-700'}`}><div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ${characterTool.enabled ? 'translate-x-5' : 'translate-x-0'}`} /></button></div>
+                   {characterTool.enabled && (
+                      <div className="space-y-3 pt-1 animate-in slide-in-from-top-2">
+                        <textarea value={characterTool.poseDescription} onChange={e => setCharacterTool(p => ({...p, poseDescription: e.target.value}))} className="w-full bg-[#0b1120] border border-slate-800 rounded p-3 text-[11px] text-slate-100 h-20 resize-none outline-none focus:border-purple-500 transition-colors font-medium leading-relaxed" placeholder="e.g. Dynamic action pose..." />
+                        <button onClick={() => setCharacterTool(p => ({...p, isSettingLookTarget: !p.isSettingLookTarget}))} className={`w-full py-2.5 rounded text-[11px] font-bold uppercase tracking-wider border transition-all ${characterTool.isSettingLookTarget ? 'bg-green-600 text-white border-green-500 shadow-lg shadow-green-900/20' : 'bg-[#161f32] text-slate-200 border-slate-700 hover:bg-slate-600 hover:text-white'}`}>{characterTool.isSettingLookTarget ? 'Click on Canvas' : t('set_target')}</button>
+                      </div>
+                   )}
+                </div>
+             )}
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">{t('output_ratio')}</label>
+            <select value={selectedAspectRatio} onChange={(e) => { setSelectedAspectRatio(e.target.value as AspectRatio); if(e.target.value === 'custom') setUseCustomResBox(false); }} className="w-full bg-[#161f32] border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium">
+                <option value="1:1" className="bg-[#161f32]">Square (1:1)</option>
+                <option value="3:4" className="bg-[#161f32]">Portrait (3:4)</option>
+                <option value="4:3" className="bg-[#161f32]">Landscape (4:3)</option>
+                <option value="9:16" className="bg-[#161f32]">Mobile (9:16)</option>
+                <option value="16:9" className="bg-[#161f32]">Cinematic (16:9)</option>
+                <option value="custom" className="bg-[#161f32]">Custom Dimensions</option>
+            </select>
+            {(selectedAspectRatio === 'custom' || useCustomResBox) && (
+               <div className="space-y-2 pt-2 animate-in slide-in-from-top-2">
+                  <UnityInput label="Width" value={customRes.width} onChange={v => setCustomRes(p => ({...p, width: v}))} min={256} max={4096} step={8} suffix="px" />
+                  <UnityInput label="Height" value={customRes.height} onChange={v => setCustomRes(p => ({...p, height: v}))} min={256} max={4096} step={8} suffix="px" />
+               </div>
+            )}
+          </div>
+
+          <div className="space-y-4 pt-4 border-t border-slate-900 overflow-visible">
+             <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Refine & Finalize</label>
+             <div className="flex flex-col gap-2.5">
+                {generatedImage && (
+                    <>
+                       <button onClick={handleEnhance} disabled={isGenerating} className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-30 text-white py-3 rounded text-[11px] font-bold uppercase tracking-wider border border-purple-500/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-purple-900/30 active:scale-[0.98]"><Icon name="fa-sparkles" className="text-xs text-white" /> {t('enhance')} Assets</button>
+                       <button onClick={handleRegenerateBackground} disabled={isGenerating} className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white py-3 rounded text-[11px] font-bold uppercase tracking-wider border border-blue-500/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-900/30 active:scale-[0.98]"><Icon name="fa-panorama" className="text-xs text-white" /> Regenerate Background</button>
+                    </>
+                )}
+                <div className="bg-[#121a2b] border border-slate-800 rounded-xl p-4 flex items-center justify-between shadow-sm border-l-4 border-l-purple-500/50">
+                   <span className="text-[11px] font-bold text-slate-100">{t('edit_region')} Mode</span>
+                   <button onClick={() => setIsEditMode(!isEditMode)} className={`w-10 h-5 rounded-full relative transition-colors ${isEditMode ? 'bg-purple-600' : 'bg-slate-700'}`}><div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ${isEditMode ? 'translate-x-5' : 'translate-x-0'}`} /></button>
+                </div>
+             </div>
+          </div>
        </div>
     </div>
   );

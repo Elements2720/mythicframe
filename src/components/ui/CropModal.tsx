@@ -284,7 +284,7 @@ const CropModal: React.FC<CropModalProps> = ({ isOpen, onClose, imageUrl, target
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
        <div className="bg-slate-950 border border-slate-700 rounded-xl shadow-2xl flex flex-col max-w-[90vw] max-h-[90vh] overflow-hidden w-[850px]">
           
           {/* Header */}

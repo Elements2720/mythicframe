@@ -1,4 +1,3 @@
-
 import {
   GameContext,
   BackgroundConfig,
@@ -7,23 +6,192 @@ import {
   BackgroundPatternType,
   SafeZoneConfig,
   ClothesParams,
-  PixelStyle
+  PixelStyle,
+  ChibiProportion,
+  ChibiConfig
 } from "../types";
+import { CHIBI_STYLE_CONFIG } from "../constants/gacha";
 
 /**
- * SOURCE OF TRUTH: docs/ai-prompts/illustration-generation.md
+ * Build prompt for UI Reimagine feature
  */
+export const buildUIReimaginePrompt = (
+  userPrompt: string,
+  gameContext: GameContext,
+  styleSnippet: string,
+  changeBg: boolean,
+  uiMood?: string,
+  uiElements?: string[],
+  uiColors?: { primary: string, secondary: string },
+  uiArchetype?: string,
+  uiMaterial?: string
+): string => {
+  let fullPrompt = `UI DESIGN & HUD OVERHAUL TASK.\n`;
+  fullPrompt += `OBJECTIVE: Create a professional, clear, and functional game interface layer.\n`;
+  
+  if (uiArchetype) {
+    fullPrompt += `INTERFACE ARCHETYPE: Use a ${uiArchetype.replace('-', ' ')} structural framework.\n`;
+  }
+
+  if (uiMaterial) {
+    fullPrompt += `SURFACE MATERIAL: Apply a ${uiMaterial.replace('-', ' ')} finish to all HUD elements.\n`;
+  }
+
+  if (uiMood) {
+    fullPrompt += `INTERFACE STYLE/MOOD: ${uiMood}\n`;
+  }
+  
+  if (uiColors) {
+    fullPrompt += `COLOR THEME: Use Primary ${uiColors.primary} for accent/highlight and Secondary ${uiColors.secondary} for base elements. Ensure high contrast and legibility.\n`;
+  }
+
+  fullPrompt += `CORE THEME: ${userPrompt || 'Professional game interface'}\n`;
+  
+  if (gameContext.setting || gameContext.tone) {
+    fullPrompt += `NARRATIVE CONTEXT: ${gameContext.setting}. ${gameContext.tone}.\n`;
+  }
+  
+  if (styleSnippet) {
+    fullPrompt += `RENDER STYLE: ${styleSnippet}\n`;
+  }
+
+  if (!changeBg) {
+    fullPrompt += `\n[STRICT CONSTRAINT]: PRESERVE ORIGINAL ART. Do NOT modify characters or the background environment. ONLY overlay the UI elements.\n`;
+  } else {
+    fullPrompt += `\n[PERMISSION]: REIMAGINE FULL SCENE. Adjust background art to seamlessly integrate with the new UI theme.\n`;
+  }
+
+  fullPrompt += `\nTECHNICAL QUALITY SPECS:\n`;
+  fullPrompt += `- NO GLOW/BLOOM ARTIFACTS: UI elements must be crisp and sharp.\n`;
+  fullPrompt += `- LEGIBILITY: HUD components must contrast strongly with the art behind them.\n`;
+  fullPrompt += `- CONSISTENCY: Ensure all elements share the same material and lighting source.`;
+  
+  return fullPrompt;
+};
+
+const processReferenceNotes = (referenceAssets: ReferenceAsset[]) => {
+  const referenceParts: { text?: string }[] = [];
+  referenceAssets.forEach((asset, index) => {
+    if (asset.roleNote) {
+      let guidance = asset.roleNote;
+      if (guidance.toLowerCase().includes('mannequin')) {
+          guidance = `CRITICAL IDENTITY & POSE LOCK. Strictly replicate the facial structure, eye shape, body proportions, and skin color from Reference ${index + 1}. Do NOT change the subject. Treat this reference as an immutable wireframe.`;
+      } else if (guidance.toLowerCase().includes('style')) {
+          guidance = `STRICT AESTHETIC SYNC. Match the rendering technique, line weight, palette, and shading from Reference ${index + 1}. If the style is stylized/illustrative, do NOT use realistic shading or lighting.`;
+      }
+      referenceParts.push({
+        text: `Reference Image ${index + 1} Directives: ${guidance}`,
+      });
+    }
+  });
+  return referenceParts;
+};
+
+/**
+ * Build prompt for Clothes Designer feature
+ */
+export const buildClothesPrompt = (
+  prompt: string,
+  gameContext: GameContext,
+  styleSnippet: string,
+  bgConfig: BackgroundConfig,
+  referenceAssets: ReferenceAsset[],
+  safeZone?: SafeZoneConfig,
+  clothesParams?: ClothesParams
+): { textPrompt: string; referenceParts: { text?: string }[] } => {
+  let fullPrompt = `CLOTHES DESIGN & ASSET SYNTHESIS.\n`;
+  
+  if (clothesParams?.renderMode === 'asset') {
+    fullPrompt += `[STRICT NEGATIVE CONSTRAINT - MANDATORY]: ZERO BIOLOGICAL MATTER. Erase the character. NO face, NO eyes, NO skin, NO hair, NO hands, NO neck. The image MUST ONLY contain the clothing items.\n`;
+    fullPrompt += `OBJECTIVE: Render a HOLLOW GHOST OUTFIT as a 3D garment asset. The clothes must appear as if worn by an invisible void.\n`;
+  } else {
+    fullPrompt += `OBJECTIVE: Render high-quality game assets. Render ONLY one single character/subject.\n`;
+    fullPrompt += `[VISUAL INTEGRITY]: PRESERVE ALL CHARACTER FEATURES. Maintain skin color, facial structure, and hair identity exactly as seen in references.\n`;
+  }
+  
+  fullPrompt += `[STRICT STYLE RULE]: IGNORE REALISM. Adhere strictly to the illustrative/game-art style provided.\n`;
+  fullPrompt += `SUBJECT: ${prompt}\n`;
+  
+  if (clothesParams) {
+    fullPrompt += `LAYOUT: ${clothesParams.layout === 'spread' ? 'Multi-view orthographic fashion sheet (Front/Back/Detail).' : 'Single, centered view.'}\n`;
+    
+    if (clothesParams.lockPose) {
+      fullPrompt += `\n[STRICT POSE LOCK]: You MUST PRESERVE the exact body posture and stance shown in the main character reference. Do NOT alter the orientation.\n`;
+    }
+  }
+
+  if (gameContext.setting || gameContext.tone) {
+    fullPrompt += `WORLD CONTEXT: ${gameContext.setting}. ${gameContext.tone}.\n`;
+  }
+
+  if (styleSnippet) {
+    fullPrompt += `[STYLE SNIPPET]: ${styleSnippet}\n`;
+  }
+
+  if (bgConfig.mode === "transparent") {
+    fullPrompt += `\n[MANDATORY]: Render on a SOLID MAGENTA (#FF00FF) background for chroma keying.\n`;
+  } else if (bgConfig.mode === "solid") {
+    fullPrompt += `\n[MANDATORY]: Render on a FLAT SOLID ${bgConfig.color} background.\n`;
+  }
+
+  if (safeZone?.enabled) {
+    fullPrompt += `\nCOMPOSITION: Center the subject within the inner ${Math.round(safeZone.width)}% safe zone.\n`;
+  }
+
+  const referenceParts = processReferenceNotes(referenceAssets);
+
+  return { textPrompt: fullPrompt, referenceParts };
+};
+
+const buildChibiFragment = (config: ChibiConfig): string => {
+  if (!config.enabled) return "";
+  
+  let fragment = "ANATOMICAL STYLE: ";
+  
+  // Proportions
+  if (config.proportions === 'simple') {
+    fragment += "Standard 2-heads tall chibi scale, large head and tiny compact body. ";
+  } else {
+    fragment += "Semi-proportional scale, 2.5 to 3 heads tall, defined limbs, ribcage and hips visible but cute. ";
+  }
+
+  // Head
+  if (config.headStyle === 'moe') {
+    fragment += "Ultra-cute Moe face, perfectly round head, flat chin, huge expressive sparkly eyes, simple eyebrows. ";
+  } else {
+    fragment += "More realistic chibi head, defined chin and cheeks, subtle facial structure for balance. ";
+  }
+
+  // Body
+  if (config.bodyStyle === 'geometric') {
+    fragment += "Geometric limb simplification, cylindrical arms and legs, rectangular torso, ignored joints for simplicity. ";
+  } else {
+    fragment += "Defined chunky anatomy, visible joint shapes, chunky hands and feet, dynamic simplified silhouette. ";
+  }
+
+  // Focus
+  if (config.focus === 'kawaii') {
+    fragment += "Kawaii aesthetic focus, extremely cute, simple flat colors, bold expressive features. ";
+  } else {
+    fragment += "Semi-realistic detailed chibi, professional texturing and shading, detailed anatomical elements within small scale. ";
+  }
+
+  return fragment;
+};
+
 export const buildIllustrationPrompt = (
   basePrompt: string,
   gameContext: GameContext,
   styleSnippet: string,
   bgConfig: BackgroundConfig,
   referenceAssets: ReferenceAsset[],
-  safeZone?: SafeZoneConfig
+  safeZone?: SafeZoneConfig,
+  continuityFlags?: Record<string, boolean>,
+  chibiProportion?: ChibiProportion,
+  chibiConfig?: ChibiConfig
 ): { textPrompt: string; referenceParts: { text?: string }[] } => {
   let fullPrompt = "";
 
-  // 1. Game Context
   if (gameContext.setting || gameContext.tone || gameContext.visualConstraints) {
     fullPrompt += `GAME CONTEXT:\n`;
     if (gameContext.setting) fullPrompt += `Setting: ${gameContext.setting}\n`;
@@ -34,507 +202,190 @@ export const buildIllustrationPrompt = (
     fullPrompt += `(Ensure the illustration fits this setting and tone strictly.)\n\n`;
   }
 
-  // 2. Subject & Style
   fullPrompt += `SUBJECT: ${basePrompt}\n`;
-  if (styleSnippet) {
-    fullPrompt += `STYLE: ${styleSnippet}\n`;
+  fullPrompt += `[STRICT CONSTRAINT]: Render ONLY one single character. Maintain exact character features and skin color if references are provided.\n`;
+  
+  // Use granular config if available, otherwise fallback to simple proportion string
+  if (chibiConfig?.enabled) {
+    fullPrompt += buildChibiFragment(chibiConfig) + "\n";
+  } else if (chibiProportion && CHIBI_STYLE_CONFIG[chibiProportion]) {
+    fullPrompt += `ANATOMY GUIDELINE: ${CHIBI_STYLE_CONFIG[chibiProportion].suffix}\n`;
   }
 
-  // 3. Strict Reference Adherence (CRITICAL for consistency)
+  if (styleSnippet) {
+    fullPrompt += `STYLE: ${styleSnippet}\n`;
+    fullPrompt += `(Ensure the style strictly matches the above snippet, do not revert to realism unless the snippet is realistic.)\n`;
+  }
+
+  if (continuityFlags) {
+    const activeFlags = Object.entries(continuityFlags).filter(([_, active]) => active);
+    if (activeFlags.length > 0) {
+      fullPrompt += `\nSTYLE CONTINUITY DIRECTIVES:\n`;
+      activeFlags.forEach(([key]) => {
+        if (key === 'Sharp Black Outlines') fullPrompt += `- Use bold, sharp black outlines for all subject edges.\n`;
+        else if (key === 'Clean Cel-Shading') fullPrompt += `- Use clean, professional cel-shading with clear highlight/shadow separation.\n`;
+        else if (key === 'Metallic Texture Sync') fullPrompt += `- Render all metallic surfaces with consistent high-reflectivity sheen.\n`;
+        else if (key === 'Ambient Lighting Lock') fullPrompt += `- Maintain consistent ambient lighting from the top-right across all related assets.\n`;
+        else if (key === 'Palette Adherence') fullPrompt += `- Strictly stick to the established character palette. No stray colors.\n`;
+        else if (key === 'Viewpoint Continuity') fullPrompt += `- CRITICAL: Maintain exact eye-level camera perspective. Do not use high or low angles.\n`;
+        else if (key === 'Background Isolation') fullPrompt += `- Ensure subject is clearly separated from background with distinct visual contrast.\n`;
+        else if (key === 'Character Consistency') fullPrompt += `- Adhere strictly to character design features across all requested formats.\n`;
+        else fullPrompt += `- ${key}\n`;
+      });
+    }
+  }
+
   if (referenceAssets.length > 0) {
     fullPrompt += `\nREFERENCE VISUAL CONSISTENCY (CRITICAL):\n`;
     fullPrompt += `You have been provided with reference images. You MUST strictly adhere to the visual design shown in these references.\n`;
-    fullPrompt += `1. CLOTHING: Keep the character's outfit EXACTLY as seen in the references. Do not redesign, simplify, or change colors of the clothes.\n`;
-    fullPrompt += `2. IDENTITY: Maintain the exact facial features, hair style, and body type.\n`;
+    fullPrompt += `1. IDENTITY: Maintain the exact facial features, hair style, skin color, and body type.\n`;
+    fullPrompt += `2. CLOTHING: Keep the character's outfit EXACTLY as seen in the references. Do not redesign, simplify, or change colors of the clothes.\n`;
     fullPrompt += `3. STYLE: Use the art style from the references if specified.\n`;
-    fullPrompt += `Do not invent new costume elements unless the prompt explicitly asks for a costume change.\n`;
+    fullPrompt += `\nINSTRUCTION FOR POSE & COMPOSITION:\n`;
+    fullPrompt += `Use the references ONLY for the character's appearance and design. \n`;
+    fullPrompt += `DO NOT copy the composition, pose, camera distance, or framing of the reference images.\n`;
+    fullPrompt += `INSTEAD, you MUST strictly follow the new scene description provided in the SUBJECT section above. \n`;
+    fullPrompt += `Ensure high contrast between character edges and background.\n`;
   }
 
-  // 4. Safe Zone / Zoom-Out Composition
   if (safeZone && safeZone.enabled) {
     fullPrompt += `\nCOMPOSITION (IMPORTANT - ZOOM OUT): \n`;
     fullPrompt += `Compose the scene so that the MAIN SUBJECT and all KEY DETAILS are strictly contained within the CENTRAL ${Math.round(
       safeZone.width
     )}% width and ${Math.round(safeZone.height)}% height of the image.\n`;
-    fullPrompt += `The outer areas (top, bottom, sides) must be treated as EXTENDED BACKGROUND or ATMOSPHERE (filler) that can be safely cropped away.\n`;
-    fullPrompt += `Do NOT place important objects near the edges. Keep the focus tight in the safe zone.\n`;
+    fullPrompt += `The outer areas must be treated as EXTENDED BACKGROUND filler.\n`;
   }
 
-  // 5. Background Config
   fullPrompt += `\nBACKGROUND:\n`;
   if (bgConfig.mode === "solid") {
-    fullPrompt += `Use a flat, solid background color: ${bgConfig.color}. No detailed scene, no gradients.\n`;
+    if (bgConfig.gradientType === 'linear') {
+      fullPrompt += `Use a smooth linear gradient background: ${bgConfig.color} to ${bgConfig.secondaryColor || '#000000'}.\n`;
+    } else if (bgConfig.gradientType === 'radial') {
+      fullPrompt += `Use a smooth radial gradient background: radiating from ${bgConfig.color} at the center to ${bgConfig.secondaryColor || '#000000'} at the edges.\n`;
+    } else {
+      fullPrompt += `Use a flat, solid background color: ${bgConfig.color}. No detailed scene, no gradients.\n`;
+    }
+    if (bgConfig.promptFragment) {
+       fullPrompt += `Background atmosphere hints: ${bgConfig.promptFragment}\n`;
+    }
   } else if (bgConfig.mode === "transparent") {
-    // Prompt for easy-to-remove background
-    fullPrompt += `ISOLATION: The subject must be completely isolated on a PURE SOLID WHITE background.\n`;
-    fullPrompt += `No shadows, no gradients, no floor, no horizon. Clean silhouette for easy background removal.\n`;
-  } else if (bgConfig.mode === "scene" && bgConfig.promptFragment) {
-    fullPrompt += `Background specifics: ${bgConfig.promptFragment}\n`;
+    fullPrompt += `IMPORTANT: Generate the asset on a SOLID MAGENTA BACKGROUND (Hex #FF00FF).\n`;
+    fullPrompt += `The background will be removed programmatically, so ensure high contrast at edges.\n`;
   } else if (bgConfig.mode === "pattern" && bgConfig.patternType) {
     const type = bgConfig.patternType;
     fullPrompt += `Background Style: ${type.toUpperCase()} PATTERN.\n`;
-    if (type === 'texture') fullPrompt += "Background should be a seamless-style texture (wood, stone, metal, fabric).\n";
-    else if (type === 'abstract') fullPrompt += "Background should be an abstract design with shapes, energy flows, or gradients. No distinct scenery.\n";
-    else if (type === 'ui_backdrop') fullPrompt += "Background should be a dark, subtle UI backdrop. Low contrast, vignette edges.\n";
-    else if (type === 'muted') fullPrompt += "Background should be soft, muted, and desaturated. Pastel tones, smooth gradients, no harsh details. High readability.\n";
-    else if (type === 'scene') fullPrompt += "Background should be a detailed environmental scene.\n";
-    
     if (bgConfig.promptFragment) {
        fullPrompt += `Pattern specifics: ${bgConfig.promptFragment}\n`;
     }
+  } else if (bgConfig.mode === "scene" && bgConfig.promptFragment) {
+    fullPrompt += `Background specifics: ${bgConfig.promptFragment}\n`;
   } else {
-    fullPrompt += `Background complexity: ${
-      bgConfig.mode === "none" ? "Balanced" : "Complex"
-    }\n`;
+    fullPrompt += `Background complexity: ${bgConfig.mode === "none" ? "Balanced" : "Complex"}\n`;
   }
 
   if (!bgConfig.allowTransparency && bgConfig.mode !== 'transparent') {
     fullPrompt += `Ensure the background is fully filled with no transparency.\n`;
   }
 
-  // 6. Reference Asset Roles (Text parts)
-  const referenceParts: { text?: string }[] = [];
-  referenceAssets.forEach((asset, index) => {
-    if (asset.roleNote) {
-      referenceParts.push({
-        text: `Reference Image ${index + 1} Guidance: ${asset.roleNote}`,
-      });
-    }
-  });
+  const referenceParts = processReferenceNotes(referenceAssets);
 
   return { textPrompt: fullPrompt, referenceParts };
 };
 
-export const buildClothesPrompt = (
-  basePrompt: string,
+export const buildExtractClothesPrompt = (
   gameContext: GameContext,
-  styleSnippet: string,
-  bgConfig: BackgroundConfig,
-  referenceAssets: ReferenceAsset[],
-  safeZone?: SafeZoneConfig,
-  clothesParams?: ClothesParams
-): { textPrompt: string; referenceParts: { text?: string }[] } => {
-  let fullPrompt = "FASHION DESIGN TASK / CLOTHING ASSET GENERATION\n";
-
-  // 1. Context
-  if (gameContext.setting || gameContext.tone) {
-    fullPrompt += `CONTEXT: ${gameContext.setting}. ${gameContext.tone}\n`;
-    if (gameContext.visualConstraints) {
-      fullPrompt += `Constraints: ${gameContext.visualConstraints}\n`;
-    }
-  }
-
-  // 2. Identify Roles based on Tags
-  const mannequins = referenceAssets.filter(r => r.roleNote && /mannequin|pose|body base/i.test(r.roleNote));
-  const styles = referenceAssets.filter(r => r.roleNote && /style|texture|color/i.test(r.roleNote));
-  const untagged = referenceAssets.filter(r => !r.roleNote || (!/mannequin|pose|body base/i.test(r.roleNote) && !/style|texture|color/i.test(r.roleNote)));
-
-  // If strict roles are set, use them. If everything is untagged, fallback to Mannequin logic.
-  const hasMannequins = mannequins.length > 0;
-  
-  // 3. Render Mode Logic (The Core)
-  const isAssetMode = clothesParams?.renderMode === 'asset';
-
-  if (isAssetMode) {
-    // --- GHOST ASSET MODE ---
-    fullPrompt += `\nMODE: GHOST MANNEQUIN / 3D ASSET\n`;
-    fullPrompt += `Generate the clothing item as a standalone asset in 'Ghost Mannequin' or 'Hollow' style.\n`;
-    fullPrompt += `CRITICAL: The body must be INVISIBLE. Show the neck opening and hollow structure. NO SKIN, NO HEAD, NO HANDS.\n`;
-    
-    if (hasMannequins) {
-        fullPrompt += `\nSHAPE & FIT INSTRUCTION:\n`;
-        fullPrompt += `Use the provided 'Mannequin' reference(s) STRICTLY for the POSE, SCALE, and BODY VOLUME.\n`;
-        fullPrompt += `The generated ghost cloth must fit the exact silhouette of this reference character.\n`;
-        fullPrompt += `Do NOT render the character. Only the hollow clothes fitting that invisible body.\n`;
-    } else {
-        // "Upload only clothes and make something similar" workflow
-        if (styles.length > 0 || untagged.length > 0) {
-            fullPrompt += `\nVARIATION INSTRUCTION:\n`;
-            fullPrompt += `Create a high-fidelity variation of the clothing shown in the Reference Image(s).\n`;
-            fullPrompt += `Maintain the general cut and type, but apply the style/modifications described in the prompt.\n`;
-        } else {
-            fullPrompt += `Display the hollow clothing in a standard upright fashion pose.\n`;
-        }
-    }
+  bgConfig: BackgroundConfig
+): string => {
+  let bgInstruction = "";
+  if (bgConfig.mode === 'transparent') {
+    bgInstruction = "Render the result on a FLAT SOLID MAGENTA BACKGROUND (#FF00FF) ONLY.";
+  } else if (bgConfig.mode === 'solid') {
+    bgInstruction = `Render the result on a FLAT SOLID BACKGROUND of color ${bgConfig.color}.`;
   } else {
-    // --- ON MODEL MODE (TRY-ON) ---
-    fullPrompt += `\nMODE: ON MODEL / CHARACTER\n`;
-    fullPrompt += `Generate the outfit worn by a character.\n`;
-    
-    if (hasMannequins) {
-        fullPrompt += `\nCHARACTER CONSISTENCY:\n`;
-        fullPrompt += `Use the 'Mannequin' reference as the base character.\n`;
-        fullPrompt += `Maintain the identity, body type, and pose of this character.\n`;
-        fullPrompt += `REPLACE their existing outfit with the new design: ${basePrompt}.\n`;
-    }
+    bgInstruction = `Render the background as: ${bgConfig.promptFragment || 'A clean, minimalist studio background'}.`;
   }
 
-  // 4. Design & Style
-  fullPrompt += `\nDESIGN TARGET: ${basePrompt}\n`;
-  fullPrompt += "Focus on high-fidelity material rendering (fabric texture, metal shine, leather grain).\n";
-
-  if (styleSnippet) {
-    fullPrompt += `STYLE: ${styleSnippet}\n`;
-  }
-
-  if (styles.length > 0) {
-    fullPrompt += `\nSTYLE SOURCE:\n`;
-    fullPrompt += `Use the 'Style' reference image(s) for texture, palette, and material details.\n`;
-  }
-
-  // 5. Safe Zone
-  if (safeZone && safeZone.enabled) {
-    fullPrompt += `\nCOMPOSITION:\n`;
-    fullPrompt += `Keep the entire subject strictly contained within the CENTRAL ${Math.round(safeZone.width)}% area.\n`;
-  }
-
-  // 6. Background
-  fullPrompt += `\nBACKGROUND:\n`;
-  if (bgConfig.mode === "transparent") {
-    fullPrompt += `ISOLATION: The subject must be completely isolated on a PURE SOLID WHITE background.\n`;
-    fullPrompt += `CRITICAL: No cast shadows on the floor. No floor. Floating asset.\n`;
-    fullPrompt += `Clean, sharp silhouette for easy background removal.\n`;
-  } else if (bgConfig.mode === "solid") {
-    fullPrompt += `Use a flat, solid background color: ${bgConfig.color}. No details.\n`;
-  } else if (bgConfig.mode === 'pattern') {
-     fullPrompt += `Background: ${bgConfig.patternType} pattern. ${bgConfig.promptFragment}\n`;
-  } else {
-    fullPrompt += `Background: Simple, neutral studio backdrop.\n`;
-  }
-
-  const referenceParts: { text?: string }[] = [];
-  referenceAssets.forEach((asset, index) => {
-    let role = "Reference";
-    if (asset.roleNote.toLowerCase().includes('mannequin')) role = "Mannequin (Shape/Pose)";
-    else if (asset.roleNote.toLowerCase().includes('style')) role = "Style/Texture Source";
-    
-    referenceParts.push({
-      text: `Reference ${index + 1} (${role}): ${asset.roleNote || 'Use as visual guide.'}`,
-    });
-  });
-
-  return { textPrompt: fullPrompt, referenceParts };
+  return `[EXTRACTION TASK]: TOTAL ANATOMY REMOVAL.
+1. ACTION (MANDATORY): Erase the entire character. Remove all skin, remove all hair, remove face, remove eyes, remove hands, remove biological features. 
+2. PRESERVE (CRITICAL): ALL CLOTHING PIECES. You MUST keep the shirt, pants, boots, and armor as a complete OUTFIT SET. Do NOT leave just one item; keep the entire layered ensemble exactly as seen.
+3. STRUCTURE: The clothes should retain their 3D shape and volume as if worn by an INVISIBLE GHOST MANNEQUIN.
+4. BACKGROUND: ${bgInstruction}
+Context: ${gameContext.setting || 'High-end gaming asset'}.`;
 };
 
 export const buildFramePrompt = (
-  basePrompt: string,
+  prompt: string,
   gameContext: GameContext,
   styleSnippet: string,
-  elements: FrameElement[] = []
+  frameElements: FrameElement[]
 ): string => {
-  let fullPrompt =
-    "Create a high-quality GUI Card Frame/Border for a digital trading card game.\n";
-
-  if (gameContext.setting || gameContext.tone) {
-    fullPrompt += `GAME CONTEXT: ${gameContext.setting}. ${gameContext.tone}\n`;
-    if (gameContext.visualConstraints) {
-      fullPrompt += `Constraints: ${gameContext.visualConstraints}\n`;
-    }
-  }
-
-  fullPrompt += `THEME/DESIGN: ${basePrompt}\n`;
-  if (styleSnippet) {
-    fullPrompt += `STYLE: ${styleSnippet}\n`;
-  }
-
-  fullPrompt += `
-REQUIREMENTS:
-1. The image must be a BORDER/FRAME with a blank/transparent center.
-2. High contrast, production-ready asset.
-3. Do NOT generate a character or scene inside the frame. Keep the center clean.
-`;
-
-  if (elements.length > 0) {
-    fullPrompt += "\nINCLUDE THE FOLLOWING ELEMENTS IN THE FRAME DESIGN:\n";
-    if (elements.includes("name_banner")) {
-      fullPrompt += "- A distinct banner or header area at the TOP for the card Name.\n";
-    }
-    if (elements.includes("mana_cost")) {
-      fullPrompt += "- A socket or circle (gem holder) in one of the TOP CORNERS for a Cost value.\n";
-    }
-    if (elements.includes("description_box")) {
-      fullPrompt += "- A semi-transparent or solid text box area at the BOTTOM for card description.\n";
-    }
-    if (elements.includes("power_toughness")) {
-      fullPrompt += "- A badge or shield emblem in the BOTTOM-RIGHT corner for stats.\n";
-    }
-  } else {
-    fullPrompt +=
-      "Ensure there is a clear area at the top for a Title and at the bottom for Text.\n";
-  }
-
-  return fullPrompt;
+    return `TASK: Generate a card frame or UI border.
+SUBJECT: ${prompt}
+GAME CONTEXT: ${gameContext.setting}. ${gameContext.tone}.
+STYLE: ${styleSnippet}
+ELEMENTS TO INCLUDE: ${frameElements.join(', ')}.`;
 };
 
 export const buildBackgroundPrompt = (
-  basePrompt: string,
+  prompt: string,
   gameContext: GameContext,
   styleSnippet: string,
-  patternType: BackgroundPatternType = "scene"
+  bgPatternType: BackgroundPatternType
 ): string => {
-  let fullPrompt = "Create a high-quality background image for a game.\n";
-
-  if (gameContext.setting || gameContext.tone) {
-    fullPrompt += `CONTEXT: ${gameContext.setting}. ${gameContext.tone}\n`;
-  }
-
-  fullPrompt += `TYPE: ${patternType.toUpperCase()}\n`;
-
-  if (patternType === "texture") {
-    fullPrompt +=
-      "Create a seamless or near-seamless texture. Focus on surface details (wood, stone, metal, cloth). Flat lighting, high texture fidelity.\n";
-  } else if (patternType === "abstract") {
-    fullPrompt +=
-      "Create an abstract design. Focus on shapes, gradients, energy flows, or magical effects. No distinct objects or figures.\n";
-  } else if (patternType === "ui_backdrop") {
-    fullPrompt +=
-      "Create a dark, subtle background suitable for UI screens. Low contrast, vignette edges, non-distracting patterns.\n";
-  } else if (patternType === "muted") {
-    fullPrompt +=
-      "Create a soft, muted background with desaturated colors. Pastel tones, very low contrast, smooth gradients, no harsh details. High readability for text overlay.\n";
-  } else {
-    // Scene
-    fullPrompt +=
-      "Create an environmental scene. Atmospheric perspective, depth, mood. NO central characters or foreground subjects.\n";
-  }
-
-  fullPrompt += `THEME/PROMPT: ${basePrompt}\n`;
-
-  if (styleSnippet) {
-    fullPrompt += `STYLE: ${styleSnippet}\n`;
-  }
-
-  return fullPrompt;
+    return `TASK: Generate a background asset.
+SUBJECT: ${prompt}
+PATTERN TYPE: ${bgPatternType}
+GAME CONTEXT: ${gameContext.setting}. ${gameContext.tone}.
+STYLE: ${styleSnippet}`;
 };
 
-/**
- * SOURCE OF TRUTH: docs/ai-prompts/background-regeneration.md
- */
 export const buildBackgroundRegenPrompt = (
   gameContext: GameContext,
   bgConfig: BackgroundConfig
 ): string => {
-  let prompt =
-    "Keep the main subject/foreground exactly as is. Replace the background completely.\n";
-
-  if (gameContext.setting || gameContext.tone) {
-    prompt += `Context: ${gameContext.setting}, ${gameContext.tone}.\n`;
-  }
-
-  prompt += "New Background instructions:\n";
-
-  if (bgConfig.mode === "solid") {
-    prompt += `Make the background a flat, solid color: ${bgConfig.color}. No gradients, no details.\n`;
-  } else if (bgConfig.mode === "transparent") {
-    prompt += `Make the background PURE SOLID WHITE. Completely isolate the subject. No shadows, no floor.\n`;
-  } else if (bgConfig.mode === "scene" && bgConfig.promptFragment) {
-    prompt += `${bgConfig.promptFragment}\n`;
-  } else if (bgConfig.mode === "pattern" && bgConfig.patternType) {
-    const type = bgConfig.patternType;
-    prompt += `Background Style: ${type.toUpperCase()} PATTERN.\n`;
-    if (type === 'texture') prompt += "Seamless-style texture (wood, stone, metal, fabric). Flat lighting.\n";
-    else if (type === 'abstract') prompt += "Abstract design with shapes, energy flows, or gradients. No scenery.\n";
-    else if (type === 'ui_backdrop') prompt += "Dark, subtle UI backdrop. Low contrast, vignette edges.\n";
-    else if (type === 'muted') prompt += "Soft, muted, and desaturated colors. Pastel tones, smooth gradients. High readability.\n";
-    else if (type === 'scene') prompt += "Detailed environmental scene.\n";
-    
-    if (bgConfig.promptFragment) {
-       prompt += `Pattern specifics: ${bgConfig.promptFragment}\n`;
+    let p = `TASK: Replace the background of this image. Keep the foreground subjects exactly as they are.
+GAME CONTEXT: ${gameContext.setting}. ${gameContext.tone}.
+NEW BACKGROUND: `;
+    if (bgConfig.mode === "solid") {
+      if (bgConfig.gradientType === 'linear') p += `linear gradient ${bgConfig.color} to ${bgConfig.secondaryColor || '#000000'}.`;
+      else if (bgConfig.gradientType === 'radial') p += `radial gradient from ${bgConfig.color} to ${bgConfig.secondaryColor || '#000000'}.`;
+      else p += `solid color ${bgConfig.color}.`;
+    } else if (bgConfig.mode === "transparent") {
+      p += `SOLID MAGENTA (#FF00FF).`;
+    } else {
+      p += `${bgConfig.promptFragment || 'A new suitable background'}.`;
     }
-  } else {
-    prompt += `Create a fitting background for the subject.\n`;
-  }
-
-  if (!bgConfig.allowTransparency && bgConfig.mode !== 'transparent') {
-    prompt += `Ensure the background is fully filled with no transparency.\n`;
-  }
-
-  return prompt;
+    return p;
 };
 
 export const buildStyleAnalysisPrompt = (): string => {
-  return `
-    Analyze this reference image for visual style. 
-    Respond with a JSON object containing:
-    - "description": a human-readable summary (2-4 sentences)
-    - "promptSnippet": a concise prompt tail describing rendering style, palette, and mood.
-  `;
+    return `Analyze the artistic style of this image. Provide a brief description and a "prompt snippet" that can be used to replicate this style in an AI image generator.
+Return JSON format: { "description": "...", "promptSnippet": "..." }`;
 };
 
-export const buildPromptSuggestionsPrompt = (currentPrompt: string): string => {
-  return `
-    Based on the user's current art prompt: "${currentPrompt}", 
-    suggest 3 creative, short additions or refinements to make the image more interesting or detailed for a card game.
-    If the prompt is empty, suggest 3 diverse cool fantasy/sci-fi concepts.
-    Keep suggestions concise (under 10 words each).
-    Return a JSON array of strings.
-  `;
+export const buildPromptSuggestionsPrompt = (prompt: string): string => {
+    return `Given the user's initial prompt: "${prompt}", suggest 3 creative variations or improvements.`;
 };
 
-export const buildCardSuggestionsPrompt = (
-  artPrompt: string,
-  currentName: string
-): string => {
-  return `
-    Based on the art prompt: "${artPrompt}" and current card name: "${currentName}",
-    suggest 5 fantasy card names and 3 short card effects (game mechanics or flavor text).
-    Return a JSON object with keys "names" (array of strings) and "effects" (array of strings).
-  `;
+export const buildCardSuggestionsPrompt = (artPrompt: string, currentName: string): string => {
+    return `Based on this artwork description: "${artPrompt}" and current card name: "${currentName}", suggest 5 unique fantasy card names and 3 ability descriptions.
+Return JSON format: { "names": ["...", "..."], "effects": ["...", "..."] }`;
 };
 
 export const buildRefinementPrompt = (currentPrompt: string): string => {
-  return `
-    You are a prompt editing engine. Your ONLY task is to correct grammar, flow, and clarity of the input prompt.
-    
-    Rules:
-    1. Do NOT add conversational text (like "Here is the refined prompt").
-    2. Do NOT add options or variations.
-    3. Do NOT change the core meaning or subject.
-    4. Output ONLY the refined prompt string.
-    
-    Input Prompt: "${currentPrompt}"
-  `;
+    return `Refine and improve the following AI image generation prompt for better results. Fix grammar, add descriptive keywords, and optimize for high quality: "${currentPrompt}".
+Respond with ONLY the refined prompt text.`;
 };
 
-export const buildOutpaintPrompt = (
-  userInstructions: string,
-  gameContext: GameContext,
-  styleSnippet: string
-): string => {
-  let prompt = "";
-
-  prompt += "Image Editing Task: Magic Resizer / Outpainting / Uncropping.\n";
-  prompt +=
-    "GOAL: Resize or change the aspect ratio by extending ONLY the existing background and surfaces.\n";
-  prompt +=
-    "The final image must look like a natural, uncropped version of the original.\n";
-
-  // Generic input description (works for many compositions)
-  prompt += "\nINPUT DESCRIPTION:\n";
-  prompt +=
-    "- The image contains a central main subject (character or key object) and supporting elements.\n";
-  prompt +=
-    "- There is existing background and one or more surfaces (such as ground, floor, table, wall, sky, or environment) around the subject.\n";
-  prompt +=
-    "- These existing elements define the style, lighting, shading, and perspective that MUST be preserved.\n";
-
-  // Strict constraints for outpainting
-  prompt += "\nSTRICT RULES (VERY IMPORTANT):\n";
-  prompt += "1. DO NOT MODIFY THE EXISTING MAIN SUBJECT OR OBJECTS.\n";
-  prompt +=
-    "   - Keep all existing characters, poses, expressions, props, and effects exactly the same.\n";
-  prompt +=
-    "   - The original region should remain pixel-perfect; only extend beyond it.\n";
-  prompt += "2. CONTENT-AWARE EXTENSION ONLY.\n";
-  prompt +=
-    "   - Extend ONLY the existing background and existing surfaces into the new areas.\n";
-  prompt +=
-    "   - Use the same colors, materials, textures, lighting, and perspective as in the original.\n";
-  prompt += "3. NO NEW OBJECTS OR STRUCTURES.\n";
-  prompt +=
-    "   - Do NOT add new items, props, characters, creatures, furniture, windows, doors, buildings, trees, decorations, or text.\n";
-  prompt +=
-    "   - Do NOT introduce new types of surfaces (no extra floors, walls, platforms, etc.).\n";
-  prompt +=
-    "   - The scene layout must remain identical; only continue what is already there.\n";
-  prompt += "4. NO REMOVAL OR REPOSITIONING.\n";
-  prompt +=
-    "   - Do NOT move, scale, rotate, crop, or remove any existing elements.\n";
-  prompt +=
-    "   - Preserve the composition and framing of the original content.\n";
-  prompt += "5. SEAMLESS, SHARP BLENDING (NO UNINTENDED BLUR OR BANDS).\n";
-  prompt +=
-    "   - The transition between original pixels and outpainted pixels must be invisible.\n";
-  prompt +=
-    "   - Match the exact lighting direction, intensity, shading, line work, texture noise, and rendering style.\n";
-  prompt +=
-    "   - Do NOT add blur, smearing, soft-focus, or gradient bands at the top or bottom unless the user explicitly requests blur.\n";
-  prompt +=
-    "   - The extended areas must clearly continue the same textured background (for example, the same painted wall or sky) with consistent color and value, not a flat solid bar.\n";
-  prompt += "6. KEEP STYLE AND MOOD CONSISTENT.\n";
-  prompt +=
-    "   - The extended areas must look like they were always part of the original illustration.\n";
-  prompt +=
-    "   - Do not shift the art style, palette, or rendering technique.\n";
-  prompt += "7. NO TEXT OR UI ELEMENTS.\n";
-  prompt +=
-    "   - Do NOT add labels, signs, logos, borders, or interface elements.\n";
-
-  // Aspect ratio / resizing guidance (e.g. 1088x960 -> 1024x1024)
-  prompt += "\nRESIZE / ASPECT RATIO BEHAVIOR:\n";
-  prompt +=
-    "- When changing from a non-square to a 1:1 aspect ratio (for example, 1088x960 to 1024x1024),\n";
-  prompt +=
-    "  fill any new or uncovered areas by CONTINUING the existing background and surfaces.\n";
-  prompt +=
-    "- Do NOT fill new areas with flat solid colors or simple vertical gradients.\n";
-  prompt +=
-    "- The color, texture, and shading of the extended regions must match the original background exactly (no darker or lighter stripes at the top or bottom).\n";
-  prompt +=
-    "- Keep all important content (main subject and key objects) fully visible and unchanged.\n";
-  prompt +=
-    "- Do NOT crop out any part of the main subject; extend surrounding regions instead.\n";
-
-  // Game context is used only for subtle atmosphere/lighting
-  if (gameContext.setting || gameContext.tone) {
-    const contextStr = [gameContext.setting, gameContext.tone]
-      .filter(Boolean)
-      .join(". ");
-    prompt += `\nSETTING / ATMOSPHERE (for lighting & mood only, NOT for adding new objects): ${contextStr}.\n`;
-    prompt +=
-      "Use this only to match mood and lighting, not to introduce new props or scenery.\n";
-  }
-
-  if (styleSnippet) {
-    prompt += `\nSTYLE GUIDANCE:\n- Match this style exactly: ${styleSnippet}\n`;
-    prompt +=
-      "- Keep line art, coloring, shading, and texture perfectly consistent with the original image.\n";
-  }
-
-  // User instructions: only allowed to influence how existing areas are extended
-  if (userInstructions && userInstructions.trim()) {
-    prompt +=
-      "\nUSER INSTRUCTIONS (APPLY ONLY TO EXTENDING EXISTING BACKGROUND/SURFACES):\n";
-    prompt += `${userInstructions}\n`;
-    prompt +=
-      "Do NOT interpret these instructions as permission to add new objects, structures, surfaces, or blur unless the instructions explicitly mention blur.\n";
-  } else {
-    prompt += "\nDEFAULT INSTRUCTION:\n";
-    prompt +=
-      "Extend the current background and any existing surfaces so they naturally fill the new canvas size, with no additional objects, no flat color bands, and no added blur.\n";
-  }
-
-  return prompt;
+export const buildOutpaintPrompt = (prompt: string, gameContext: GameContext, styleSnippet: string): string => {
+    return `TASK: Outpaint / Extend the existing image into a new aspect ratio.
+SUBJECT: ${prompt || 'Continue the existing scene'}
+GAME CONTEXT: ${gameContext.setting}. ${gameContext.tone}.
+STYLE: ${styleSnippet}`;
 };
 
-export const buildPixelizePrompt = (
-  style: PixelStyle,
-  userInstructions: string = ""
-): string => {
-  let prompt = "Image Editing Task: Style Transfer / Pixel Art Conversion.\n";
-  
-  // Style Definition
-  let styleDesc = "";
-  if (style === '8bit') {
-      styleDesc = "8-bit retro pixel art style (NES/Gameboy era). Limited color palette, low resolution, chunky pixels, flat shading, no anti-aliasing.";
-  } else if (style === '16bit') {
-      styleDesc = "16-bit classic pixel art style (SNES/Genesis era). Vibrant colors, detailed sprites, clean outlines, moderate pixel density.";
-  } else if (style === '32bit') {
-      styleDesc = "32-bit high-quality pixel art style (PS1/GBA era). High color depth, dithering, detailed textures, isometric or perspective depth.";
-  } else {
-      styleDesc = "Modern indie pixel art style. High resolution, fluid, dynamic lighting, very detailed, artistic.";
-  }
-
-  prompt += `TARGET STYLE: ${styleDesc}\n`;
-  prompt += `INSTRUCTIONS:\n`;
-  prompt += `1. Convert the image content into strict PIXEL ART.\n`;
-  prompt += `2. Maintain the EXACT composition, pose, and subject of the original image.\n`;
-  prompt += `3. Do NOT change the content, only the rendering style.\n`;
-  prompt += `4. Ensure pixels are crisp and aligned to a grid visually.\n`;
-  
-  if (userInstructions) {
-      prompt += `ADDITIONAL INSTRUCTIONS: ${userInstructions}\n`;
-  }
-
-  return prompt;
+export const buildPixelizePrompt = (style: PixelStyle, customPrompt: string): string => {
+    return `TASK: Transform the image into retro pixel art.
+PIXEL STYLE: ${style}
+EXTRA DETAILS: ${customPrompt}`;
 };

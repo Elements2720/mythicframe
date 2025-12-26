@@ -19,9 +19,9 @@ const FullScreenPreview: React.FC<FullScreenPreviewProps> = ({ isOpen, onClose, 
   if (!isOpen || !imageUrl) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-200 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[2000] bg-black/95 flex flex-col animate-in fade-in duration-200 backdrop-blur-sm">
        {/* Toolbar */}
-       <div className="absolute top-4 right-4 z-50 flex gap-2">
+       <div className="absolute top-4 right-4 z-[2010] flex gap-2">
           <a
             href={imageUrl}
             download={`preview_${Date.now()}.png`}

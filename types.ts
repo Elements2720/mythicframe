@@ -76,13 +76,8 @@ export interface AppState {
   apiKeySet: boolean;
 }
 
-// Global declaration for the AI Studio key selection
-declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-}
+// Fix: Removed duplicate declare global Window augmentation to resolve "identical modifiers" error.
+// The primary declaration resides in src/types.ts to avoid global namespace collisions.
 
 export enum GenerationModel {
   FLASH_2_5 = 'gemini-2.5-flash-image',

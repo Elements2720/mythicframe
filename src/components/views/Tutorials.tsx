@@ -47,6 +47,7 @@ const Tutorials: React.FC = () => {
   const tabs = [
     { id: 'getting_started', label: t('tut_getting_started'), icon: 'fa-rocket' },
     { id: 'illustration', label: t('tut_illustration'), icon: 'fa-paintbrush' },
+    { id: 'gacha', label: t('tut_gacha'), icon: 'fa-person-rays' },
     { id: 'frame', label: t('tut_frame'), icon: 'fa-border-all' },
     { id: 'background', label: t('tut_background'), icon: 'fa-image' },
     { id: 'animation', label: t('tut_animation'), icon: 'fa-film' },
@@ -149,6 +150,33 @@ const Tutorials: React.FC = () => {
                            <span className="text-[8px] bg-green-500 text-white px-1 rounded">SAFE ZONE</span>
                         </div>
                     </div>
+                </div>
+             </TutorialSection>
+          )}
+
+          {activeTab === 'gacha' && (
+             <TutorialSection title={t('tut_gacha')} icon="fa-person-rays">
+                <p>The **Character Bible** allows you to build a cohesive set of assets for one character while maintaining visual consistency.</p>
+                
+                <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 my-6">
+                   <h3 className="font-bold text-blue-400 mb-2 uppercase tracking-widest text-sm">Visual Continuity Workflow</h3>
+                   <div className="space-y-4 mt-4">
+                      <Step num={1} text="Define the constant Visual Traits in the bottom panel (e.g., hair color, armor style)." />
+                      <Step num={2} text="Add 'Asset Slots' for each specific art type you need (Card Art, Battle Sprite, etc)." />
+                      <Step num={3} text="Customize the resolution and prompt suffix for each slot." />
+                      <Step num={4} text="Use 'Generate Entire Set' to batch render the whole character bible." />
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                      <h4 className="font-bold text-white text-sm mb-2"><i className="fa-solid fa-id-badge text-blue-500 mr-2"/> Metadata</h4>
+                      <p className="text-xs text-slate-500 leading-relaxed">Set the character's Name, Rarity, and Gender. These are used to label your exports and help organize your project library.</p>
+                   </div>
+                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                      <h4 className="font-bold text-white text-sm mb-2"><i className="fa-solid fa-wand-magic-sparkles text-blue-500 mr-2"/> Sync Style</h4>
+                      <p className="text-xs text-slate-500 leading-relaxed">Upload style references in the bottom panel. Click 'Sync Style' to ensure all generated assets share the same rendering technique.</p>
+                   </div>
                 </div>
              </TutorialSection>
           )}

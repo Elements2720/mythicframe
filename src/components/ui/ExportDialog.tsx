@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
-import { HistoryEntry, ExportConfig } from '../../types';
-import { exportZip, exportSessionImages } from '../../services/exportService';
+import React, { useState, useEffect } from 'react';
+import { HistoryEntry, ExportConfig, WorkspaceTab } from '../../types';
+import { exportZip, exportProjectBatch } from '../../services/exportService';
 import { useLanguage } from '../../i18n/LanguageContext';
 
 interface ExportDialogProps {
@@ -11,135 +11,132 @@ interface ExportDialogProps {
   currentImage?: string | null;
   sessionImages?: string[];
   mode?: string;
+  tabs?: WorkspaceTab[]; 
 }
 
 const ExportDialog: React.FC<ExportDialogProps> = ({ 
-  isOpen, 
-  onClose, 
-  currentEntry, 
-  currentImage, 
-  sessionImages = [], 
-  mode = 'illustration' 
+  isOpen, onClose, currentEntry, currentImage, sessionImages = [], mode = 'illustration', tabs = []
 }) => {
   const { t } = useLanguage();
   const [config, setConfig] = useState<ExportConfig>({
     includeImage: true,
     includePrompts: true,
     includeProjectContext: true,
+    selectedTabIds: tabs.map(t => t.id),
     format: 'zip'
   });
 
-  // Construct a fallback entry if active image doesn't match history or history is missing
-  const effectiveEntry: HistoryEntry | null = (currentEntry && currentEntry.thumbnailUrl === currentImage) 
-    ? currentEntry 
-    : (currentImage ? {
-        id: `temp_${Date.now()}`,
-        timestamp: Date.now(),
-        mode: mode as any,
-        thumbnailUrl: currentImage,
-        fullPrompt: '',
-        userPrompt: 'Exported Asset',
-        gameContext: { setting: '', tone: '', visualConstraints: '' },
-        styleId: 'none',
-        bgConfig: { mode: 'none', color: '#000000', allowTransparency: false, promptFragment: '' },
-        referenceAssets: [],
-        size: '1K',
-        aspectRatio: '1:1'
-    } as HistoryEntry : null);
+  // Sync selected tabs when tabs list changes or dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      setConfig(p => ({ ...p, selectedTabIds: tabs.map(t => t.id) }));
+    }
+  }, [isOpen, tabs]);
+
+  const toggleTab = (id: string) => {
+     setConfig(p => ({
+        ...p,
+        selectedTabIds: p.selectedTabIds.includes(id) 
+           ? p.selectedTabIds.filter(tid => tid !== id)
+           : [...p.selectedTabIds, id]
+     }));
+  };
 
   if (!isOpen) return null;
 
-  if (!effectiveEntry) {
-      return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
-           <div className="bg-slate-900 border border-red-500/50 rounded-lg p-6 w-[400px] shadow-2xl text-center">
-              <i className="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-3" />
-              <h2 className="text-lg font-bold text-white mb-2">Export Error</h2>
-              <p className="text-sm text-slate-400 mb-4">
-                 No image data found to export. Please generate or upload an image first.
-              </p>
-              <button onClick={onClose} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-white text-sm">
-                 {t('close')}
-              </button>
-           </div>
-        </div>
-      );
-  }
-
-  const imageToExport = currentImage || effectiveEntry.thumbnailUrl;
-
-  const handleExport = async () => {
-    await exportZip(effectiveEntry, config, undefined, imageToExport);
-    onClose();
-  };
-
   const handleExportBatch = async () => {
-     if (sessionImages.length > 0) {
-        await exportSessionImages(sessionImages, `mythic_session_${Date.now()}`);
+     if (config.selectedTabIds.length === 0) {
+        alert("Please select at least one character to export.");
+        return;
+     }
+     try {
+        await exportProjectBatch(tabs, config);
         onClose();
+     } catch (e: any) {
+        console.error("Export failed", e);
+        alert(`Export failed: ${e.message || "Unknown error"}`);
      }
   };
 
-  const isPngOnly = config.includeImage && !config.includePrompts;
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
-       <div className="bg-slate-900 border border-slate-700 rounded-lg p-6 w-[400px] shadow-2xl">
-          <h2 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
-             <i className="fa-solid fa-file-export text-purple-500" /> {t('export_asset')}
-          </h2>
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
+       <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-[500px] shadow-2xl max-h-[90vh] flex flex-col">
+          <div className="flex justify-between items-center mb-6 shrink-0">
+             <h2 className="text-xl font-black text-white flex items-center gap-3">
+                <i className="fa-solid fa-file-zipper text-blue-500" /> Project Bundle Export
+             </h2>
+             <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors"><i className="fa-solid fa-times" /></button>
+          </div>
           
-          <div className="space-y-4 mb-6">
-             <div className="bg-slate-800 p-3 rounded flex items-center gap-3">
-                <div className="w-12 h-12 bg-slate-950 rounded overflow-hidden shrink-0 border border-slate-700">
-                   <img src={imageToExport} className="w-full h-full object-cover" />
-                </div>
-                <div className="overflow-hidden">
-                   <div className="text-xs text-slate-400 uppercase font-bold">{effectiveEntry.mode}</div>
-                   <div className="text-sm text-slate-200 truncate">{effectiveEntry.userPrompt || "Generated Asset"}</div>
-                </div>
-             </div>
+          <div className="space-y-6 overflow-y-auto custom-scrollbar flex-1 pr-2">
+             <p className="text-xs text-slate-400">All selected characters will be bundled into a single ZIP file, organized into folders.</p>
 
-             {/* Batch Export Option */}
-             {sessionImages.length > 1 && (
-                <div className="bg-purple-900/20 border border-purple-500/20 p-3 rounded">
-                   <div className="flex justify-between items-center mb-2">
-                      <span className="text-xs font-bold text-purple-300 uppercase">Current Session Batch</span>
-                      <span className="text-[10px] bg-purple-600 text-white px-1.5 rounded-full">{sessionImages.length} Images</span>
+             {/* Character Selection */}
+             {tabs.length > 0 && (
+                <div className="space-y-2">
+                   <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
+                      <span>Select Workspaces to Bundle</span>
+                      <span className="text-blue-400">{config.selectedTabIds.length} / {tabs.length}</span>
+                   </h4>
+                   <div className="max-h-48 overflow-y-auto bg-slate-950/50 rounded-xl border border-slate-800 p-2 custom-scrollbar space-y-1">
+                      {tabs.map(tab => (
+                         <label key={tab.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors group">
+                            <input 
+                               type="checkbox" 
+                               checked={config.selectedTabIds.includes(tab.id)}
+                               onChange={() => toggleTab(tab.id)}
+                               className="w-4 h-4 accent-blue-600 rounded"
+                            />
+                            <div className="w-8 h-8 rounded bg-slate-900 border border-slate-700 overflow-hidden shrink-0">
+                               {tab.generatedImage ? (
+                                 <img src={tab.generatedImage} className="w-full h-full object-cover" />
+                               ) : (
+                                 <div className="w-full h-full flex items-center justify-center bg-slate-800"><i className="fa-solid fa-image text-[8px] text-slate-600"/></div>
+                               )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                               <div className="text-xs font-bold text-slate-200 truncate">{tab.characterName || tab.name}</div>
+                               <div className="text-[9px] text-slate-500 uppercase font-mono">{tab.mode}</div>
+                            </div>
+                         </label>
+                      ))}
                    </div>
-                   <button 
-                      onClick={handleExportBatch}
-                      className="w-full bg-slate-800 hover:bg-purple-700 text-white text-xs py-2 rounded transition-colors flex items-center justify-center gap-2 border border-slate-700"
-                   >
-                      <i className="fa-solid fa-file-zipper" /> {t('download_zip')}
-                   </button>
                 </div>
              )}
 
-             <div className="pt-2 border-t border-slate-800/50">
-                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">{t('single_export')}</h4>
-                <label className="flex items-center gap-2 text-sm text-slate-300 p-2 hover:bg-slate-800 rounded cursor-pointer transition-colors">
-                   <input type="checkbox" checked={config.includeImage} onChange={e => setConfig(p => ({...p, includeImage: e.target.checked}))} className="rounded border-slate-600 bg-slate-700 text-purple-600" />
-                   {t('include_image')}
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-300 p-2 hover:bg-slate-800 rounded cursor-pointer transition-colors">
-                   <input type="checkbox" checked={config.includePrompts} onChange={e => setConfig(p => ({...p, includePrompts: e.target.checked}))} className="rounded border-slate-600 bg-slate-700 text-purple-600" />
-                   {t('include_meta')}
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-300 p-2 hover:bg-slate-800 rounded cursor-pointer ml-6 transition-colors">
-                   <input type="checkbox" checked={config.includeProjectContext} onChange={e => setConfig(p => ({...p, includeProjectContext: e.target.checked}))} disabled={!config.includePrompts} className="rounded border-slate-600 bg-slate-700 text-purple-600 disabled:opacity-50" />
-                   {t('include_context')}
-                </label>
+             {/* Export Settings */}
+             <div className="grid grid-cols-2 gap-4 shrink-0">
+                <div className="space-y-2">
+                   <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Included Data</h4>
+                   <label className="flex items-center gap-2 text-xs text-slate-400 p-1 cursor-pointer hover:text-slate-200">
+                      <input type="checkbox" checked={config.includeImage} onChange={e => setConfig(p => ({...p, includeImage: e.target.checked}))} className="accent-blue-600" />
+                      Work (Images)
+                   </label>
+                   <label className="flex items-center gap-2 text-xs text-slate-400 p-1 cursor-pointer hover:text-slate-200">
+                      <input type="checkbox" checked={config.includePrompts} onChange={e => setConfig(p => ({...p, includePrompts: e.target.checked}))} className="accent-blue-600" />
+                      Metadata & Prompts
+                   </label>
+                   <label className="flex items-center gap-2 text-xs text-slate-400 p-1 cursor-pointer hover:text-slate-200">
+                      <input type="checkbox" checked={config.includeProjectContext} onChange={e => setConfig(p => ({...p, includeProjectContext: e.target.checked}))} className="accent-blue-600" />
+                      Project Overview
+                   </label>
+                </div>
+                <div className="bg-blue-900/10 border border-blue-500/20 rounded-xl p-3 flex flex-col justify-center">
+                   <div className="text-[10px] font-black text-blue-400 uppercase mb-1">ZIP Structure</div>
+                   <div className="text-[10px] text-slate-400 leading-relaxed">
+                      Each character gets a folder named after them containing their generated assets.
+                   </div>
+                </div>
              </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-             <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">{t('cancel')}</button>
+          <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-slate-800 shrink-0">
+             <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:text-white transition-colors">Cancel</button>
              <button 
-                onClick={handleExport} 
-                className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded font-bold text-sm shadow-lg shadow-purple-900/20 transition-all active:scale-95"
+                onClick={handleExportBatch} 
+                className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-2.5 rounded-xl font-black text-sm shadow-xl shadow-blue-900/40 active:scale-95 transition-all flex items-center gap-2"
              >
-                {isPngOnly ? t('download_png') : t('download_zip')}
+                <i className="fa-solid fa-download" /> Download Project ZIP
              </button>
           </div>
        </div>

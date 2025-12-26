@@ -1,8 +1,5 @@
 {
   "name": "MythicFrame",
   "description": "Gemini-powered art maker",
-  "requestFramePermissions": [
-    "camera",
-    "microphone"
-  ]
+  "requestFramePermissions": []
 }

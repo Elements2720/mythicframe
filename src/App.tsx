@@ -4,7 +4,8 @@ import { useAppEngine } from './hooks/useAppEngine';
 
 // Modular Components
 import AppSidebar from './components/layout/AppSidebar';
-import { StudioLayout } from './components/layout/StudioLayout';
+// Fix: Use default import for StudioLayout as it is exported as default from its module
+import StudioLayout from './components/layout/StudioLayout';
 import ExportDialog from './components/ui/ExportDialog';
 import ConsolePanel from './components/ui/ConsolePanel';
 import AssetPicker from './components/ui/AssetPicker';
@@ -20,8 +21,8 @@ import Tutorials from './components/views/Tutorials';
 export default function App() {
   const engine = useAppEngine();
 
-  // Resize is now part of the unified Studio Layout
-  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize'].includes(engine.mode);
+  // Unified check for modes that use the standard Studio Layout (Canvas + Bottom Panels)
+  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine'].includes(engine.mode);
 
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans selection:bg-purple-500 selection:text-white">
@@ -33,6 +34,7 @@ export default function App() {
         currentImage={engine.generatedImage}
         sessionImages={engine.sessionImages}
         mode={engine.mode}
+        tabs={engine.tabs}
       />
 
       <ConsolePanel
@@ -72,13 +74,6 @@ export default function App() {
         setMode={engine.setMode}
         showHistory={engine.showHistory}
         setShowHistory={engine.setShowHistory}
-        selectedTemplateId={engine.selectedTemplateId}
-        onTemplateSelect={engine.handleTemplateSelect}
-        templateImage={engine.templateImage}
-        onTemplateUpload={(e) => {
-           const f = e.target.files?.[0];
-           if(f) { const r = new FileReader(); r.onload = () => engine.setTemplateImage(r.result as string); r.readAsDataURL(f); }
-        }}
       />
 
       {/* Main Content Area */}
