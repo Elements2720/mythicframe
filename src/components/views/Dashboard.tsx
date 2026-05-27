@@ -8,6 +8,8 @@ interface DashboardProps {
   onNavigate: (mode: UIMode) => void;
 }
 
+const Icon = ({ name, className = "" }: { name: string, className?: string }) => <i className={`fa-solid ${name} ${className}`} />;
+
 const Dashboard: React.FC<DashboardProps> = ({ history, onNavigate }) => {
   const { t } = useLanguage();
   const recentArt = history.filter(h => h.mode === 'illustration').slice(0, 4);
@@ -39,20 +41,20 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onNavigate }) => {
                 <div className="text-purple-400/60 text-xs">{t('chars_scenes')}</div>
               </div>
               <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
-                 <i className="fa-solid fa-paintbrush" />
+                 <Icon name="fa-paintbrush" />
               </div>
            </button>
 
            <button 
-             onClick={() => onNavigate('fullcard')}
+             onClick={() => onNavigate('gacha')}
              className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-6 flex items-center justify-between hover:bg-blue-900/40 transition-all group"
            >
               <div className="text-left">
-                <div className="text-blue-300 font-bold mb-1">{t('design_card')}</div>
-                <div className="text-blue-400/60 text-xs">{t('layout_comp')}</div>
+                <div className="text-blue-300 font-bold mb-1">{t('gacha')}</div>
+                <div className="text-blue-400/60 text-xs">Full Character Bibles</div>
               </div>
               <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
-                 <i className="fa-solid fa-pen-ruler" />
+                 <Icon name="fa-person-rays" />
               </div>
            </button>
         </div>

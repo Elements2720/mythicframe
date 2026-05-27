@@ -17,6 +17,9 @@ export const translations = {
     "bg-replace": "Background Replacer",
     pixelize: "Pixel Studio",
     "ui-reimagine": "UI Reimagine",
+    "pose-studio": "Pose Studio",
+    "map-grid": "Map Grid",
+    batch: "Batch Studio",
 
     // Dashboard
     welcome: "Welcome to MythicFrame",
@@ -32,8 +35,8 @@ export const translations = {
     start_creating: "Start creating your first asset.",
 
     // Canvas / Workspace
-    pro_model: "Pro Model",
-    std_model: "Standard",
+    pro_model: "Gemini Pro",
+    std_model: "Gemini Flash",
     connect_key: "Connect API Key",
     hold_compare: "Hold to Compare",
     orig_input: "Original Input",
@@ -61,6 +64,7 @@ export const translations = {
     describe_bg: "Describe the environment, mood, and depth...",
     describe_clothes: "Describe the outfit, materials, and fashion style...",
     describe_ui: "Describe the UI theme (e.g. 'crystalline steampunk HUD', 'ancient scroll frame')...",
+    describe_map_grid: "Describe the map environment, terrain, and landmarks...",
     bg_replace_prompt_hint: "Describe the new background (e.g. 'a burning castle'). Leave empty for content-aware fill.",
     usage: "Usage Note",
 
@@ -138,13 +142,15 @@ export const translations = {
 
     // Tutorials
     tut_getting_started: "Getting Started",
-    tut_illustration: "Illustration Mode",
+    tut_style_library: "Style Architect",
+    tut_illustration: "Illustration & Neo v2",
     tut_gacha: "Character Bible",
-    tut_frame: "Frame Mode",
-    tut_background: "Background Mode",
+    tut_clothes: "Clothes Designer",
+    tut_ui_reimagine: "UI Reimagine",
+    tut_batch: "Batch Studio",
     tut_animation: "Animation Studio",
-    tut_fullcard: "Full Card Layout",
     tut_resize: "Magic Resizer",
+    
     ref_role_mannequin: "Set as pose/body reference",
     ref_role_mannequin_short: "Mannequin",
     ref_role_style: "Set as texture/style source",
@@ -158,7 +164,11 @@ export const translations = {
     art_style: "Art Style",
     ref_library: "Reference Library",
     bg_replace_queue: "BG Replace Queue",
-    tut_ui_reimagine: "UI Reimagine"
+    tut_frame: "Frame Mode",
+    tut_background: "Background Mode",
+    tut_fullcard: "Full Card Layout",
+    tut_map_grid: "Map Grid Generator",
+    tut_pose_studio: "Pose Studio"
   },
   ru: {
     // Modes
@@ -177,6 +187,9 @@ export const translations = {
     "bg-replace": "Замена Фона",
     pixelize: "Пиксель Студия",
     "ui-reimagine": "Переосмысление UI",
+    "pose-studio": "Поза Студия",
+    "map-grid": "Генератор Карт",
+    batch: "Пакетная Студия",
 
     // Dashboard
     welcome: "Добро пожаловать в MythicFrame",
@@ -192,8 +205,8 @@ export const translations = {
     start_creating: "Начните создавать свой первый ассет.",
 
     // Canvas / Workspace
-    pro_model: "Pro Модель",
-    std_model: "Стандарт",
+    pro_model: "Gemini Pro",
+    std_model: "Gemini Flash",
     connect_key: "Подключить API",
     hold_compare: "Удерживайте для сравнения",
     orig_input: "Оригинал",
@@ -221,6 +234,7 @@ export const translations = {
     describe_bg: "Опишите окружение, настроение и глубину...",
     describe_clothes: "Опишите одежду, материалы и стиль моды...",
     describe_ui: "Опишите тему интерфейса (напр. 'кристаллический стимпанк HUD', 'рамка в виде свитка')...",
+    describe_map_grid: "Опишите окружение карты, ландшафт и достопримечательности...",
     bg_replace_prompt_hint: "Опишите новый фон (например, 'горящий замок'). Оставьте пустым для автозаполнения.",
     usage: "Применение",
 
@@ -298,13 +312,15 @@ export const translations = {
 
     // Tutorials
     tut_getting_started: "Начало работы",
-    tut_illustration: "Режим Иллюстрации",
+    tut_style_library: "Архитектор Стиля",
+    tut_illustration: "Иллюстрация и Neo v2",
     tut_gacha: "Библия Персонажа",
-    tut_frame: "Режим Рамки",
-    tut_background: "Режим Фона",
+    tut_clothes: "Дизайн Одежды",
+    tut_ui_reimagine: "Переосмысление UI",
+    tut_batch: "Пакетная Обработка",
     tut_animation: "Анимация",
-    tut_fullcard: "Макет Карты",
     tut_resize: "Магический Ресайз",
+
     ref_role_mannequin: "Установить как референс позы",
     ref_role_mannequin_short: "Манекен",
     ref_role_style: "Установить как источник стиля",
@@ -315,10 +331,14 @@ export const translations = {
     ai_model: "Модель ИИ",
     post_process: "Постобработка",
     crop_result: "Обрезать результат",
-    art_style: "Стиль",
+    art_style: "Сталь",
     ref_library: "Библиотека референсов",
     bg_replace_queue: "Очередь замены фона",
-    tut_ui_reimagine: "Переосмысление UI"
+    tut_frame: "Режим Рамки",
+    tut_background: "Режим Фона",
+    tut_fullcard: "Макет Карты",
+    tut_map_grid: "Генератор Карт",
+    tut_pose_studio: "Поза Студия"
   }
 };
 

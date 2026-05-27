@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   UIMode, BackgroundConfig, PixelDimensions,
-  BackgroundPatternType, AspectRatio, ImageSize, SafeZoneConfig, ClothesParams
+  BackgroundPatternType, AspectRatio, ImageSize, SafeZoneConfig, ClothesParams, ArtStyle
 } from '../../types';
 import { ART_STYLES, BACKGROUND_PATTERNS } from '../../constants';
 import UnityInput from '../ui/UnityInput';
@@ -36,6 +36,8 @@ interface ClothesDesignerPanelProps {
   setClothesParams: (val: ClothesParams) => void;
   isRightMinimized: boolean;
   setIsRightMinimized: (val: boolean) => void;
+  allArtStyles: ArtStyle[];
+  usageMap?: Record<string, number>;
 }
 
 const Icon = ({ name, className = "" }: { name: string, className?: string }) => <i className={`fa-solid ${name} ${className}`} />;
@@ -66,7 +68,7 @@ function rgbToHsv(r: number, g: number, b: number) {
   let h=0, s=0, v = max, d = max - min;
   s = max === 0 ? 0 : d / max;
   if (max !== min) {
-    switch (max) { case r: h = (g - b) / d + (g < b ? 6 : 0); break; case g: h = (b - r) / d + 2; break; case b: h = (r - g) / d + 4; break; }
+    switch (max) { case r: h = (g - b) / d + (g < b ? 6 : 0); break; case g: h = (b - r) / d + 2; break; case b: h = (b - r) / d + 2; break; case b: h = (r - g) / d + 4; break; }
     h /= 6;
   }
   return { h, s, v };
@@ -80,24 +82,9 @@ const ClothesDesignerPanel: React.FC<ClothesDesignerPanelProps> = (props) => {
     bgConfig, setBgConfig, clothesParams, setClothesParams,
     selectedAspectRatio, setSelectedAspectRatio, useCustomResBox, setUseCustomResBox,
     isEditMode, setIsEditMode, customRes, setCustomRes,
-    bgPatternType, setBgPatternType,
     generatedImage, handleRegenerateBackground, handleEnhance, handleExtractOutfit, isGenerating,
-    safeZone, setSafeZone
+    safeZone, setSafeZone, allArtStyles, usageMap
   } = props;
-
-  // Auto-switch layout based on render mode defaults
-  useEffect(() => {
-    if (clothesParams.renderMode === 'model') {
-       if (clothesParams.layout !== 'assembled') {
-          setClothesParams({ ...clothesParams, layout: 'assembled' });
-       }
-    } else if (clothesParams.renderMode === 'asset') {
-       // Defaults to spread sheet for garments, but user can still switch manually
-       if (!clothesParams.layout) {
-          setClothesParams({ ...clothesParams, layout: 'spread' });
-       }
-    }
-  }, [clothesParams.renderMode]);
 
   const [showAdvancedPicker, setShowAdvancedPicker] = useState(false);
   const [activePickingTarget, setActivePickingTarget] = useState<'primary' | 'secondary'>('primary');
@@ -170,6 +157,13 @@ const ClothesDesignerPanel: React.FC<ClothesDesignerPanelProps> = (props) => {
   );
 
   const baseHueRgb = hsvToRgb(hsv.h, 1, 1), baseHueHex = rgbToHex(baseHueRgb.r, baseHueRgb.g, baseHueRgb.b);
+  const builtInStyles = allArtStyles.filter(s => !s.isCustom);
+  const userStyles = allArtStyles.filter(s => s.isCustom);
+
+  const mostUsedStyles = allArtStyles
+    .filter(s => s.id !== 'none' && usageMap && usageMap[s.id] > 0)
+    .sort((a, b) => (usageMap?.[b.id] || 0) - (usageMap?.[a.id] || 0))
+    .slice(0, 5);
 
   return (
     <div ref={rootRef} className="w-full h-full bg-[#0b1120] border-l border-slate-900 flex flex-col shrink-0 z-[100] overflow-visible relative select-none font-sans">
@@ -177,6 +171,12 @@ const ClothesDesignerPanel: React.FC<ClothesDesignerPanelProps> = (props) => {
        
        {showAdvancedPicker && (
           <div ref={pickerRef} className="absolute right-[calc(100%+12px)] w-[240px] z-[999] border border-slate-800 rounded-2xl overflow-hidden shadow-2xl bg-[#0f172a]" style={{ top: Math.max(10, pickerTop - 60) }}>
+             <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-900/50">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Environment Color</span>
+                <button onClick={() => setShowAdvancedPicker(false)} className="text-slate-500 hover:text-white transition-colors">
+                   <i className="fa-solid fa-times text-xs" />
+                </button>
+             </div>
              <div className="p-4 space-y-5">
                 <div className="mixer-square relative aspect-square rounded-lg overflow-hidden border border-slate-800 cursor-crosshair" style={{ backgroundColor: baseHueHex }} onMouseDown={() => setIsDraggingMixer(true)}>
                    <div className="absolute inset-0 bg-gradient-to-r from-white to-transparent" /><div className="absolute inset-0 bg-gradient-to-t from-black to-transparent" />
@@ -190,49 +190,71 @@ const ClothesDesignerPanel: React.FC<ClothesDesignerPanelProps> = (props) => {
        )}
 
        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 pt-10 space-y-7">
-          {/* AI MODEL & STYLE */}
-          <div className="space-y-6">
+          {/* LOGIC ENGINE */}
+          <div className="bg-indigo-900/10 border border-indigo-500/20 rounded-xl p-4 space-y-4 shadow-sm border-l-4 border-l-indigo-500">
+             <label className="text-[11px] font-bold text-slate-100 uppercase tracking-wider flex items-center gap-2"><Icon name="fa-microchip" className="text-indigo-400" /> Swap Intelligence</label>
+             
              <div className="space-y-2">
-                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">{t('ai_model')}</label>
-                <div className="flex bg-[#161f32] rounded border border-slate-800 p-1">
-                   <button onClick={() => setUseProModel(false)} className={`flex-1 py-1.5 text-[11px] font-bold rounded transition-all ${!useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t('std_model')}</button>
-                   <button onClick={() => setUseProModel(true)} className={`flex-1 py-1.5 text-[11px] font-bold rounded transition-all ${useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t('pro_model').replace('Model', '')}</button>
+                <div className="flex items-center justify-between">
+                   <span className="text-[10px] font-bold text-slate-300 uppercase">Pose & Anatomy Lock</span>
+                   <button 
+                     onClick={() => setClothesParams({...clothesParams, lockPose: !clothesParams.lockPose})}
+                     className={`w-10 h-5 rounded-full relative transition-colors ${clothesParams.lockPose ? 'bg-indigo-600' : 'bg-slate-800'}`}
+                   >
+                      <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${clothesParams.lockPose ? 'translate-x-5' : 'translate-x-0'}`} />
+                   </button>
+                </div>
+                <p className="text-[9px] text-slate-500 leading-tight">Force AI to keep the exact stance and body type of your character reference.</p>
+             </div>
+
+             <div className="space-y-1.5">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Designer Workflow</span>
+                <div className="flex bg-slate-950 rounded border border-slate-800 p-1">
+                   <button onClick={() => setClothesParams({...clothesParams, renderMode: 'model'})} className={`flex-1 py-2 text-[10px] font-bold rounded transition-all ${clothesParams.renderMode === 'model' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>On Character</button>
+                   <button onClick={() => setClothesParams({...clothesParams, renderMode: 'asset'})} className={`flex-1 py-2 text-[10px] font-bold rounded transition-all ${clothesParams.renderMode === 'asset' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Ghost Asset</button>
                 </div>
              </div>
-             <div className="space-y-2">
-                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">{t('art_style')}</label>
-                <select value={selectedStyleId} onChange={(e) => setSelectedStyleId(e.target.value)} className="w-full bg-[#161f32] border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium">
-                  {ART_STYLES.map(style => <option key={style.id} value={style.id} className="bg-[#161f32]">{style.name}</option>)}
-                </select>
+
+             <div className="space-y-1.5">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Framing / Crop</span>
+                <div className="grid grid-cols-2 gap-1 bg-slate-950 rounded border border-slate-800 p-1">
+                   <button onClick={() => setClothesParams({...clothesParams, framing: 'full-body'})} className={`py-1.5 text-[9px] font-bold rounded transition-all ${clothesParams.framing === 'full-body' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Full Body</button>
+                   <button onClick={() => setClothesParams({...clothesParams, framing: 'waist-up'})} className={`py-1.5 text-[9px] font-bold rounded transition-all ${clothesParams.framing === 'waist-up' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Waist Up</button>
+                   <button onClick={() => setClothesParams({...clothesParams, framing: 'bust'})} className={`py-1.5 text-[9px] font-bold rounded transition-all ${clothesParams.framing === 'bust' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Bust</button>
+                   <button onClick={() => setClothesParams({...clothesParams, framing: 'head-only'})} className={`py-1.5 text-[9px] font-bold rounded transition-all ${clothesParams.framing === 'head-only' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Head Only</button>
+                </div>
              </div>
           </div>
 
-          {/* CLOTHES DESIGNER PARAMS */}
-          <div className="bg-indigo-900/10 border border-indigo-500/20 rounded-xl p-4 space-y-4 shadow-sm border-l-4 border-l-indigo-500">
-             <label className="text-[11px] font-bold text-slate-100 uppercase tracking-wider flex items-center gap-2"><Icon name="fa-shirt" className="text-indigo-400" /> Designer Workflow</label>
-             
-             <div className="space-y-1.5">
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Render Context</span>
-                <div className="flex bg-slate-950 rounded border border-slate-800 p-1">
-                   <button onClick={() => setClothesParams({...clothesParams, renderMode: 'model'})} className={`flex-1 py-1.5 text-[10px] font-bold rounded transition-all ${clothesParams.renderMode === 'model' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Model</button>
-                   <button onClick={() => setClothesParams({...clothesParams, renderMode: 'asset'})} className={`flex-1 py-1.5 text-[10px] font-bold rounded transition-all ${clothesParams.renderMode === 'asset' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Ghost Asset</button>
+          {/* AI MODEL & STYLE */}
+          <div className="space-y-6">
+             <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Synthesis Model</label>
+                <div className="flex bg-[#161f32] rounded border border-slate-800 p-1">
+                   <button onClick={() => setUseProModel(false)} className={`flex-1 py-2 text-[11px] font-bold rounded transition-all ${!useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t('std_model')}</button>
+                   <button onClick={() => setUseProModel(true)} className={`flex-1 py-2 text-[11px] font-bold rounded transition-all ${useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t('pro_model')}</button>
                 </div>
              </div>
-
-             <div className="space-y-1.5">
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Presentation Layout</span>
-                <div className="flex bg-slate-950 rounded border border-slate-800 p-1">
-                   <button onClick={() => setClothesParams({...clothesParams, layout: 'assembled'})} className={`flex-1 py-1.5 text-[10px] font-bold rounded transition-all ${clothesParams.layout === 'assembled' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Assembled</button>
-                   <button onClick={() => setClothesParams({...clothesParams, layout: 'spread'})} className={`flex-1 py-1.5 text-[10px] font-bold rounded transition-all ${clothesParams.layout === 'spread' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Spread Sheet</button>
+             <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Art Direction</label>
+                <div className="relative group">
+                  <select value={selectedStyleId} onChange={(e) => setSelectedStyleId(e.target.value)} className="w-full bg-[#161f32] border border-slate-800 rounded px-4 py-3 text-sm text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium appearance-none">
+                    {mostUsedStyles.length > 0 && (
+                      <optgroup label="Most Used">
+                        {mostUsedStyles.map(style => <option key={`most-used-${style.id}`} value={style.id} className="bg-[#161f32] text-yellow-400 font-bold">🔥 {style.name}</option>)}
+                      </optgroup>
+                    )}
+                    <optgroup label="Standard Library">
+                      {builtInStyles.map(style => <option key={style.id} value={style.id} className="bg-[#161f32]">{style.name}</option>)}
+                    </optgroup>
+                    {userStyles.length > 0 && (
+                      <optgroup label="Custom Blueprints">
+                        {userStyles.map(style => <option key={style.id} value={style.id} className="bg-[#161f32]">★ {style.name}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
+                  <Icon name="fa-caret-down" className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-hover:text-white transition-colors" />
                 </div>
-             </div>
-
-             <div className="pt-2 border-t border-indigo-500/10">
-                <div className="flex items-center justify-between">
-                   <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Lock Posture</span>
-                   <button onClick={() => setClothesParams({...clothesParams, lockPose: !clothesParams.lockPose})} className={`w-10 h-5 rounded-full relative transition-colors ${clothesParams.lockPose ? 'bg-indigo-600' : 'bg-slate-700'}`}><div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ${clothesParams.lockPose ? 'translate-x-5' : 'translate-x-0'}`} /></button>
-                </div>
-                <p className="text-[9px] text-slate-500 mt-1 italic">Preserve character pose from references.</p>
              </div>
           </div>
 
@@ -240,10 +262,22 @@ const ClothesDesignerPanel: React.FC<ClothesDesignerPanelProps> = (props) => {
           <div className="space-y-6">
              <div className="bg-[#121a2b] border border-slate-800 rounded-xl p-4 space-y-4 shadow-sm">
                 <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2"><Icon name="fa-image" className="text-blue-400" /> Environment</label>
-                <div className="grid grid-cols-2 gap-2">
-                   {(['none', 'solid', 'scene', 'pattern', 'transparent'] as const).map(b => (
-                      <button key={b} onClick={() => updateBgProp('mode', b)} className={`px-2 py-2 rounded border text-[10px] font-bold uppercase transition-all ${bgConfig.mode === b ? 'bg-blue-600/20 border-blue-500 text-blue-100 shadow-lg' : 'bg-[#0b1120] border-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200'}`}>{b}</button>
-                   ))}
+                
+                <div className="relative group">
+                  <select 
+                    value={bgConfig.mode} 
+                    onChange={(e) => updateBgProp('mode', e.target.value)}
+                    className="w-full bg-[#161f32] border border-slate-800 rounded px-4 py-3 text-sm text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-bold appearance-none"
+                  >
+                     <option value="auto">AI DECIDES</option>
+                     <option value="none">NONE (EMPTY)</option>
+                     <option value="solid">SOLID COLOR</option>
+                     <option value="scene">SCENE</option>
+                     <option value="pattern">PATTERN</option>
+                     <option value="transparent">TRANSPARENT</option>
+                     <option value="transparent_neo">TRANSPARENT NEO</option>
+                  </select>
+                  <Icon name="fa-caret-down" className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-hover:text-white transition-colors" />
                 </div>
 
                 {bgConfig.mode === 'solid' && (
@@ -260,49 +294,41 @@ const ClothesDesignerPanel: React.FC<ClothesDesignerPanelProps> = (props) => {
                             ))}
                          </div>
                       </div>
-                   </div>
-                )}
-
-                {bgConfig.mode === 'transparent' && (
-                   <div className="bg-[#0b1120] p-3 rounded border border-slate-800 space-y-4 animate-in slide-in-from-top-1 duration-200">
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${bgConfig.removeHoles ? 'bg-blue-600 border-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-slate-950 border-slate-700'}`}>
-                            {bgConfig.removeHoles && <Icon name="fa-check" className="text-[9px] text-white" />}
+                      {bgConfig.gradientType !== 'none' && (
+                         <div className="flex items-center gap-3 mt-1 animate-in slide-in-from-top-1">
+                            <button ref={secondaryToggleBtnRef} onClick={() => handleTogglePicker('secondary')} className="w-8 h-8 rounded border-2 border-slate-700 shadow-inner" style={{ backgroundColor: bgConfig.secondaryColor || '#000000' }} />
+                            <span className="text-[11px] font-mono text-slate-200 uppercase font-bold">{bgConfig.secondaryColor || '#000000'}</span>
                          </div>
-                         <input type="checkbox" className="sr-only" checked={bgConfig.removeHoles} onChange={e => updateBgProp('removeHoles', e.target.checked)} />
-                         <span className="text-[11px] font-bold text-slate-200 uppercase group-hover:text-white">Auto-Heal Outlines</span>
-                      </label>
+                      )}
                    </div>
                 )}
-
-                {(bgConfig.mode === 'scene' || bgConfig.mode === 'pattern' || bgConfig.mode === 'solid') && (
-                   <div className="space-y-1.5 animate-in slide-in-from-top-1 duration-200">
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Optional Style Context</label>
-                      <input value={bgConfig.promptFragment} onChange={e => updateBgProp('promptFragment', e.target.value)} placeholder="e.g. Victorian textures..." className="w-full bg-[#0b1120] border border-slate-800 rounded px-3 py-2 text-xs text-white outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600 font-medium" />
+                
+                {bgConfig.mode.includes('transparent') && (
+                   <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-3 animate-in fade-in duration-200">
+                      <div className="flex justify-between items-center">
+                         <span className="text-[9px] font-bold text-slate-400 uppercase">Matte Sensitivity</span>
+                         <span className="text-blue-400 font-mono text-[10px]">{bgConfig.tolBg}</span>
+                      </div>
+                      <input type="range" min="10" max="100" value={bgConfig.tolBg} onChange={e => updateBgProp('tolBg', parseInt(e.target.value))} className="w-full accent-blue-600 h-1 bg-slate-800 rounded-full appearance-none cursor-pointer" />
                    </div>
                 )}
-             </div>
-
-             {/* SAFE ZONE FOR CLOTHES */}
-             <div className="bg-[#121a2b] border border-slate-800 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                <div className="flex items-center gap-2 text-slate-300">
-                   <Icon name="fa-vector-square" className="text-xs" />
-                   <label className="text-[11px] font-bold uppercase tracking-wider">Asset Safe Zone</label>
-                </div>
-                <button onClick={() => setSafeZone({...safeZone, enabled: !safeZone.enabled})} className={`w-10 h-5 rounded-full relative transition-colors ${safeZone.enabled ? 'bg-green-600' : 'bg-slate-700'}`}><div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ${safeZone.enabled ? 'translate-x-5' : 'translate-x-0'}`} /></button>
              </div>
           </div>
 
-          <div className="space-y-3 pt-2">
+          {/* OUTPUT CONFIG */}
+          <div className="space-y-3">
             <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">{t('output_ratio')}</label>
-            <select value={selectedAspectRatio} onChange={(e) => { setSelectedAspectRatio(e.target.value as AspectRatio); if(e.target.value === 'custom') setUseCustomResBox(false); }} className="w-full bg-[#161f32] border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium">
-                <option value="1:1" className="bg-[#161f32]">Square (1:1)</option>
-                <option value="3:4" className="bg-[#161f32]">Portrait (3:4)</option>
-                <option value="4:3" className="bg-[#161f32]">Landscape (4:3)</option>
-                <option value="9:16" className="bg-[#161f32]">Mobile (9:16)</option>
-                <option value="16:9" className="bg-[#161f32]">Cinematic (16:9)</option>
-                <option value="custom" className="bg-[#161f32]">Custom Dimensions</option>
-            </select>
+            <div className="relative group">
+              <select value={selectedAspectRatio} onChange={(e) => { setSelectedAspectRatio(e.target.value as AspectRatio); if(e.target.value === 'custom') setUseCustomResBox(false); }} className="w-full bg-[#161f32] border border-slate-800 rounded px-4 py-3 text-sm text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium appearance-none">
+                  <option value="1:1" className="bg-[#161f32]">Square (1:1)</option>
+                  <option value="3:4" className="bg-[#161f32]">Portrait (3:4)</option>
+                  <option value="4:3" className="bg-[#161f32]">Landscape (4:3)</option>
+                  <option value="9:16" className="bg-[#161f32]">Mobile (9:16)</option>
+                  <option value="16:9" className="bg-[#161f32]">Cinematic (16:9)</option>
+                  <option value="custom" className="bg-[#161f32]">Custom Dimensions</option>
+              </select>
+              <Icon name="fa-caret-down" className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-hover:text-white transition-colors" />
+            </div>
             {(selectedAspectRatio === 'custom' || useCustomResBox) && (
                <div className="space-y-2 pt-2 animate-in slide-in-from-top-2">
                   <UnityInput label="Width" value={customRes.width} onChange={v => setCustomRes(p => ({...p, width: v}))} min={256} max={4096} step={8} suffix="px" />
@@ -316,14 +342,14 @@ const ClothesDesignerPanel: React.FC<ClothesDesignerPanelProps> = (props) => {
              <div className="flex flex-col gap-2.5">
                 {generatedImage && (
                     <>
-                       <button onClick={handleEnhance} disabled={isGenerating} className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-30 text-white py-3 rounded text-[11px] font-bold uppercase tracking-wider border border-purple-500/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-purple-900/30 active:scale-[0.98]"><Icon name="fa-sparkles" className="text-xs text-white" /> {t('enhance')} Details</button>
-                       <button onClick={() => handleExtractOutfit()} disabled={isGenerating} className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white py-3 rounded text-[11px] font-bold uppercase tracking-wider border border-indigo-500/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-900/30 active:scale-[0.98]"><Icon name="fa-scissors" className="text-xs text-white" /> Extract Garment</button>
-                       <button onClick={handleRegenerateBackground} disabled={isGenerating} className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white py-3 rounded text-[11px] font-bold uppercase tracking-wider border border-blue-500/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-900/30 active:scale-[0.98]"><Icon name="fa-panorama" className="text-xs text-white" /> Update Environment</button>
+                       <button onClick={handleEnhance} disabled={isGenerating} className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-30 text-white py-3.5 rounded text-[11px] font-black uppercase tracking-widest border border-purple-500/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-900/30 active:scale-[0.98]"><Icon name="fa-sparkles" className="text-xs" /> {t('enhance')} Details</button>
+                       <button onClick={handleExtractOutfit} disabled={isGenerating} className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white py-3.5 rounded text-[11px] font-black uppercase tracking-widest border border-indigo-500/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-purple-900/30 active:scale-[0.98]"><Icon name="fa-scissors" className="text-xs" /> Biological Eraser</button>
+                       <button onClick={handleRegenerateBackground} disabled={isGenerating} className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white py-3.5 rounded text-[11px] font-black uppercase tracking-widest border border-blue-500/30 transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-900/30 active:scale-[0.98]"><Icon name="fa-panorama" className="text-xs" /> Sync Backdrop</button>
                     </>
                 )}
                 <div className="bg-[#121a2b] border border-slate-800 rounded-xl p-4 flex items-center justify-between shadow-sm border-l-4 border-l-purple-500/50">
                    <span className="text-[11px] font-bold text-slate-100">{t('edit_region')} Mode</span>
-                   <button onClick={() => setIsEditMode(!isEditMode)} className={`w-10 h-5 rounded-full relative transition-colors ${isEditMode ? 'bg-purple-600' : 'bg-slate-700'}`}><div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ${isEditMode ? 'translate-x-5' : 'translate-x-0'}`} /></button>
+                   <button onClick={() => setIsEditMode(!isEditMode)} className={`w-12 h-6 rounded-full relative transition-colors ${isEditMode ? 'bg-purple-600' : 'bg-slate-700'}`}><div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${isEditMode ? 'translate-x-6' : 'translate-x-0'}`} /></button>
                 </div>
              </div>
           </div>

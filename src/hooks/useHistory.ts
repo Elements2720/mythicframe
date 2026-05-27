@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { HistoryEntry, UIMode } from '../types';
 import { getHistory, saveToHistory, deleteHistoryEntry, clearHistory, createHistoryEntry } from '../services/historyService';
+import { optimizeBase64Image } from '../utils/imageUtils';
 
 export const useHistory = (
   setMode: (mode: UIMode) => void,
@@ -15,6 +16,14 @@ export const useHistory = (
   }, []);
 
   const addHistoryEntry = async (data: Omit<HistoryEntry, 'id' | 'timestamp'>) => {
+    // Optimize image for history storage to prevent DataCloneError and save space
+    if (data.thumbnailUrl && data.thumbnailUrl.startsWith('data:image')) {
+       try {
+          data.thumbnailUrl = await optimizeBase64Image(data.thumbnailUrl, 1024, 0.7);
+       } catch (e) {
+          console.warn("Failed to optimize image for history:", e);
+       }
+    }
     const entry = createHistoryEntry(data);
     await saveToHistory(entry);
     setHistory(prev => [entry, ...prev]);
@@ -38,7 +47,9 @@ export const useHistory = (
            safeZone: entry.safeZone || { enabled: false, x: 20, y: 20, width: 60, height: 60, aspectRatioLock: false },
            sessionImages: prev.sessionImages.includes(entry.thumbnailUrl) 
               ? prev.sessionImages 
-              : [entry.thumbnailUrl, ...prev.sessionImages]
+              : [entry.thumbnailUrl, ...prev.sessionImages],
+           continuityFlags: entry.continuityFlags || {},
+           batchQueue: entry.batchQueue || []
         };
 
         // Gacha specific restoration

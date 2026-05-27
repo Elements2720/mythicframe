@@ -48,6 +48,28 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
   const [isResizing, setIsResizing] = useState(false);
   const [generateMode, setGenerateMode] = useState<'single' | 'all'>('single');
   const [globalPrompt, setGlobalPrompt] = useState('');
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0 && setReferenceAssets) {
+      Array.from(files).forEach(file => {
+        if (!(file instanceof Blob) || !file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const { optimizeBase64Image } = await import('../../utils/imageUtils');
+            const optimized = await optimizeBase64Image(reader.result as string, 1024, 0.7);
+            setReferenceAssets(p => [...p, { id: Date.now().toString(), url: optimized, roleNote: '' }]);
+            setShowRefs(true);
+          } catch(err){}
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
@@ -116,9 +138,9 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
                          </div>
                       </div>
                    ))}
-                   <label className="w-20 h-20 shrink-0 border-2 border-dashed border-slate-800 rounded-xl cursor-pointer flex flex-col items-center justify-center gap-1 text-slate-500 hover:text-purple-400 hover:border-purple-500 hover:bg-slate-800/30 transition-all">
+                   <label onDragOver={e => {e.preventDefault(); setIsDragOver(true);}} onDragLeave={() => setIsDragOver(false)} onDrop={handleDrop} className={`w-20 h-20 shrink-0 border-2 border-dashed rounded-xl cursor-pointer flex flex-col items-center justify-center gap-1 transition-all ${isDragOver ? 'border-purple-500 bg-purple-500/10 text-purple-400' : 'border-slate-800 text-slate-500 hover:text-purple-400 hover:border-purple-500 hover:bg-slate-800/30'}`}>
                        <Icon name="fa-plus text-lg" /><span className="text-[8px] font-bold uppercase">{t('add_ref')}</span>
-                       <input type="file" className="hidden" accept="image/*" onChange={(e) => { if(e.target.files?.[0]) { const reader = new FileReader(); reader.onload = () => { setReferenceAssets(p => [...p, { id: Date.now().toString(), url: reader.result as string, roleNote: '' }]); setShowRefs(true); }; reader.readAsDataURL(e.target.files[0]); } }} />
+                       <input type="file" className="hidden" accept="image/*" onChange={(e) => { if(e.target.files?.[0]) { const reader = new FileReader(); reader.onload = async () => { try { const { optimizeBase64Image } = await import('../../utils/imageUtils'); const optimized = await optimizeBase64Image(reader.result as string, 1024, 0.7); setReferenceAssets(p => [...p, { id: Date.now().toString(), url: optimized, roleNote: '' }]); setShowRefs(true); } catch(err){} }; reader.readAsDataURL(e.target.files[0]); } }} />
                    </label>
                </div>
             )}
@@ -138,7 +160,12 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
             </div>
 
             {/* Prompt & Action Section */}
-            <div className="flex-1 p-4 flex gap-4 min-h-0 bg-[#0b1120]">
+            <div 
+                className={`flex-1 p-4 flex gap-4 min-h-0 transition-colors ${isDragOver ? 'bg-purple-900/20' : 'bg-[#0b1120]'}`}
+                onDragOver={e => {e.preventDefault(); setIsDragOver(true);}}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={handleDrop}
+            >
                <div className="flex-1 flex flex-col gap-2">
                   <div className="flex items-center gap-4">
                      <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">

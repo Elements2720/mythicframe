@@ -1,22 +1,30 @@
 {
   "name": "mythicframe",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tsx server.ts",
     "build": "vite build",
+    "lint": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
-    "react-dom": "^19.2.0",
-    "react": "^19.2.0",
     "@google/genai": "^1.30.0",
+    "better-sqlite3": "^12.6.2",
+    "express": "^5.2.1",
+    "html2canvas": "^1.4.1",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.577.0",
+    "motion": "^12.35.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "react-rnd": "^10.5.2",
-    "jszip": "3.10.1",
-    "html2canvas": "^1.4.1"
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useAppEngine } from './hooks/useAppEngine';
 
@@ -17,12 +16,14 @@ import Dashboard from './components/views/Dashboard';
 import Library from './components/views/Library';
 import Settings from './components/views/Settings';
 import Tutorials from './components/views/Tutorials';
+import StyleLibrary from './components/views/StyleLibrary';
+import Downloads from './components/views/Downloads';
 
 export default function App() {
   const engine = useAppEngine();
 
   // Unified check for modes that use the standard Studio Layout (Canvas + Bottom Panels)
-  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine'].includes(engine.mode);
+  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch'].includes(engine.mode);
 
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans selection:bg-purple-500 selection:text-white">
@@ -87,6 +88,29 @@ export default function App() {
           <>
              {engine.mode === 'dashboard' && <Dashboard history={engine.history} onNavigate={engine.setMode} />}
              {engine.mode === 'library' && <Library history={engine.history} onRestore={engine.handleRestore} />}
+             {engine.mode === 'downloads' && <Downloads exportHistory={engine.exports.exportHistory} onDelete={engine.exports.handleDeleteExport} onDownloadAgain={engine.exports.handleDownloadAgain} />}
+             {engine.mode === 'style-library' && (
+               <StyleLibrary 
+                 customStyles={engine.customArtStyles} 
+                 activeStyleIds={engine.activeStyleIds}
+                 stylePreviews={engine.stylePreviews}
+                 onAdd={engine.addCustomStyle} 
+                 onUpdate={engine.updateCustomStyle} 
+                 onDelete={engine.deleteCustomStyle} 
+                 onToggleActive={engine.toggleStyleActive}
+                 onUpdatePreview={engine.updateStylePreview}
+                 // Fix: Added missing properties required by StyleLibraryProps (including onRemoveAll and onReorder)
+                 onRemoveAll={engine.removeAllFromCollection}
+                 onReorder={engine.reorderInCollection}
+                 styleCollections={engine.styleCollections}
+                 activeCollectionId={engine.activeCollectionId}
+                 setActiveCollectionId={engine.setActiveCollectionId}
+                 onAddCollection={engine.addStyleCollection}
+                 onDeleteCollection={engine.deleteStyleCollection}
+                 // Pass isGenerating to StyleLibrary to disable actions when the AI is busy
+                 isGenerating={engine.isGenerating}
+               />
+             )}
              {engine.mode === 'tutorials' && <Tutorials />}
              {engine.mode === 'settings' && (
                <Settings 
@@ -100,6 +124,7 @@ export default function App() {
                   driveFolderName={engine.driveFolderName}
                   setDriveFolderName={engine.setDriveFolderName}
                   onOpenFolderPicker={() => engine.setShowFolderPicker(true)}
+                  allArtStyles={engine.allArtStyles}
                />
              )}
           </>

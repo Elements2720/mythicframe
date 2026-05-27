@@ -1,0 +1,43 @@
+229-
+230-  if (safeZone?.enabled) {
+231-    fullPrompt += `\nCOMPOSITION: Center the subject within the inner ${Math.round(safeZone.width)}% safe zone.\n`;
+232-  }
+233-
+234-  const referenceParts = processReferenceNotes(referenceAssets);
+235-
+236-  return { textPrompt: fullPrompt, referenceParts };
+237-};
+238-
+239:const buildChibiFragment = (config: ChibiConfig): string => {
+240-  if (!config.enabled) return "";
+241-  
+242-  let fragment = "[STRICT CHIBI AESTHETIC - SUPER DEFORMED STYLE]\n";
+243-  fragment += "CRITICAL INSTRUCTION: Chibi (super-deformed style) is NOT just a big head on a standard body.\n";
+244-  fragment += "It is a COMPLETE proportional and stylistic transformation of the whole character.\n";
+245-  fragment += "DO NOT make the same body as the reference body with a big head. That is a failure.\n\n";
+246-  
+247-  // 1. Proportions
+248-  fragment += "1. PROPORTIONS (Most Important):\n";
+249-  if (config.bodyRatio) {
+--
+368-    if (characterLikely) {
+369-      fullPrompt += `[STRICT CONSTRAINT]: Maintain exact character features, skin color, and ALL accessories from references (wings, tails, horns, weapons, quivers, capes). If the character in the reference has a closed helmet, mask, or obscured face, you MUST maintain that obscured face. Do NOT force eyes or an open helmet if the reference shows a closed one.\n`;
+370-    } else {
+371-      fullPrompt += `[STRICT CONSTRAINT]: Maintain exact visual design, colors, and style from references.\n`;
+372-    }
+373-  }
+374-  
+375-  // Use granular config if available, otherwise fallback to simple proportion string
+376-  if (characterLikely) {
+377-    if (chibiConfig?.enabled) {
+378:      fullPrompt += buildChibiFragment(chibiConfig) + "\n";
+379-    } else if (chibiProportion && CHIBI_STYLE_CONFIG[chibiProportion]) {
+380-      fullPrompt += `ANATOMY GUIDELINE: ${CHIBI_STYLE_CONFIG[chibiProportion].suffix}\n`;
+381-    }
+382-  }
+383-
+384-  if (styleSnippet) {
+385-    fullPrompt += `STYLE: ${styleSnippet}\n`;
+386-    fullPrompt += `(Ensure the style strictly matches the above snippet, do not revert to realism or generic defaults.)\n`;
+387-  } else {
+388-    fullPrompt += `STYLE: Clean, neutral, high-quality digital art without additional stylistic flourishes.\n`;

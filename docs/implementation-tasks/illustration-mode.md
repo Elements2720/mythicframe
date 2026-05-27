@@ -23,10 +23,11 @@
 - [x] Larger rounded reference thumbnails in bottom panel
 - [x] Smooth drag for selection and resizing
 - [x] Responsive layout
-- [ ] **Debug Console**: View full prompts sent to API
+- [x] **Debug Console**: View full prompts sent to API
+- [x] **Camera Viewpoint**: Select perspective (Top-down, Isometric, etc.)
 
 ## Export & History
-- [ ] Single image export
-- [ ] ZIP export (images + metadata)
-- [ ] Prompt-only export
+- [x] Single image export
+- [x] ZIP export (images + metadata)
+- [x] Prompt-only export
 - [ ] History entries for each generation

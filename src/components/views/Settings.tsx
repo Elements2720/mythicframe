@@ -1,8 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
-import { GameContext } from '../../types';
+import { GameContext, AIConfig, AIProvider, ArtStyle } from '../../types';
 import { initDriveSystem, signInToDrive, signOutFromDrive, getDriveConnectionStatus } from '../../services/googleDriveService';
-import { verifyManualApiKey } from '../../services/geminiService';
 import { APP_VERSION } from '../../constants';
 import { useLanguage } from '../../i18n/LanguageContext';
 
@@ -17,11 +15,13 @@ interface SettingsProps {
   driveFolderName?: string;
   setDriveFolderName?: (name: string) => void;
   onOpenFolderPicker?: () => void;
+  allArtStyles?: ArtStyle[];
 }
 
 const Settings: React.FC<SettingsProps> = ({ 
   gameContext, setGameContext, apiKeyReady, onConnect, onRefreshKey,
-  driveFolderId, setDriveFolderId, driveFolderName, setDriveFolderName, onOpenFolderPicker
+  driveFolderId, setDriveFolderId, driveFolderName, setDriveFolderName, onOpenFolderPicker,
+  allArtStyles = []
 }) => {
   const { language, setLanguage, t } = useLanguage();
 
@@ -31,11 +31,6 @@ const Settings: React.FC<SettingsProps> = ({
   const [driveStatus, setDriveStatus] = useState('');
   const [isInitializing, setIsInitializing] = useState(false);
   const [originUrl, setOriginUrl] = useState('');
-
-  // Manual API Key State
-  const [manualKey, setManualKey] = useState('');
-  const [showManualInput, setShowManualInput] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -80,30 +75,7 @@ const Settings: React.FC<SettingsProps> = ({
      navigator.clipboard.writeText(originUrl);
   };
 
-  const handleManualVerify = async () => {
-     if(!manualKey.trim()) return;
-     setIsVerifying(true);
-     const isValid = await verifyManualApiKey(manualKey.trim());
-     setIsVerifying(false);
-     
-     if(isValid) {
-        localStorage.setItem('mythic_api_key', manualKey.trim());
-        if(onRefreshKey) onRefreshKey();
-        setShowManualInput(false);
-        setManualKey('');
-     } else {
-        alert("Invalid API Key. Please check the key and try again.");
-     }
-  };
-
-  const clearManualKey = () => {
-     if(confirm("Remove manual API key?")) {
-        localStorage.removeItem('mythic_api_key');
-        if(onRefreshKey) onRefreshKey();
-     }
-  };
-
-  const isUsingEnv = apiKeyReady && typeof localStorage !== 'undefined' && !localStorage.getItem('mythic_api_key') && !!process.env.API_KEY;
+  const isUsingEnv = !!process.env.API_KEY;
 
   return (
     <div className="flex-1 bg-slate-950 p-10 overflow-y-auto">
@@ -177,6 +149,20 @@ const Settings: React.FC<SettingsProps> = ({
                               />
                           </div>
                        </div>
+                       <div>
+                          <label className="block text-xs uppercase font-bold text-slate-500 mb-1">Default Global Art Style</label>
+                          <select 
+                            className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-sm text-slate-200 focus:border-blue-500 outline-none"
+                            value={gameContext.defaultStyleId || 'none'}
+                            onChange={e => setGameContext(p => ({...p, defaultStyleId: e.target.value}))}
+                          >
+                            <option value="none">None (User Choice)</option>
+                            {allArtStyles.map(style => (
+                              <option key={style.id} value={style.id}>{style.name}</option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-slate-500 mt-1 italic">New tabs will start with this style selected.</p>
+                       </div>
                    </div>
                 </div>
              </div>
@@ -211,55 +197,6 @@ const Settings: React.FC<SettingsProps> = ({
                        {isUsingEnv && (
                            <div className="text-xs text-green-400 flex items-center gap-2 bg-green-900/10 p-2 rounded border border-green-500/20">
                                <i className="fa-solid fa-code" /> Connected via Environment Variable (API_KEY)
-                           </div>
-                       )}
-
-                       {/* Manual Key Input Option */}
-                       {!showManualInput && !isUsingEnv && (
-                          <div className="text-xs text-slate-500">
-                             Or <button onClick={() => setShowManualInput(true)} className="text-blue-400 hover:underline">enter API key manually</button>
-                          </div>
-                       )}
-                       
-                       {!showManualInput && isUsingEnv && (
-                          <div className="text-xs text-slate-500">
-                             Need to override? <button onClick={() => setShowManualInput(true)} className="text-blue-400 hover:underline">Enter manual API key</button>
-                          </div>
-                       )}
-
-                       {/* Manual Input Form */}
-                       {showManualInput && (
-                           <div className="bg-slate-950 border border-slate-800 rounded p-3 animate-in fade-in slide-in-from-top-2">
-                               <div className="flex gap-2 items-center">
-                                   <input 
-                                      type="password" 
-                                      value={manualKey} 
-                                      onChange={e => setManualKey(e.target.value)} 
-                                      placeholder="Paste Gemini API Key..."
-                                      className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:border-purple-500 outline-none"
-                                   />
-                                   <button 
-                                      onClick={handleManualVerify}
-                                      disabled={isVerifying || !manualKey}
-                                      className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 rounded text-sm font-bold disabled:opacity-50 min-w-[80px]"
-                                   >
-                                      {isVerifying ? '...' : 'Verify'}
-                                   </button>
-                                   <button onClick={() => setShowManualInput(false)} className="text-slate-500 hover:text-white px-2">
-                                      <i className="fa-solid fa-times" />
-                                   </button>
-                               </div>
-                               <p className="text-[10px] text-slate-500 mt-2">
-                                  Your key is stored locally in your browser.
-                               </p>
-                           </div>
-                       )}
-
-                       {/* Clear Manual Key Option */}
-                       {apiKeyReady && typeof localStorage !== 'undefined' && localStorage.getItem('mythic_api_key') && (
-                           <div className="text-xs text-slate-500 bg-slate-800/50 p-2 rounded border border-slate-700/50 flex justify-between items-center">
-                               <span><i className="fa-solid fa-keyboard mr-1" /> Using manual API key</span>
-                               <button onClick={clearManualKey} className="text-red-400 hover:underline">Remove & Use Default</button>
                            </div>
                        )}
                    </div>

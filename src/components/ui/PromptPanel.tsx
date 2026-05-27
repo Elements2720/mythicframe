@@ -47,33 +47,41 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
     localStorage.setItem('mythic_bottom_height', String(height));
   }, [height]);
 
-  const processFile = (file: File) => {
-    if (!(file instanceof Blob)) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      const newAsset: ReferenceAsset = {
-        id: Date.now().toString(),
-        url: result,
-        roleNote: ''
+  const processFiles = (files: FileList | File[]) => {
+    Array.from(files).forEach(file => {
+      if (!(file instanceof Blob) || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const result = reader.result as string;
+        try {
+          const { optimizeBase64Image } = await import('../../utils/imageUtils');
+          const optimized = await optimizeBase64Image(result, 1024, 0.7);
+          const newAsset: ReferenceAsset = {
+            id: (Date.now() + Math.random()).toString(),
+            url: optimized,
+            roleNote: ''
+          };
+          setReferenceAssets(prev => [...prev, newAsset]);
+          setShowRefs(true);
+        } catch (e) {
+          console.error('Failed to optimize image', e);
+        }
       };
-      setReferenceAssets(prev => [...prev, newAsset]);
-      setShowRefs(true);
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleRefUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processFile(file);
+    const files = e.target.files;
+    if (files && files.length > 0) processFiles(files);
     e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) processFile(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) processFiles(files);
   };
 
   useEffect(() => {
@@ -155,13 +163,15 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
                         <div className="flex flex-col flex-1 gap-2 min-w-0">
                           <div className="flex justify-between items-center">
                               <div className="flex gap-1.5">
-                                 <button 
-                                    onClick={() => setAssetRole(asset.id, 'mannequin')}
-                                    className={`px-2 py-0.5 rounded text-[8px] font-black uppercase transition-all border ${isMannequin ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300'}`}
-                                    title={t('ref_role_mannequin')}
-                                 >
-                                    <Icon name="fa-user-check" className="mr-1" /> {t('ref_role_mannequin_short')}
-                                 </button>
+                                 {mode !== 'illustration' && (
+                                   <button 
+                                      onClick={() => setAssetRole(asset.id, 'mannequin')}
+                                      className={`px-2 py-0.5 rounded text-[8px] font-black uppercase transition-all border ${isMannequin ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300'}`}
+                                      title={t('ref_role_mannequin')}
+                                   >
+                                      <Icon name="fa-user-check" className="mr-1" /> {t('ref_role_mannequin_short')}
+                                   </button>
+                                 )}
                                  <button 
                                     onClick={() => setAssetRole(asset.id, 'style')}
                                     className={`px-2 py-0.5 rounded text-[8px] font-black uppercase transition-all border ${isStyle ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300'}`}
@@ -184,7 +194,7 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
                })}
                <label onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} onDrop={handleDrop} className={`shrink-0 w-24 h-24 border-2 border-dashed rounded-xl cursor-pointer flex flex-col items-center justify-center text-[10px] font-bold gap-2 transition-all ${isDragOver ? 'border-purple-500 bg-purple-500/10 text-purple-400' : 'border-slate-800 text-slate-500 hover:border-slate-600 hover:bg-slate-800/30'}`}>
                  <Icon name="fa-plus" className="text-lg" />
-                 <input type="file" className="hidden" accept="image/*" onChange={handleRefUpload} />
+                 <input type="file" className="hidden" accept="image/*" multiple onChange={handleRefUpload} />
                </label>
                {referenceAssets.length > 0 && (
                   <button onClick={onAnalyzeStyle} disabled={isAnalyzing} className="shrink-0 w-24 h-24 bg-slate-900 border border-slate-800 rounded-xl flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-purple-400 hover:border-purple-500 transition-all disabled:opacity-30">
@@ -210,12 +220,17 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
           )}
 
           {/* Main Prompt & Generate Row */}
-          <div className="flex-1 p-4 flex gap-4 min-h-0 bg-[#0b1120]">
+          <div 
+             className={`flex-1 p-4 flex gap-4 min-h-0 transition-colors ${isDragOver ? 'bg-purple-900/20' : 'bg-[#0b1120]'}`}
+             onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+             onDragLeave={() => setIsDragOver(false)}
+             onDrop={handleDrop}
+          >
              <textarea 
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-[13px] text-slate-100 outline-none focus:border-purple-600/50 transition-all resize-none font-medium leading-relaxed custom-scrollbar placeholder:text-slate-700"
-                placeholder={mode === 'ui-reimagine' ? t('describe_ui') : t('describe_illustration')}
+                placeholder={mode === 'ui-reimagine' ? t('describe_ui') : mode === 'map-grid' ? t('describe_map_grid') : t('describe_illustration')}
              />
              <div className="w-52 shrink-0 h-full">
                {!isGenerating ? (

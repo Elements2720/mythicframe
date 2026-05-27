@@ -2,6 +2,7 @@
 import JSZip from 'jszip';
 import { HistoryEntry, ExportConfig, GameContext, ResizeItem, WorkspaceTab } from "../types";
 import { APP_NAME, APP_VERSION } from "../constants";
+import { generateSpriteSheetGrid, sliceImageIntoTiles, resizeToCustomSize } from '../utils/imageUtils';
 
 const downloadBlob = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob);
@@ -190,4 +191,86 @@ export const exportResizeBatch = async (queue: ResizeItem[]) => {
   }
   const content = await zip.generateAsync({ type: "blob" });
   downloadBlob(content, `resize_batch_${timestamp}.zip`);
+};
+
+export const exportSpriteSheet = async (frames: any[], baseName: string) => {
+  const completedFrames = frames.filter(f => f.url && f.status === 'done');
+  if (completedFrames.length === 0) return;
+  const zip = new JSZip();
+  const folder = zip.folder(baseName);
+  if (!folder) return;
+
+  // Add individual frames
+  for (let i = 0; i < completedFrames.length; i++) {
+    const frame = completedFrames[i];
+    if (frame.url) {
+      try {
+        const blob = await urlToBlob(frame.url);
+        const safeName = (frame.prompt || `frame_${i + 1}`).replace(/[^a-z0-9]/gi, '_').toLowerCase().substring(0, 30);
+        folder.file(`${i + 1}_${safeName}.png`, blob);
+      } catch (e) {
+         console.error(`Sprite frame ${frame.id} export failed`, e);
+      }
+    }
+  }
+
+  // Add unified grid image
+  try {
+    const imageUrls = completedFrames.map(f => f.url);
+    const gridDataUrl = await generateSpriteSheetGrid(imageUrls);
+    const gridBlob = await urlToBlob(gridDataUrl);
+    folder.file(`${baseName}_grid.png`, gridBlob);
+  } catch (e) {
+    console.error("Failed to generate sprite sheet grid for ZIP", e);
+  }
+
+  const content = await zip.generateAsync({ type: "blob" });
+  downloadBlob(content, `${baseName}.zip`);
+};
+
+export const exportSpriteSheetGrid = async (frames: any[], baseName: string) => {
+  const completedFrames = frames.filter(f => f.url && f.status === 'done');
+  if (completedFrames.length === 0) return;
+  
+  try {
+    const imageUrls = completedFrames.map(f => f.url);
+    const gridDataUrl = await generateSpriteSheetGrid(imageUrls);
+    const link = document.createElement('a');
+    link.href = gridDataUrl;
+    link.download = `${baseName}_grid.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (e) {
+    console.error("Failed to export sprite sheet grid", e);
+  }
+};
+
+export const exportTileset = async (
+  imageUrl: string,
+  rows: number,
+  cols: number,
+  baseName: string,
+  tileSize: number = 64
+) => {
+  try {
+    const tiles = await sliceImageIntoTiles(imageUrl, rows, cols);
+    const zip = new JSZip();
+    const folder = zip.folder(`${baseName}_tileset`);
+    if (!folder) return;
+
+    for (let i = 0; i < tiles.length; i++) {
+      // Resize tile to desired export size
+      const resizedTile = await resizeToCustomSize(tiles[i], tileSize, tileSize);
+      const blob = await urlToBlob(resizedTile);
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      folder.file(`tile_r${row}_c${col}.png`, blob);
+    }
+
+    const content = await zip.generateAsync({ type: "blob" });
+    downloadBlob(content, `${baseName}_tileset.zip`);
+  } catch (e) {
+    console.error("Failed to export tileset", e);
+  }
 };

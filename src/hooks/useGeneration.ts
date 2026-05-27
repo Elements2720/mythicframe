@@ -1,7 +1,8 @@
+
 import { useState, useRef } from "react";
 import { generateIllustration, editImage, enhanceImage } from '../services/geminiService';
-import { removeBackground, createCompositeImage, blobUrlToBase64 } from '../utils/imageUtils';
-import { buildOutpaintPrompt, buildBackgroundRegenPrompt, buildPixelizePrompt, buildIllustrationPrompt, buildExtractClothesPrompt, buildUIReimaginePrompt } from '../services/promptTemplates';
+import { removeBackground, removeBackgroundNeo, createCompositeImage, blobUrlToBase64, base64ToBlobUrl, optimizeBase64Image } from '../utils/imageUtils';
+import { buildOutpaintPrompt, buildBackgroundRegenPrompt, buildPixelizePrompt, buildIllustrationPrompt, buildExtractClothesPrompt, buildUIReimaginePrompt, buildMapGridPrompt } from '../services/promptTemplates';
 import { GenerationModel, PixelDimensions, GachaAsset, BackgroundConfig, WorkspaceTab } from '../types';
 import { ART_STYLES, DEFAULT_BACKGROUND_CONFIG, AETHELGARD_RACES } from '../constants';
 
@@ -20,7 +21,8 @@ export const useGeneration = (
   setGachaAssets: (fn: (q: GachaAsset[]) => GachaAsset[]) => void,
   logConsole: (msg: string) => void,
   getTargetDimensions: () => PixelDimensions,
-  updateTabById: (id: string, updates: Partial<WorkspaceTab> | ((prev: WorkspaceTab) => Partial<WorkspaceTab>)) => void
+  updateTabById: (id: string, updates: Partial<WorkspaceTab> | ((prev: WorkspaceTab) => Partial<WorkspaceTab>)) => void,
+  recordStyleUsage?: (styleId: string) => void
 ) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -57,6 +59,7 @@ export const useGeneration = (
   };
 
   const handleEnhance = async () => {
+    if (isGenerating) return;
     const initiatingTabId = activeTab.id;
     if (!activeTab.generatedImage) return;
     if (!apiKeyReady) { alert("Please connect your API Key in settings."); return; }
@@ -67,16 +70,18 @@ export const useGeneration = (
 
     try {
       const base64Input = await blobUrlToBase64(activeTab.generatedImage);
-      const enhancedUrl = await enhanceImage(base64Input, gameContext);
+      const resultBase64 = await enhanceImage(base64Input, gameContext);
+      const resultUrl = base64ToBlobUrl(resultBase64);
+      const optimizedForHistory = await optimizeBase64Image(resultBase64, 1024, 0.7);
 
       updateTabById(initiatingTabId, prev => ({
-          generatedImage: enhancedUrl,
-          sessionImages: [enhancedUrl, ...prev.sessionImages]
+          generatedImage: resultUrl,
+          sessionImages: [resultUrl, ...prev.sessionImages]
       }));
 
       await addHistoryEntry({
         mode: activeTab.mode,
-        thumbnailUrl: enhancedUrl,
+        thumbnailUrl: optimizedForHistory,
         fullPrompt: "Automated Enhancement / Detail Refinement",
         userPrompt: `Enhanced: ${activeTab.prompt || 'Source Image'}`,
         gameContext,
@@ -103,6 +108,7 @@ export const useGeneration = (
   };
 
   const handleExtractOutfit = async (fileInput?: any) => {
+    if (isGenerating) return;
     const initiatingTabId = activeTab.id;
     const sourceImage = activeTab.generatedImage;
     if (!sourceImage && !(fileInput instanceof Blob)) return;
@@ -128,11 +134,16 @@ export const useGeneration = (
       const extractPrompt = buildExtractClothesPrompt(gameContext, activeTab.bgConfig);
       logConsole(`Extraction Prompt: ${extractPrompt}`);
 
-      let resultUrl = await editImage(base64Input, extractPrompt, activeTab.bgConfig, gameContext);
+      const resultBase64 = await editImage(base64Input, extractPrompt, activeTab.bgConfig, gameContext);
+      let resultUrl = base64ToBlobUrl(resultBase64);
+      const optimizedForHistory = await optimizeBase64Image(resultBase64, 1024, 0.7);
 
       if (activeTab.bgConfig.mode === 'transparent') {
         setStatusMessage('Keying Out Background & Healing...');
-        resultUrl = await removeBackground(resultUrl, 30, true, 100);
+        resultUrl = await removeBackground(resultUrl, 60, true, 100, '#FFFFFF');
+      } else if (activeTab.bgConfig.mode === 'transparent_neo') {
+        setStatusMessage('Decontaminating & Matting (NEO)...');
+        resultUrl = await removeBackgroundNeo(resultUrl, activeTab.bgConfig);
       }
 
       updateTabById(initiatingTabId, prev => ({
@@ -143,7 +154,7 @@ export const useGeneration = (
 
       await addHistoryEntry({
         mode: 'clothes',
-        thumbnailUrl: resultUrl,
+        thumbnailUrl: optimizedForHistory,
         fullPrompt: extractPrompt,
         userPrompt: `Extracted Garment Asset`,
         gameContext,
@@ -168,6 +179,7 @@ export const useGeneration = (
   };
 
   const handleRegenerateBackground = async (targetId?: string) => {
+    if (isGenerating) return;
     const initiatingTabId = activeTab.id;
     const isGacha = activeTab.mode === 'gacha';
     const targetAsset = isGacha && targetId ? activeTab.gachaAssets.find((a: GachaAsset) => a.id === targetId) : null;
@@ -192,11 +204,16 @@ export const useGeneration = (
       const regenPrompt = buildBackgroundRegenPrompt(gameContext, sourceBgConfig);
       logConsole(`Regen Prompt: ${regenPrompt}`);
 
-      let resultUrl = await editImage(base64Input, regenPrompt, sourceBgConfig, gameContext);
+      const resultBase64 = await editImage(base64Input, regenPrompt, sourceBgConfig, gameContext);
+      let resultUrl = base64ToBlobUrl(resultBase64);
+      const optimizedForHistory = await optimizeBase64Image(resultBase64, 1024, 0.7);
 
       if (sourceBgConfig.mode === 'transparent') {
         setStatusMessage('Removing Background & Healing...');
-        resultUrl = await removeBackground(resultUrl, 20, sourceBgConfig.removeHoles, sourceBgConfig.healingPower);
+        resultUrl = await removeBackground(resultUrl, 60, sourceBgConfig.removeHoles, sourceBgConfig.healingPower, '#FFFFFF');
+      } else if (sourceBgConfig.mode === 'transparent_neo') {
+        setStatusMessage('Decontaminating & Matting (NEO)...');
+        resultUrl = await removeBackgroundNeo(resultUrl, sourceBgConfig);
       }
 
       if (isGacha && targetId) {
@@ -212,7 +229,7 @@ export const useGeneration = (
 
       await addHistoryEntry({
         mode: activeTab.mode,
-        thumbnailUrl: resultUrl,
+        thumbnailUrl: optimizedForHistory,
         fullPrompt: regenPrompt,
         userPrompt: `Background Replacement: ${sourceBgConfig.promptFragment || sourceBgConfig.mode}`,
         gameContext,
@@ -242,6 +259,7 @@ export const useGeneration = (
   };
 
   const handleGenerate = async (append: boolean | string = false, targetAssetId?: string) => {
+    if (isGenerating) return;
     const initiatingTabId = activeTab.id;
     const isAppend = typeof append === 'boolean' ? append : false;
     const finalAssetId = targetAssetId || (typeof append === 'string' ? append : activeTab.selectedGachaAssetId);
@@ -271,8 +289,21 @@ export const useGeneration = (
     setIsGenerating(true);
     abortControllerRef.current = new AbortController();
     
+    if (recordStyleUsage && activeTab.selectedStyleId) {
+       recordStyleUsage(activeTab.selectedStyleId);
+    }
+    
     try {
-       const styleSnippet = activeTab.selectedStyleId !== 'none' ? ART_STYLES.find((s:any) => s.id === activeTab.selectedStyleId)?.promptSnippet || '' : '';
+       let styleSnippet = activeTab.selectedStyleId !== 'none' ? ART_STYLES.find((s:any) => s.id === activeTab.selectedStyleId)?.promptSnippet || '' : '';
+       
+       // Apply bit size override for pixel art styles
+       if (activeTab.pixelBitSize && (activeTab.selectedStyleId === 'pixel_art' || activeTab.selectedStyleId === 'retro_8bit_micro')) {
+          styleSnippet = styleSnippet.replace(/16-bit/g, activeTab.pixelBitSize).replace(/8-bit/g, activeTab.pixelBitSize);
+          if (!styleSnippet.includes(activeTab.pixelBitSize)) {
+            styleSnippet += `, ${activeTab.pixelBitSize}`;
+          }
+       }
+
        const model = useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_2_5;
        
        const count = (isAppend || ['resize', 'animation', 'fullcard', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine'].includes(activeTab.mode)) ? 1 : batchSize;
@@ -306,15 +337,23 @@ export const useGeneration = (
                   model, asset.size, asset.aspectRatio,
                   activeTab.referenceAssets, assetBgConfig, gameContext, abortControllerRef.current.signal,
                   styleSnippet, 'illustration', [], 'scene', activeTab.safeZone, undefined,
-                  activeTab.continuityFlags, proportionToUse, asset.chibiConfig
+                  activeTab.continuityFlags, proportionToUse, asset.chibiConfig,
+                  undefined, undefined, undefined, activeTab.noCharacters,
+                  asset.framing || activeTab.framing,
+                  activeTab.seed
               );
 
-              resultUrl = image;
+              const resultBase64 = image;
+              let resultUrl = base64ToBlobUrl(resultBase64);
+              const optimizedForHistory = await optimizeBase64Image(resultBase64, 1024, 0.7);
               finalPrompt = metadata.fullPrompt;
 
               if (assetBgConfig.mode === 'transparent') {
                   setStatusMessage('Removing Background & Healing...');
-                  resultUrl = await removeBackground(resultUrl, 30, assetBgConfig.removeHoles, assetBgConfig.healingPower);
+                  resultUrl = await removeBackground(resultUrl, assetBgConfig.tolBg || 60, assetBgConfig.removeHoles, assetBgConfig.healingPower, '#FFFFFF');
+              } else if (assetBgConfig.mode === 'transparent_neo') {
+                  setStatusMessage('Decontaminating & Matting (NEO)...');
+                  resultUrl = await removeBackgroundNeo(resultUrl, assetBgConfig);
               }
 
               updateTabById(initiatingTabId, prev => ({
@@ -324,7 +363,7 @@ export const useGeneration = (
 
               await addHistoryEntry({
                   mode: 'gacha',
-                  thumbnailUrl: resultUrl,
+                  thumbnailUrl: optimizedForHistory,
                   fullPrompt: finalPrompt,
                   userPrompt: `${asset.name}: ${activeTab.characterTraits}`,
                   gameContext,
@@ -346,7 +385,7 @@ export const useGeneration = (
                const dim = getTargetDimensions();
                const compositeBase64 = await createCompositeImage(item.url, dim.width, dim.height, activeTab.resizeZoom, activeTab.resizePan.x, activeTab.resizePan.y);
                const outpaintPrompt = buildOutpaintPrompt(activeTab.prompt, gameContext, styleSnippet);
-               resultUrl = await editImage(compositeBase64, outpaintPrompt, undefined, gameContext);
+               resultUrl = base64ToBlobUrl(await editImage(compositeBase64, outpaintPrompt, undefined, gameContext));
                finalPrompt = outpaintPrompt;
                updateTabById(initiatingTabId, prev => ({
                    resizeQueue: prev.resizeQueue.map(x => x.id === activeTab.selectedResizeId ? { ...x, status: 'done', resultUrl } : x),
@@ -357,7 +396,7 @@ export const useGeneration = (
                if (!item) throw new Error("Item not found");
                const base64Input = await blobUrlToBase64(item.url);
                const prompt = buildBackgroundRegenPrompt(gameContext, activeTab.bgConfig);
-               resultUrl = await editImage(base64Input, prompt, activeTab.bgConfig, gameContext);
+               resultUrl = base64ToBlobUrl(await editImage(base64Input, prompt, activeTab.bgConfig, gameContext));
                finalPrompt = prompt;
                updateTabById(initiatingTabId, prev => ({
                    bgReplaceQueue: prev.bgReplaceQueue.map(x => x.id === activeTab.selectedBgReplaceId ? { ...x, status: 'done', resultUrl } : x),
@@ -368,7 +407,7 @@ export const useGeneration = (
                if (!item) throw new Error("Item not found");
                const base64Input = await blobUrlToBase64(item.url);
                const prompt = buildPixelizePrompt(item.pixelStyle, ""); 
-               resultUrl = await editImage(base64Input, prompt, undefined, gameContext);
+               resultUrl = base64ToBlobUrl(await editImage(base64Input, prompt, undefined, gameContext));
                finalPrompt = prompt;
                updateTabById(initiatingTabId, prev => ({
                    pixelizeQueue: prev.pixelizeQueue.map(x => x.id === activeTab.selectedPixelizeId ? { ...x, status: 'done', resultUrl } : x),
@@ -376,8 +415,19 @@ export const useGeneration = (
                }));
            } else if (activeTab.mode === 'ui-reimagine') {
                const base64Input = await blobUrlToBase64(activeTab.generatedImage);
-               const prompt = buildUIReimaginePrompt(activeTab.prompt, gameContext, styleSnippet, activeTab.uiReimagineChangeBg);
-               resultUrl = await editImage(base64Input, prompt, undefined, gameContext, activeTab.referenceAssets);
+               const prompt = buildUIReimaginePrompt(
+                   activeTab.prompt, 
+                   gameContext, 
+                   styleSnippet, 
+                   activeTab.uiReimagineChangeBg,
+                   activeTab.uiMoodEnabled ? activeTab.uiThemeMood : undefined,
+                   activeTab.uiElementsEnabled ? activeTab.uiElements : undefined,
+                   activeTab.uiColorsEnabled ? { primary: activeTab.bgConfig.color, secondary: activeTab.bgConfig.secondaryColor || '#000000' } : undefined,
+                   activeTab.uiElementsEnabled ? activeTab.uiArchetype : undefined,
+                   activeTab.uiMaterialEnabled ? activeTab.uiMaterial : undefined,
+                   activeTab.uiPositionsLocked
+               );
+               resultUrl = base64ToBlobUrl(await editImage(base64Input, prompt, undefined, gameContext, activeTab.referenceAssets));
                finalPrompt = prompt;
                updateTabById(initiatingTabId, prev => ({
                    sessionImages: [resultUrl, ...prev.sessionImages],
@@ -402,14 +452,26 @@ export const useGeneration = (
                   styleSnippet, activeTab.mode, activeTab.frameElements, activeTab.bgPatternType, activeTab.safeZone,
                   activeTab.clothesParams,
                   activeTab.continuityFlags,
-                  activeTab.chibiProportions
+                  activeTab.chibiProportions,
+                  activeTab.chibiConfig,
+                  activeTab.poseData,
+                  activeTab.mapGridConfig,
+                  activeTab.viewpoint,
+                  activeTab.noCharacters,
+                  activeTab.framing,
+                  activeTab.seed
                );
-               resultUrl = image;
+               resultUrl = base64ToBlobUrl(image);
                finalPrompt = metadata.fullPrompt;
+               logConsole(`Generation Prompt: ${finalPrompt}`);
                if (activeTab.bgConfig.mode === 'transparent') {
                    setStatusMessage('Removing Background & Healing...');
                    clearTimer(); 
-                   resultUrl = await removeBackground(resultUrl, 30, activeTab.bgConfig.removeHoles, activeTab.bgConfig.healingPower);
+                   resultUrl = await removeBackground(resultUrl, activeTab.bgConfig.tolBg || 60, activeTab.bgConfig.removeHoles, activeTab.bgConfig.healingPower, '#FFFFFF');
+               } else if (activeTab.bgConfig.mode === 'transparent_neo') {
+                   setStatusMessage('Decontaminating & Matting (NEO)...');
+                   clearTimer();
+                   resultUrl = await removeBackgroundNeo(resultUrl, activeTab.bgConfig);
                }
                await addHistoryEntry({
                   mode: activeTab.mode,

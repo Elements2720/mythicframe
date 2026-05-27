@@ -73,9 +73,13 @@ const GachaBottomPanel: React.FC<GachaBottomPanelProps> = ({
     const file = e.dataTransfer.files?.[0];
     if (file && file.type.startsWith('image/')) {
         const reader = new FileReader();
-        reader.onload = () => {
-           setReferenceAssets(prev => [...prev, { id: Date.now().toString(), url: reader.result as string, roleNote: '' }]);
-           setShowRefs(true);
+        reader.onload = async () => {
+           try {
+             const { optimizeBase64Image } = await import('../../utils/imageUtils');
+             const optimized = await optimizeBase64Image(reader.result as string, 1024, 0.7);
+             setReferenceAssets(prev => [...prev, { id: Date.now().toString(), url: optimized, roleNote: '' }]);
+             setShowRefs(true);
+           } catch(err) {}
         };
         reader.readAsDataURL(file);
     }
@@ -117,7 +121,7 @@ const GachaBottomPanel: React.FC<GachaBottomPanelProps> = ({
                          <div className="flex-1 flex flex-col gap-1.5"><span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{t('usage')}</span><textarea value={asset.roleNote} onChange={e => setReferenceAssets(p => p.map(a => a.id === asset.id ? { ...a, roleNote: e.target.value } : a))} placeholder="Usage notes..." className="w-full flex-1 bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-[10px] text-slate-300 outline-none focus:border-purple-500/50 resize-none custom-scrollbar" /></div>
                      </div>
                   ))}
-                  <label onDragOver={e => {e.preventDefault(); setIsDragOver(true);}} onDragLeave={() => setIsDragOver(false)} onDrop={handleDrop} className={`w-20 h-20 shrink-0 border-2 border-dashed rounded-xl cursor-pointer flex flex-col items-center justify-center gap-1 text-[8px] font-bold uppercase transition-all ${isDragOver ? 'border-purple-500 bg-purple-500/10 text-purple-400' : 'border-slate-800 text-slate-500 hover:border-slate-600 hover:bg-slate-800/30'}`}><Icon name="fa-plus text-lg" /><span>{t('add_ref')}</span><input type="file" className="hidden" accept="image/*" onChange={(e) => { if(e.target.files?.[0]) { const reader = new FileReader(); reader.onload = () => { setReferenceAssets(p => [...p, { id: Date.now().toString(), url: reader.result as string, roleNote: '' }]); setShowRefs(true); }; reader.readAsDataURL(e.target.files[0]); } }} /></label>
+                  <label onDragOver={e => {e.preventDefault(); setIsDragOver(true);}} onDragLeave={() => setIsDragOver(false)} onDrop={handleDrop} className={`w-20 h-20 shrink-0 border-2 border-dashed rounded-xl cursor-pointer flex flex-col items-center justify-center gap-1 text-[8px] font-bold uppercase transition-all ${isDragOver ? 'border-purple-500 bg-purple-500/10 text-purple-400' : 'border-slate-800 text-slate-500 hover:border-slate-600 hover:bg-slate-800/30'}`}><Icon name="fa-plus text-lg" /><span>{t('add_ref')}</span><input type="file" className="hidden" accept="image/*" onChange={(e) => { if(e.target.files?.[0]) { const reader = new FileReader(); reader.onload = async () => { try { const { optimizeBase64Image } = await import('../../utils/imageUtils'); const optimized = await optimizeBase64Image(reader.result as string, 1024, 0.7); setReferenceAssets(p => [...p, { id: Date.now().toString(), url: optimized, roleNote: '' }]); setShowRefs(true); } catch(err){} }; reader.readAsDataURL(e.target.files[0]); } }} /></label>
                   {referenceAssets.length > 0 && <button onClick={onAnalyzeStyle} disabled={isAnalyzing} className="shrink-0 w-20 h-20 bg-slate-900 border border-slate-800 rounded-xl flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-purple-400 hover:border-purple-500 transition-all disabled:opacity-30"><Icon name={isAnalyzing ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles"} className="text-lg" /><span className="text-[8px] font-bold uppercase">Analyze</span></button>}
                </div>
              )}
@@ -129,7 +133,12 @@ const GachaBottomPanel: React.FC<GachaBottomPanelProps> = ({
                 <div className="flex flex-col gap-1.5 w-32 shrink-0"><label className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Gender</label><select value={characterGender} onChange={e => onUpdateGender(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white focus:border-blue-500 outline-none"><option value="Female">Female</option><option value="Male">Male</option><option value="Other">Other</option></select></div>
              </div>
 
-             <div className="flex-1 p-4 flex gap-4 min-h-0 bg-[#0b1120]">
+             <div 
+                className={`flex-1 p-4 flex gap-4 min-h-0 transition-colors ${isDragOver ? 'bg-purple-900/20' : 'bg-[#0b1120]'}`}
+                onDragOver={e => {e.preventDefault(); setIsDragOver(true);}}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={handleDrop}
+             >
                 <div className="flex-1 flex flex-col gap-2">
                    <div className="flex justify-between items-center"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Visual Trait Master Prompt</label><button onClick={onSuggestTraits} disabled={isSuggesting || !characterName} className="text-[9px] font-black text-blue-400 hover:text-blue-300 uppercase tracking-widest flex items-center gap-1.5 transition-colors disabled:opacity-50"><Icon name="fa-sparkles" /> Suggest Traits</button></div>
                    <textarea value={traits} onChange={(e) => onUpdateTraits(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-[13px] text-slate-100 outline-none focus:border-blue-600/50 transition-all resize-none font-medium italic leading-relaxed custom-scrollbar placeholder:text-slate-700 shadow-inner" placeholder="Physical constants (hair, eyes, armor)..." />

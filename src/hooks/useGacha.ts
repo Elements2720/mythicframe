@@ -1,6 +1,6 @@
 
 import { WorkspaceTab, GachaAsset, AspectRatio, Rarity, ChibiProportion } from '../types';
-import { GACHA_ASSET_PRESETS, DEFAULT_BACKGROUND_CONFIG } from '../constants';
+import { GACHA_ASSET_PRESETS, DEFAULT_BACKGROUND_CONFIG, DEFAULT_GACHA_ASSETS } from '../constants';
 
 export const useGacha = (
   activeTab: WorkspaceTab, 
@@ -33,7 +33,7 @@ export const useGacha = (
       status: 'pending',
       bgConfig: { ...DEFAULT_BACKGROUND_CONFIG }
     };
-    setGachaAssets(prev => [...prev, newAsset]);
+    setGachaAssets(prev => [newAsset, ...prev]);
   };
 
   const addGachaAssetFromPreset = (presetIndex: number) => {
@@ -53,7 +53,38 @@ export const useGacha = (
         mode: (preset.bgMode as any) || 'none'
       }
     };
-    setGachaAssets(prev => [...prev, newAsset]);
+    setGachaAssets(prev => [newAsset, ...prev]);
+  };
+
+  const resetGachaAsset = (id: string) => {
+    const defaultAsset = DEFAULT_GACHA_ASSETS.find(a => a.id === id);
+    if (defaultAsset) {
+      updateGachaAsset(id, {
+        name: defaultAsset.name,
+        aspectRatio: defaultAsset.aspectRatio,
+        promptSuffix: defaultAsset.promptSuffix,
+        imageUrl: null,
+        status: 'pending',
+        bgConfig: { ...defaultAsset.bgConfig, removeHoles: true, healingPower: 100 },
+        chibiConfig: defaultAsset.chibiConfig ? { ...defaultAsset.chibiConfig } : undefined
+      });
+    } else {
+      // For custom assets, just clear image and status
+      updateGachaAsset(id, { imageUrl: null, status: 'pending' });
+    }
+  };
+
+  const clearGachaAssetImage = (id: string) => {
+    updateGachaAsset(id, { imageUrl: null, status: 'pending' });
+  };
+
+  const reorderGachaAssets = (startIndex: number, endIndex: number) => {
+    setGachaAssets(prev => {
+      const result = [...prev];
+      const [removed] = result.splice(startIndex, 1);
+      result.splice(endIndex, 0, removed);
+      return result;
+    });
   };
 
   const updateGachaAsset = (id: string, updates: Partial<GachaAsset>) => {
@@ -111,6 +142,9 @@ export const useGacha = (
     setContinuityFlags,
     addGachaAsset,
     addGachaAssetFromPreset,
+    resetGachaAsset,
+    clearGachaAssetImage,
+    reorderGachaAssets,
     updateGachaAsset,
     removeGachaAsset,
     addContinuityFlag,

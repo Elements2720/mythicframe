@@ -1,8 +1,9 @@
 import { HistoryEntry } from "../types";
 
 const DB_NAME = 'MythicFrameDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'history';
+const EXPORT_STORE_NAME = 'exports';
 
 // Helper to open DB
 const openDB = (): Promise<IDBDatabase> => {
@@ -14,6 +15,9 @@ const openDB = (): Promise<IDBDatabase> => {
       const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(EXPORT_STORE_NAME)) {
+        db.createObjectStore(EXPORT_STORE_NAME, { keyPath: 'id' });
       }
     };
 
@@ -123,6 +127,77 @@ export const clearHistory = async (): Promise<void> => {
         });
     } catch(e) {
         console.error("Failed to clear history", e);
+    }
+};
+
+// --- Export History ---
+
+export const saveExportToHistory = async (entry: any): Promise<void> => {
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(EXPORT_STORE_NAME, 'readwrite');
+            const store = tx.objectStore(EXPORT_STORE_NAME);
+            store.put(entry);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (e) {
+        console.error("Failed to save export to IDB", e);
+    }
+};
+
+export const getExportHistory = async (): Promise<any[]> => {
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(EXPORT_STORE_NAME, 'readonly');
+            const store = tx.objectStore(EXPORT_STORE_NAME);
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const res = request.result;
+                if (res && Array.isArray(res)) {
+                    res.sort((a, b) => b.timestamp - a.timestamp);
+                    resolve(res);
+                } else {
+                    resolve([]);
+                }
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch (e) {
+        console.error("Failed to load export history", e);
+        return [];
+    }
+};
+
+export const getExportEntry = async (id: string): Promise<any> => {
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(EXPORT_STORE_NAME, 'readonly');
+            const store = tx.objectStore(EXPORT_STORE_NAME);
+            const request = store.get(id);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    } catch (e) {
+        console.error("Failed to load export entry", e);
+        return null;
+    }
+};
+
+export const deleteExportEntry = async (id: string): Promise<void> => {
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(EXPORT_STORE_NAME, 'readwrite');
+            tx.objectStore(EXPORT_STORE_NAME).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (e) {
+        console.error("Failed to delete export from IDB", e);
     }
 };
 

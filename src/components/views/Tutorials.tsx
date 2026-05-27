@@ -2,262 +2,290 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../../i18n/LanguageContext';
 
+const Icon = ({ name, className = "" }: { name: string, className?: string }) => <i className={`fa-solid ${name} ${className}`} />;
+
 const TutorialSection = ({ title, icon, children }: { title: string; icon: string; children?: React.ReactNode }) => (
-  <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 mb-8 animate-in fade-in slide-in-from-bottom-2">
-    <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-4">
-      <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-purple-400">
-        <i className={`fa-solid ${icon} text-xl`} />
+  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 mb-10 shadow-2xl overflow-hidden relative">
+    <div className="flex items-center gap-4 border-b border-slate-800 pb-6 mb-6">
+      <div className="w-12 h-12 rounded-xl bg-purple-600/20 flex items-center justify-center text-purple-400 border border-purple-500/20 shadow-lg shadow-purple-900/20">
+        <i className={`fa-solid ${icon} text-2xl`} />
       </div>
-      <h2 className="text-xl font-bold text-slate-200">{title}</h2>
+      <div>
+        <h2 className="text-2xl font-black text-slate-100 tracking-tight">{title}</h2>
+        <div className="h-1 w-12 bg-purple-500 rounded-full mt-1" />
+      </div>
     </div>
-    <div className="text-slate-300 space-y-4 leading-relaxed">
+    <div className="text-slate-300 space-y-6 leading-relaxed">
       {children}
     </div>
   </div>
 );
 
-const Step = ({ num, text }: { num: number; text: string }) => (
-  <div className="flex gap-4 items-start">
-    <div className="w-6 h-6 rounded-full bg-purple-900/50 text-purple-300 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 border border-purple-500/30">
+const Step = ({ num, title, text }: { num: number; title: string; text: string }) => (
+  <div className="flex gap-5 items-start group">
+    <div className="w-8 h-8 rounded-xl bg-slate-950 text-purple-400 flex items-center justify-center text-sm font-black shrink-0 mt-1 border border-slate-800 shadow-xl group-hover:border-purple-500/50 transition-colors">
       {num}
     </div>
-    <p>{text}</p>
+    <div className="space-y-1">
+      <h4 className="font-black text-slate-100 text-sm uppercase tracking-widest">{title}</h4>
+      <p className="text-slate-400 text-sm leading-relaxed">{text}</p>
+    </div>
   </div>
 );
 
-// --- CSS UI SIMULATIONS (Mockups) ---
-
-const MockButton = ({ label, icon, color='purple' }: any) => (
-   <div className={`px-2 py-1 rounded bg-${color}-600 text-white text-[10px] font-bold inline-flex items-center gap-1 shadow-sm`}>
-      {icon && <i className={`fa-solid ${icon}`} />} {label}
-   </div>
-);
-
-const MockCanvas = ({ label }: any) => (
-   <div className="bg-black rounded-lg border border-slate-800 aspect-video flex items-center justify-center relative overflow-hidden">
-      <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#4b5563 1px, transparent 1px)', backgroundSize: '10px 10px' }} />
-      <div className="text-slate-600 text-xs font-mono">{label}</div>
-   </div>
-);
+const MockButton = ({ label, icon, color = 'purple' }: any) => {
+   const colors: any = {
+     purple: 'bg-purple-600 border-purple-500',
+     blue: 'bg-blue-600 border-blue-500',
+     green: 'bg-green-600 border-green-500',
+     slate: 'bg-slate-800 border-slate-700'
+   };
+   return (
+     <div className={`px-3 py-1.5 rounded-lg ${colors[color]} text-white text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2 shadow-lg border border-white/10`}>
+        {icon && <i className={`fa-solid ${icon}`} />} {label}
+     </div>
+   );
+};
 
 const Tutorials: React.FC = () => {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('getting_started');
 
   const tabs = [
-    { id: 'getting_started', label: t('tut_getting_started'), icon: 'fa-rocket' },
-    { id: 'illustration', label: t('tut_illustration'), icon: 'fa-paintbrush' },
-    { id: 'gacha', label: t('tut_gacha'), icon: 'fa-person-rays' },
-    { id: 'frame', label: t('tut_frame'), icon: 'fa-border-all' },
-    { id: 'background', label: t('tut_background'), icon: 'fa-image' },
-    { id: 'animation', label: t('tut_animation'), icon: 'fa-film' },
-    { id: 'fullcard', label: t('tut_fullcard'), icon: 'fa-pen-ruler' },
-    { id: 'resize', label: t('tut_resize'), icon: 'fa-expand' },
+    { id: 'getting_started', label: "Quick Start", icon: 'fa-rocket' },
+    { id: 'essentials', label: "Studio Essentials", icon: 'fa-layer-group' },
+    { id: 'illustration', label: "Illustration & Neo", icon: 'fa-paintbrush' },
+    { id: 'gacha', label: "Character Bible", icon: 'fa-book-open' },
+    { id: 'clothes', label: "Clothes Designer", icon: 'fa-shirt' },
+    { id: 'resize', label: "Magic Resizer", icon: 'fa-expand' },
+    { id: 'ui_reimagine', label: "UI Reimagine", icon: 'fa-window-restore' },
+    { id: 'batch', label: "Batch Studio", icon: 'fa-boxes-stacked' },
+    { id: 'animation', label: "Animation Studio", icon: 'fa-film' },
   ];
 
   return (
     <div className="flex h-full bg-slate-950 overflow-hidden">
       {/* Sidebar Navigation */}
-      <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
-        <div className="p-6 pb-2">
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <i className="fa-solid fa-graduation-cap text-purple-500" /> {t('tutorials')}
+      <div className="w-72 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 overflow-y-auto custom-scrollbar z-20">
+        <div className="p-8 pb-4">
+          <h1 className="text-xl font-black text-white flex items-center gap-3">
+            <i className="fa-solid fa-graduation-cap text-purple-500" /> UNIVERSITY
           </h1>
-          <p className="text-xs text-slate-500 mt-2">Master the MythicFrame workflow.</p>
+          <p className="text-[10px] text-slate-500 mt-2 uppercase font-black tracking-[0.3em] opacity-50">MythicFrame v0.9.5</p>
         </div>
-        <div className="p-2 space-y-1">
+        <div className="p-4 space-y-1">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 text-sm transition-colors ${activeTab === tab.id ? 'bg-purple-900/20 text-purple-300 border border-purple-500/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+              className={`w-full text-left px-5 py-4 rounded-xl flex items-center gap-4 text-sm transition-all duration-300 ${activeTab === tab.id ? 'bg-purple-600 text-white shadow-2xl shadow-purple-900/40 translate-x-2' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
             >
-              <i className={`fa-solid ${tab.icon} w-5 text-center`} />
-              {tab.label}
+              <i className={`fa-solid ${tab.icon} w-5 text-center text-base`} />
+              <span className="font-bold tracking-tight">{tab.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-        <div className="max-w-4xl mx-auto">
+      {/* Content Area - Enforced solid background for flicker-free transitions */}
+      <div className="flex-1 overflow-y-auto p-16 custom-scrollbar bg-slate-950 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] relative">
+        <div 
+          key={activeTab} 
+          className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-500 ease-out fill-mode-both"
+        >
           
           {activeTab === 'getting_started' && (
-            <TutorialSection title={t('tut_getting_started')} icon="fa-rocket">
-              <div className="p-6 bg-slate-950 rounded border border-slate-800 mb-6">
-                 <h3 className="font-bold text-white mb-2">1. Connect API</h3>
-                 <p className="text-sm text-slate-400 mb-4">Go to Settings to connect. Green indicates you are ready.</p>
-                 <div className="flex gap-4">
-                     <div className="px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 border bg-green-900/20 text-green-400 border-green-500/30">
-                        <i className="fa-solid fa-check-circle" /> Connected
-                     </div>
-                     <div className="px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 border bg-red-900/20 text-red-400 border-red-500/30 opacity-50">
-                        <i className="fa-solid fa-times-circle" /> Not Connected
-                     </div>
+            <TutorialSection title="System Initialization" icon="fa-rocket">
+              <p>Welcome to MythicFrame. Our workstation allows you to synthesize production-ready game assets using the power of Google Gemini. Every generation is contextualized by your project's unique lore.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-8">
+                 <div className="p-6 bg-slate-950 rounded-2xl border border-slate-800 shadow-xl border-l-4 border-l-amber-500">
+                    <h3 className="font-black text-amber-500 mb-3 flex items-center gap-2 uppercase text-xs tracking-widest"><i className="fa-solid fa-key" /> Step 1: API Setup</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed">Go to <b>Settings</b> and authorize your Gemini API Key. Use the <b>Pro Model</b> toggle in the sidebar for high-resolution 4K synthesis.</p>
+                 </div>
+                 <div className="p-6 bg-slate-950 rounded-2xl border border-slate-800 shadow-xl border-l-4 border-l-blue-500">
+                    <h3 className="font-black text-blue-500 mb-3 flex items-center gap-2 uppercase text-xs tracking-widest"><i className="fa-solid fa-book" /> Step 2: Game Context</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed">Enter your world's "Lore" in Settings. This context is automatically injected into every prompt to ensure visual consistency across the whole project.</p>
                  </div>
               </div>
 
-              <div className="p-6 bg-slate-950 rounded border border-slate-800 mb-6">
-                 <h3 className="font-bold text-white mb-2">2. Define Game Context</h3>
-                 <p className="text-sm text-slate-400 mb-4">
-                    In Settings, the "Game Context" is your global style guide.
-                    <br/>Example: <em>"A dark fantasy world overrun by crystals."</em>
-                 </p>
-                 <div className="bg-slate-900 p-3 rounded border border-slate-700 text-xs font-mono text-blue-300">
-                    SETTING: Dark Fantasy World...<br/>
-                    TONE: Gritty, Dangerous...<br/>
-                    CONSTRAINTS: No sci-fi tech...
+              <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
+                  <h3 className="font-black text-white mb-4 text-xs uppercase tracking-widest">Precision Input Controls</h3>
+                  <p className="text-sm text-slate-300 mb-4">MythicFrame uses <b>Unity-style Input Sliders</b> for fine-tuning. Click and drag the label of any slider to change values.</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                       <span className="text-[10px] font-black text-blue-400 uppercase block mb-1">Shift + Drag</span>
+                       <span className="text-[11px] text-slate-400">Fast movement (10x speed).</span>
+                    </div>
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                       <span className="text-[10px] font-black text-purple-400 uppercase block mb-1">Alt + Drag</span>
+                       <span className="text-[11px] text-slate-400">Precision tuning (0.1x speed).</span>
+                    </div>
+                  </div>
+              </div>
+            </TutorialSection>
+          )}
+
+          {activeTab === 'essentials' && (
+            <TutorialSection title="Common Studio Systems" icon="fa-layer-group">
+              <p>These features are shared across modes like Illustration, Gacha, and Clothes Designer. Mastering them ensures project-wide cohesion.</p>
+
+              <div className="space-y-10 mt-8">
+                 {/* References */}
+                 <div className="space-y-4">
+                    <h3 className="text-lg font-black text-white flex items-center gap-3"><Icon name="fa-images text-purple-500" /> Reference Intelligence</h3>
+                    <p className="text-sm text-slate-300">Upload images to guide the AI. Every reference can be assigned a specific <b>Role</b>:</p>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="p-5 bg-slate-950 rounded-xl border border-slate-800 shadow-lg">
+                          <MockButton label="Mannequin" color="blue" icon="fa-user-check" />
+                          <p className="text-[11px] text-slate-300 mt-3 italic leading-relaxed">Strictly locks facial structure, body type, and pose. The AI treats this as an immutable blueprint for the generation.</p>
+                       </div>
+                       <div className="p-5 bg-slate-950 rounded-xl border border-slate-800 shadow-lg">
+                          <MockButton label="Style Source" color="purple" icon="fa-palette" />
+                          <p className="text-[11px] text-slate-300 mt-3 italic leading-relaxed">Extracts the brushwork, palette, and "vibe". Use this to replicate a specific artist's technique or color theory.</p>
+                       </div>
+                    </div>
+                 </div>
+
+                 {/* Backgrounds */}
+                 <div className="space-y-4">
+                    <h3 className="text-lg font-black text-white flex items-center gap-3"><Icon name="fa-image text-green-500" /> Background Engine</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                       <div className="p-5 bg-slate-950 rounded-xl border border-slate-800 text-center shadow-lg group hover:border-blue-500/50 transition-colors">
+                          <span className="text-[11px] font-black uppercase text-blue-400 tracking-widest block mb-2">Scene</span>
+                          <p className="text-[10px] text-slate-100 leading-relaxed font-bold">Full environmental depth, perspective, and lighting.</p>
+                       </div>
+                       <div className="p-5 bg-slate-950 rounded-xl border border-slate-800 text-center shadow-lg group hover:border-purple-500/50 transition-colors">
+                          <span className="text-[11px] font-black uppercase text-purple-400 tracking-widest block mb-2">Pattern</span>
+                          <p className="text-[10px] text-slate-100 leading-relaxed font-bold">Seamless UI textures, materials, and tileable motifs.</p>
+                       </div>
+                       <div className="p-5 bg-slate-950 rounded-xl border border-slate-800 text-center shadow-lg group hover:border-green-500/50 transition-colors">
+                          <span className="text-[11px] font-black uppercase text-green-400 tracking-widest block mb-2">Neo Transparent</span>
+                          <p className="text-[10px] text-slate-100 leading-relaxed font-bold">AI background removal with professional matting.</p>
+                       </div>
+                    </div>
+                    <div className="p-5 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl shadow-inner mt-4">
+                       <p className="text-xs text-indigo-100 font-bold italic leading-relaxed">
+                          <i className="fa-solid fa-circle-info mr-2 text-indigo-400" />
+                          Note: Neo Transparent mode generates the subject on a Chroma Key color (e.g. Magenta) and automatically cleans it up to ensure fonts and edges blend naturally with your game engine's backdrop.
+                       </p>
+                    </div>
                  </div>
               </div>
             </TutorialSection>
           )}
 
           {activeTab === 'illustration' && (
-             <TutorialSection title={t('tut_illustration')} icon="fa-paintbrush">
-                <p>Generate characters, items, and scenes. This is the core art creation tool.</p>
-                
-                <div className="grid grid-cols-2 gap-4 my-6">
-                   <div className="bg-slate-950 p-4 rounded border border-slate-800">
-                      <h4 className="font-bold text-purple-400 mb-3 text-sm uppercase">Bottom Panel: Prompting</h4>
-                      <div className="bg-slate-900 border border-slate-700 rounded p-2 text-xs text-slate-400 italic mb-2">
-                         "A heroic knight standing in a shop..."
-                      </div>
-                      <div className="flex justify-end">
-                         <MockButton label="Generate" icon="fa-wand-magic-sparkles" />
-                      </div>
-                   </div>
-                   
-                   <div className="bg-slate-950 p-4 rounded border border-slate-800">
-                      <h4 className="font-bold text-blue-400 mb-3 text-sm uppercase">Reference Images</h4>
-                      <div className="flex gap-2 mb-2">
-                         <div className="w-10 h-10 bg-slate-800 rounded border border-slate-700"></div>
-                         <div className="w-10 h-10 bg-slate-800 rounded border border-slate-700"></div>
-                         <div className="w-10 h-10 border border-dashed border-slate-600 rounded flex items-center justify-center text-slate-600"><i className="fa-solid fa-plus"/></div>
-                      </div>
-                      <p className="text-[10px] text-slate-500">Upload images here to guide the style.</p>
-                   </div>
-                </div>
+            <TutorialSection title="Illustration & Neo v2" icon="fa-paintbrush">
+              <p>The primary art synthesis mode. Features advanced background removal and safe-zone composition.</p>
+              
+              <div className="space-y-6 my-8">
+                 <Step num={1} title="Define Subject" text="Describe your character's gear, pose, and lighting in the bottom logic panel." />
+                 <Step num={2} title="Style & Size" text="Select an Art Style from the Right Inspector and choose 1K, 2K, or 4K resolution." />
+                 <Step num={3} title="Transparency (Optional)" text="To generate a character sprite, select 'Transparent Neo' in the Background settings." />
+                 <Step num={4} title="Synthesis" text="Click 'Generate Illustration'. Results will appear in the session gallery at the top." />
+              </div>
 
-                <div className="bg-slate-950 p-4 rounded border border-slate-800 mb-6">
-                    <h3 className="font-bold text-white mb-2">Safe Zone Tool</h3>
-                    <p className="text-sm text-slate-400 mb-4">Toggle "Safe Zone" in the right panel to see a green box overlay. This ensures your subject stays centered for card cropping.</p>
-                    <div className="relative h-32 bg-black rounded border border-slate-700 overflow-hidden w-64 mx-auto">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                           <div className="w-16 h-16 rounded-full bg-slate-800"></div>
-                        </div>
-                        <div className="absolute top-2 left-2 right-2 bottom-2 border-2 border-green-500/50 flex items-start p-1">
-                           <span className="text-[8px] bg-green-500 text-white px-1 rounded">SAFE ZONE</span>
-                        </div>
-                    </div>
-                </div>
-             </TutorialSection>
+              <div className="p-8 bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl relative overflow-hidden">
+                 <div className="absolute top-0 right-0 p-6 opacity-10"><Icon name="fa-wind text-7xl" /></div>
+                 <h4 className="font-black text-purple-400 mb-4 text-[10px] uppercase tracking-widest">Neo v2: SteamSafe Cleanup</h4>
+                 <p className="text-sm text-slate-400 leading-relaxed mb-6">Standard removal destroys translucent regions. **SteamSafe** washes out chroma bleed from semi-transparent regions like hair, smoke, and magical steam, allowing them to blend perfectly with any game background.</p>
+                 <div className="flex gap-4">
+                    <MockButton label="Enabled: SteamSafe" color="purple" icon="fa-check-circle" />
+                    <div className="flex-1 h-2 bg-slate-800 rounded-full mt-3 overflow-hidden"><div className="h-full bg-purple-500 w-[85%]" /></div>
+                 </div>
+              </div>
+            </TutorialSection>
           )}
 
           {activeTab === 'gacha' && (
-             <TutorialSection title={t('tut_gacha')} icon="fa-person-rays">
-                <p>The **Character Bible** allows you to build a cohesive set of assets for one character while maintaining visual consistency.</p>
+             <TutorialSection title="The Character Bible" icon="fa-book-open">
+                <p>Manage the visual consistency of a single character across multiple asset types (Splash Art, Dialogue Sprites, Chibi, etc.).</p>
                 
-                <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 my-6">
-                   <h3 className="font-bold text-blue-400 mb-2 uppercase tracking-widest text-sm">Visual Continuity Workflow</h3>
-                   <div className="space-y-4 mt-4">
-                      <Step num={1} text="Define the constant Visual Traits in the bottom panel (e.g., hair color, armor style)." />
-                      <Step num={2} text="Add 'Asset Slots' for each specific art type you need (Card Art, Battle Sprite, etc)." />
-                      <Step num={3} text="Customize the resolution and prompt suffix for each slot." />
-                      <Step num={4} text="Use 'Generate Entire Set' to batch render the whole character bible." />
+                <div className="space-y-8 my-8">
+                   <div className="p-6 bg-slate-950 border border-slate-800 rounded-2xl relative">
+                      <h3 className="font-black text-white mb-3 text-xs uppercase tracking-widest flex items-center gap-2"><Icon name="fa-fingerprint text-blue-500" /> Physical Constants</h3>
+                      <p className="text-xs text-slate-400 leading-relaxed">The <b>Constants</b> field defines traits that NEVER change (Hair color, eye shape, armor materials). This logic is automatically injected into every slot in the bible.</p>
                    </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                      <h4 className="font-bold text-white text-sm mb-2"><i className="fa-solid fa-id-badge text-blue-500 mr-2"/> Metadata</h4>
-                      <p className="text-xs text-slate-500 leading-relaxed">Set the character's Name, Rarity, and Gender. These are used to label your exports and help organize your project library.</p>
-                   </div>
-                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                      <h4 className="font-bold text-white text-sm mb-2"><i className="fa-solid fa-wand-magic-sparkles text-blue-500 mr-2"/> Sync Style</h4>
-                      <p className="text-xs text-slate-500 leading-relaxed">Upload style references in the bottom panel. Click 'Sync Style' to ensure all generated assets share the same rendering technique.</p>
+                   <div className="space-y-4">
+                      <Step num={1} title="Identify Unit" text="Enter Name, Subtitle, Race, and Gender in the top bar. This metadata is saved with exports." />
+                      <Step num={2} title="Populate Manifest" text="Click 'Add Preset' to create slots for Battle Sprites, Splash Art, or Dialogue poses." />
+                      <Step num={3} title="Batch Generation" text="Click 'Sync Bible' to generate all assets simultaneously using the shared Physical Constants." />
+                      <Step num={4} title="Visual Master" text="Found a perfect render? Click 'Set as Visual Master' to use it as a reference for all other slots." />
                    </div>
                 </div>
              </TutorialSection>
           )}
 
-          {activeTab === 'frame' && (
-             <TutorialSection title={t('tut_frame')} icon="fa-border-all">
-                <p>Create UI borders and card frames. The center is kept blank for your artwork.</p>
-                
-                <div className="bg-slate-950 p-6 rounded border border-slate-800 my-6 flex gap-6 items-center">
-                   <div className="flex-1">
-                      <h3 className="font-bold text-white mb-2">Batch Generation</h3>
-                      <p className="text-sm text-slate-400 mb-3">Use the slider in the right panel to generate up to 4 variations at once.</p>
-                      <div className="bg-slate-900 p-2 rounded border border-slate-700 w-full">
-                          <div className="text-[10px] text-slate-500 mb-1">BATCH COUNT: 4</div>
-                          <div className="h-1 bg-purple-600 w-full rounded"></div>
-                      </div>
-                   </div>
-                   <div className="flex gap-2">
-                      <div className="w-12 h-16 border-2 border-purple-500 bg-slate-900 rounded"></div>
-                      <div className="w-12 h-16 border border-slate-700 bg-slate-900 rounded opacity-50"></div>
-                      <div className="w-12 h-16 border border-slate-700 bg-slate-900 rounded opacity-50"></div>
-                   </div>
-                </div>
-             </TutorialSection>
-          )}
+          {activeTab === 'clothes' && (
+            <TutorialSection title="Clothes Designer Studio" icon="fa-shirt">
+              <p>Specialized workflow for generating garment assets or fitting outfits onto character mannequins.</p>
+              
+              <div className="grid grid-cols-2 gap-8 my-8">
+                 <div className="space-y-4">
+                    <div className="p-4 bg-indigo-900/10 border border-indigo-500/20 rounded-2xl">
+                       <h4 className="font-black text-indigo-400 text-[10px] uppercase tracking-widest mb-1">Render: On Model</h4>
+                       <p className="text-[10px] text-slate-300">Generates the outfit worn by a character. Use this to design the final look of your units.</p>
+                    </div>
+                    <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
+                       <h4 className="font-black text-slate-300 text-[10px] uppercase tracking-widest mb-1">Render: Ghost Asset</h4>
+                       <p className="text-[10px] text-slate-400">Removes biological matter. Generates the clothing as if worn by an invisible void.</p>
+                    </div>
+                 </div>
+                 <div className="bg-slate-950 rounded-2xl border border-slate-800 p-6 flex flex-col items-center justify-center text-center">
+                    <Icon name="fa-scissors text-3xl text-indigo-500 mb-3" />
+                    <h3 className="text-xs font-black uppercase text-white">Manual Extraction</h3>
+                    <p className="text-[9px] text-slate-400 mt-2">Upload a portrait and use <b>Extract Garment</b> to programmatically remove the person inside.</p>
+                 </div>
+              </div>
 
-          {activeTab === 'animation' && (
-             <TutorialSection title={t('tut_animation')} icon="fa-film">
-                <p>Create frame-by-frame animations for sprites or moving backgrounds.</p>
-                
-                <div className="bg-slate-950 p-4 rounded border border-slate-800 my-6">
-                   <h3 className="font-bold text-white mb-4">The Timeline</h3>
-                   <div className="flex gap-2 overflow-x-auto pb-2">
-                       <div className="w-20 h-16 bg-slate-900 border-2 border-purple-500 rounded relative">
-                          <div className="absolute bottom-0 left-0 bg-purple-600 text-[8px] text-white px-1">1</div>
-                       </div>
-                       <div className="w-20 h-16 bg-slate-900 border border-slate-700 rounded relative">
-                          <div className="absolute bottom-0 left-0 bg-slate-700 text-[8px] text-white px-1">2</div>
-                       </div>
-                       <div className="w-20 h-16 border-2 border-dashed border-slate-700 rounded flex items-center justify-center text-slate-600">
-                          <i className="fa-solid fa-plus" />
-                       </div>
-                   </div>
-                   <p className="text-xs text-slate-400 mt-2">Click frames to edit prompts. Use "Generate All" to render the sequence.</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="bg-slate-950 p-4 rounded border border-slate-800">
-                      <h4 className="font-bold text-white text-sm mb-2"><i className="fa-solid fa-layer-group text-slate-500 mr-2"/> Onion Skin</h4>
-                      <p className="text-xs text-slate-400">Toggle "Onion Skin" in the right panel to see a ghost of the previous frame overlaid on the canvas.</p>
-                   </div>
-                   <div className="bg-slate-950 p-4 rounded border border-slate-800">
-                      <h4 className="font-bold text-white text-sm mb-2"><i className="fa-solid fa-images text-slate-500 mr-2"/> Consistency</h4>
-                      <p className="text-xs text-slate-400">Open the "References" panel above the timeline. Add your character sheet here so every frame looks like the same character.</p>
-                   </div>
-                </div>
-             </TutorialSection>
+              <div className="space-y-3">
+                 <Step num={1} title="Select Layout" text="Choose 'Assembled' for a single view or 'Spread Sheet' for front/back/detail views." />
+                 <Step num={2} title="Lock Pose" text="Use a mannequin reference and enable 'Lock Pose' to change outfits while keeping the stance identical." />
+              </div>
+            </TutorialSection>
           )}
 
           {activeTab === 'resize' && (
-             <TutorialSection title={t('tut_resize')} icon="fa-expand">
-                <p>Change the aspect ratio of an existing image without cropping it. The AI "paints" the missing areas.</p>
-                
-                <div className="relative bg-black p-8 rounded-lg border border-slate-800 my-6 flex items-center justify-center overflow-hidden">
-                    {/* Simulated Workspace */}
-                    <div className="relative w-64 h-48 bg-slate-900 border border-slate-700">
-                       <div className="absolute inset-0 flex items-center justify-center">
-                          {/* Inner Image */}
-                          <div className="w-32 h-32 bg-slate-700 border border-slate-500"></div>
-                       </div>
-                       <div className="absolute inset-0 border-2 border-dashed border-purple-500/50"></div>
-                       <div className="absolute top-2 left-2 bg-purple-600 text-white text-[8px] px-1 rounded">OUTPUT AREA</div>
+            <TutorialSection title="Magic Resizer (Outpainting)" icon="fa-expand">
+              <p>Expand your artwork beyond its original borders. Magic Resizer turns a Portrait character into a Cinematic scene.</p>
+              
+              <div className="bg-slate-950 p-8 rounded-3xl border border-slate-800 shadow-2xl relative my-8">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                       <h4 className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Composition Logic</h4>
+                       <Step num={1} title="Import" text="Add images to the Batch Queue." />
+                       <Step num={2} title="Transform" text="Drag the image on the canvas to Pan. Scroll or use the slider to Zoom." />
+                       <Step num={3} title="Synthesize" text="Click 'Generate Outpaint'. Gemini will fill the empty areas with matching art." />
                     </div>
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center justify-center border-dashed">
+                       <div className="flex flex-col items-center gap-4 opacity-40 scale-75">
+                          <div className="w-32 h-32 border-2 border-blue-500 relative flex items-center justify-center">
+                             <div className="w-16 h-16 bg-slate-700 rounded shadow-2xl" />
+                             <Icon name="fa-up-down-left-right absolute -top-4" />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-widest">Drag to Pan Source</span>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+            </TutorialSection>
+          )}
+
+          {activeTab === 'ui_reimagine' && (
+             <TutorialSection title="UI Reimagine & HUD Layout" icon="fa-window-restore">
+                <p>Overlay functional game interfaces on top of your artwork. Ideal for designing inventory screens or combat HUDs.</p>
+                
+                <div className="space-y-4 my-8">
+                   <Step num={1} title="Choose Archetype" text="Select a framework like 'Classic RPG', 'Sci-Fi Terminal', or 'Mobile HUD'." />
+                   <Step num={2} title="Set Material" text="Define the surface finish (e.g. Polished Metal, Glowing Hologram, Ornate Gold)." />
+                   <Step num={3} title="Color Accent" text="Use the Color Mixer to set your game's Primary and Secondary UI colors." />
                 </div>
 
-                <div className="bg-slate-950 p-4 rounded border border-slate-800">
-                   <h3 className="font-bold text-white mb-2">Workflow</h3>
-                   <Step num={1} text="Upload an image to the Queue on the left." />
-                   <Step num={2} text="Select a Target Ratio (e.g. 16:9) in the bottom panel." />
-                   <Step num={3} text="Zoom/Pan your image to fit inside the new frame." />
-                   <Step num={4} text="Click Generate to fill the empty space." />
+                <div className="p-6 bg-purple-900/10 border border-purple-500/20 rounded-2xl border-l-4 border-l-purple-500">
+                    <h3 className="font-black text-purple-400 text-[10px] uppercase tracking-widest mb-2">Advanced: Blend Artwork</h3>
+                    <p className="text-xs text-slate-200 leading-relaxed italic font-medium">"If enabled, the AI will modify the underlying art style (lighting/colors) to perfectly match the interface's material and theme."</p>
                 </div>
              </TutorialSection>
           )}

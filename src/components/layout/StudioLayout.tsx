@@ -10,10 +10,15 @@ import BgReplaceBottomPanel from '../ui/BgReplaceBottomPanel';
 import PixelizeBottomPanel from '../ui/PixelizeBottomPanel';
 import GachaBottomPanel from '../ui/GachaBottomPanel';
 import IllustrationCanvas from '../canvas/IllustrationCanvas';
+import PoseStudioCanvas from '../canvas/PoseStudioCanvas';
 import ResizeCanvas from '../canvas/ResizeCanvas';
 import BgReplaceCanvas from '../canvas/BgReplaceCanvas';
 import PixelizeCanvas from '../canvas/PixelizeCanvas';
 import GachaCanvas from '../canvas/GachaCanvas';
+import MapGridCanvas from '../canvas/MapGridCanvas';
+import { SpriteSheetGrid } from '../SpriteSheet/SpriteSheetGrid';
+import { SpriteSheetControls } from '../SpriteSheet/SpriteSheetControls';
+import { BatchStudio } from '../views/BatchStudio';
 import HistoryPanel from '../ui/HistoryPanel';
 import { WorkspaceTab, ReferenceAsset } from '../../types';
 
@@ -71,13 +76,31 @@ export default function StudioLayout({ engine }: { engine: any }) {
     if (engine.mode === 'resize') return <ResizeCanvas generatedImage={engine.generatedImage} resizeOriginalImage={engine.resizeOriginalImage} targetDimensions={engine.getTargetDimensions()} resizeZoom={engine.resizeZoom} setResizeZoom={engine.setResizeZoom} resizePan={engine.resizePan} setResizePan={engine.setResizePan} onAddFiles={engine.onAddResizeFiles} safeZone={engine.safeZone} setSafeZone={engine.setSafeZone} useCustomResBox={engine.useCustomResBox} customResBox={engine.customResBox} setCustomResBox={engine.setCustomResBox} isGenerating={engine.isGenerating} statusMessage={engine.statusMessage} />;
     if (engine.mode === 'bg-replace') return <BgReplaceCanvas generatedImage={engine.generatedImage} originalImage={engine.bgReplaceQueue.find((i: any) => i.id === engine.selectedBgReplaceId)?.url || null} onAddFiles={engine.onAddBgReplaceFiles} />;
     if (engine.mode === 'pixelize') return <PixelizeCanvas generatedImage={engine.generatedImage} originalImage={engine.pixelizeQueue.find((i: any) => i.id === engine.selectedPixelizeId)?.url || null} onAddFiles={engine.onAddPixelizeFiles} />;
-    if (engine.mode === 'gacha') return <GachaCanvas assets={engine.gachaAssets} selectedAssetId={engine.selectedGachaAssetId} onSelectAsset={engine.setSelectedGachaAssetId} onGenerateAsset={engine.handleGenerate} onRegenerateBackground={engine.handleRegenerateBackground} onCancelGeneration={engine.handleCancel} traits={engine.characterTraits} onUpdateTraits={engine.setCharacterTraits} characterName={engine.characterName} onUpdateName={engine.setCharacterName} characterSubtitle={engine.characterSubtitle} onUpdateSubtitle={engine.setCharacterSubtitle} characterRarity={engine.characterRarity} onUpdateRarity={engine.setCharacterRarity} characterGender={engine.characterGender} onUpdateGender={engine.setCharacterGender} characterRace={engine.characterRace} onUpdateRace={engine.setCharacterRace} chibiProportions={engine.chibiProportions} onUpdateProportions={engine.onUpdateProportions} selectedStyleId={engine.selectedStyleId} onUpdateStyle={engine.setSelectedStyleId} onUpdateAsset={engine.updateGachaAsset} onRemoveAsset={engine.removeGachaAsset} onAddPreset={engine.addGachaAssetFromPreset} onAddSlot={engine.addGachaAsset} referenceAssets={engine.referenceAssets} setReferenceAssets={engine.setReferenceAssets} continuityFlags={engine.continuityFlags} onToggleContinuityFlag={(flag) => engine.setContinuityFlags((prev: any) => ({ ...prev, [flag]: !prev[flag] }))} onAddContinuityFlag={engine.addContinuityFlag} onRemoveContinuityFlag={engine.removeContinuityFlag} onRenameContinuityFlag={engine.renameContinuityFlag} onToggleReference={(url) => { const exists = engine.referenceAssets.find((r: any) => r.url === url); if (exists) engine.setReferenceAssets((p: any) => p.filter((r:any) => r.url !== url)); else engine.setReferenceAssets((p: any) => [{ id: Date.now().toString(), url, roleNote: 'Visual Master' }, ...p]); }} isGenerating={engine.isGenerating} isSuggesting={engine.isSuggesting} onSuggestTraits={engine.handleSuggestTraits} onAnalyzeStyle={engine.handleAnalyzeStyle} isAnalyzing={engine.isAnalyzing} onGenerateAll={engine.handleGenerateEntireSet} />;
+    if (engine.mode === 'pose-studio') return <PoseStudioCanvas generatedImage={engine.generatedImage} poseData={engine.poseData} setPoseData={engine.setPoseData} aspectRatio={engine.selectedAspectRatio} customRes={engine.customRes} isGenerating={engine.isGenerating} statusMessage={engine.statusMessage} onImageUpload={engine.handleImageUpload} onClearImage={engine.handleClearImage} sessionImages={engine.sessionImages} onSelectSessionImage={engine.setGeneratedImage} onGenerateMore={() => engine.handleGenerate(true)} onClearSession={engine.handleClearSession} onRemoveSessionImage={engine.handleRemoveSessionImage} />;
+    if (engine.mode === 'gacha') return <GachaCanvas assets={engine.gachaAssets} selectedAssetId={engine.selectedGachaAssetId} onSelectAsset={engine.setSelectedGachaAssetId} onGenerateAsset={engine.handleGenerate} onRegenerateBackground={engine.handleRegenerateBackground} onCancelGeneration={engine.handleCancel} traits={engine.characterTraits} onUpdateTraits={engine.setCharacterTraits} characterName={engine.characterName} onUpdateName={engine.setCharacterName} characterSubtitle={engine.characterSubtitle} onUpdateSubtitle={engine.setCharacterSubtitle} characterRarity={engine.characterRarity} onUpdateRarity={engine.setCharacterRarity} characterGender={engine.characterGender} onUpdateGender={engine.setCharacterGender} characterRace={engine.characterRace} onUpdateRace={engine.setCharacterRace} chibiProportions={engine.chibiProportions} onUpdateProportions={engine.onUpdateProportions} selectedStyleId={engine.selectedStyleId} onUpdateStyle={engine.setSelectedStyleId} onUpdateAsset={engine.updateGachaAsset} onRemoveAsset={engine.removeGachaAsset} onResetAsset={engine.resetGachaAsset} onClearAssetImage={engine.clearGachaAssetImage} onReorderAssets={engine.reorderGachaAssets} onAddPreset={engine.addGachaAssetFromPreset} onAddSlot={engine.addGachaAsset} referenceAssets={engine.referenceAssets} setReferenceAssets={engine.setReferenceAssets} continuityFlags={engine.continuityFlags} onToggleContinuityFlag={(flag) => engine.setContinuityFlags((prev: any) => ({ ...prev, [flag]: !prev[flag] }))} onAddContinuityFlag={engine.addContinuityFlag} onRemoveContinuityFlag={engine.removeContinuityFlag} onRenameContinuityFlag={engine.renameContinuityFlag} onToggleReference={(url) => { const exists = engine.referenceAssets.find((r: any) => r.url === url); if (exists) engine.setReferenceAssets((p: any) => p.filter((r:any) => r.url !== url)); else engine.setReferenceAssets((p: any) => [{ id: Date.now().toString(), url, roleNote: 'Visual Master' }, ...p]); }} isGenerating={engine.isGenerating} isSuggesting={engine.isSuggesting} onSuggestTraits={engine.handleSuggestTraits} onAnalyzeStyle={engine.handleAnalyzeStyle} isAnalyzing={engine.isAnalyzing} onGenerateAll={engine.handleGenerateEntireSet} curatedArtStyles={engine.curatedArtStyles} />;
+    if (engine.mode === 'map-grid') return <MapGridCanvas generatedImage={engine.generatedImage} mapGridConfig={engine.mapGridConfig} aspectRatio={engine.selectedAspectRatio} customRes={engine.customRes} isGenerating={engine.isGenerating} statusMessage={engine.statusMessage} onImageUpload={engine.handleImageUpload} onClearImage={engine.handleClearImage} sessionImages={engine.sessionImages} onSelectSessionImage={engine.setGeneratedImage} onGenerateMore={() => engine.handleGenerate(true)} onExportTileset={engine.handleExportTileset} />;
+    if (engine.mode === 'sprite-sheet') return (
+      <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+        <div className="max-w-7xl mx-auto space-y-8">
+          <header className="space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight text-white">Sprite Sheet Studio</h1>
+            <p className="text-slate-400 max-w-2xl">
+              Generate character poses and variations in a consistent grid. Define a global character prompt and customize each frame.
+            </p>
+          </header>
+          <SpriteSheetGrid engine={engine} />
+        </div>
+      </div>
+    );
+    if (engine.mode === 'batch') return <BatchStudio engine={engine} />;
     return <IllustrationCanvas generatedImage={engine.generatedImage} useCustomResBox={engine.useCustomResBox} customResBox={engine.customResBox} setCustomResBox={engine.setCustomResBox} isEditMode={engine.isEditMode} editRegion={engine.editRegion} setEditRegion={engine.setEditRegion} mode={engine.mode} aspectRatio={engine.selectedAspectRatio} customRes={engine.customRes} isPlaying={engine.isPlayingAnimation} currentFrameIndex={engine.animFrameIndex} totalFrames={engine.animConfig.frames.length} onionSkinImage={engine.showOnionSkin && engine.selectedFrameId && engine.mode === 'animation' && engine.animConfig.frames.findIndex((f:any) => f.id === engine.selectedFrameId) > 0 ? engine.animConfig.frames[engine.animConfig.frames.findIndex((f:any) => f.id === engine.selectedFrameId) - 1].imageUrl : null} safeZone={engine.safeZone} setSafeZone={engine.setSafeZone} onImageUpload={engine.handleImageUpload} onClearImage={engine.handleClearImage} sessionImages={engine.sessionImages} onSelectSessionImage={engine.setGeneratedImage} onGenerateMore={() => engine.handleGenerate(true)} onClearSession={engine.handleClearSession} onRemoveSessionImage={engine.handleRemoveSessionImage} isGenerating={engine.isGenerating} statusMessage={engine.statusMessage} characterTool={engine.characterTool} onCharacterLookClick={engine.handleCharacterLookClick} />;
   };
 
   const renderBottomPanel = () => {
     // Character Bible has all controls integrated into the Sheet Canvas, hide bottom bar.
     if (engine.mode === 'gacha') return null;
+    if (engine.mode === 'sprite-sheet') return null;
+    if (engine.mode === 'batch') return null;
     
     if (engine.mode === 'animation') return <AnimationTimeline frames={engine.animConfig.frames} selectedFrameId={engine.selectedFrameId} onSelectFrame={engine.setSelectedFrameId} onAddFrame={engine.handleAddFrame} onUpdateFramePrompt={engine.handleUpdateFramePrompt} onDeleteFrame={engine.handleDeleteFrame} onDuplicateFrame={engine.handleDuplicateFrame} onGenerateFrame={engine.handleGenerateFrame} onGenerateAnimation={engine.handleGenerateAnimation} onClearFrames={engine.handleClearFrames} isGenerating={engine.isGenerating} onCancel={engine.handleCancel} isPlaying={engine.isPlayingAnimation} onTogglePlay={() => engine.setIsPlayingAnimation(!engine.isPlayingAnimation)} onUploadFrameImage={engine.handleFrameImageUpload} referenceAssets={engine.referenceAssets} setReferenceAssets={engine.setReferenceAssets} isAnalyzing={engine.isAnalyzing} onAnalyzeStyle={engine.handleAnalyzeStyle} handleCreateSpinAnimation={engine.handleCreateSpinAnimation} />;
     if (engine.mode === 'resize') return <ResizeBottomPanel queue={engine.resizeQueue} selectedId={engine.selectedResizeId} onSelect={engine.onSelectResizeItem} onRemove={engine.onRemoveResizeItem} onAddFiles={engine.onAddResizeFiles} onClearResult={engine.handleClearResizeResult} onRename={engine.handleResizeRename} prompt={engine.prompt} setPrompt={engine.setPrompt} isGenerating={engine.isGenerating} onGenerate={engine.handleGenerate} onGenerateAll={engine.handleGenerateAllResize} onExportAll={engine.handleExportAllResize} onCancel={engine.handleCancel} />;
@@ -88,12 +111,14 @@ export default function StudioLayout({ engine }: { engine: any }) {
   };
 
   const isGachaMode = engine.mode === 'gacha';
+  const isSpriteSheet = engine.mode === 'sprite-sheet';
   const isUIReimagine = engine.mode === 'ui-reimagine';
   const isClothesDesigner = engine.mode === 'clothes';
 
   const renderRightPanel = () => {
     if (isUIReimagine) return <UIReimaginePanel {...engine} onOpenAssetPicker={() => engine.setShowAssetPicker(true)} onOpenCrop={() => engine.setShowCropModal(true)} />;
     if (isClothesDesigner) return <ClothesDesignerPanel {...engine} onOpenAssetPicker={() => engine.setShowAssetPicker(true)} onOpenCrop={() => engine.setShowCropModal(true)} />;
+    if (isSpriteSheet) return <SpriteSheetControls engine={engine} />;
     return <RightPanel {...engine} onOpenAssetPicker={() => engine.setShowAssetPicker(true)} onOpenCrop={() => engine.setShowCropModal(true)} onClearResult={engine.handleClearResizeResult} onRegeneratePose={engine.handleRegeneratePose} />;
   };
 

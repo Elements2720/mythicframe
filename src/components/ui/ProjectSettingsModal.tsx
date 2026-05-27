@@ -1,20 +1,21 @@
 
 import React from 'react';
-import { GameContext } from '../../types';
+import { GameContext, ArtStyle } from '../../types';
 
 interface ProjectSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   gameContext: GameContext;
   setGameContext: React.Dispatch<React.SetStateAction<GameContext>>;
+  allArtStyles: ArtStyle[];
 }
 
-const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ isOpen, onClose, gameContext, setGameContext }) => {
+const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ isOpen, onClose, gameContext, setGameContext, allArtStyles }) => {
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-       <div className="bg-slate-900 border border-slate-700 rounded-lg p-6 w-[500px] shadow-2xl">
+       <div className="bg-slate-900 border border-slate-700 rounded-lg p-6 w-[500px] shadow-2xl overflow-y-auto max-h-[90vh]">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-100">
              <i className="fa-solid fa-book-open" /> Game Context (Narrative)
           </h2>
@@ -47,6 +48,20 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ isOpen, onC
                   value={gameContext.visualConstraints}
                   onChange={e => setGameContext(p => ({...p, visualConstraints: e.target.value}))}
                 />
+             </div>
+             <div>
+                <label className="block text-xs uppercase font-bold text-slate-500 mb-1">Default Global Art Style</label>
+                <select 
+                  className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:border-purple-500 outline-none"
+                  value={gameContext.defaultStyleId || 'none'}
+                  onChange={e => setGameContext(p => ({...p, defaultStyleId: e.target.value}))}
+                >
+                  <option value="none">None (User Choice)</option>
+                  {allArtStyles.map(style => (
+                    <option key={style.id} value={style.id}>{style.name}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-500 mt-1 italic">New tabs will start with this style selected.</p>
              </div>
           </div>
 

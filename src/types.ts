@@ -1,4 +1,20 @@
-export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'illustration' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize' | 'frame' | 'background' | 'fullcard' | 'gacha' | 'ui-reimagine';
+
+export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'illustration' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize' | 'frame' | 'background' | 'fullcard' | 'gacha' | 'ui-reimagine' | 'style-library' | 'pose-studio' | 'map-grid' | 'sprite-sheet' | 'batch' | 'downloads';
+
+export interface BatchItem {
+  id: string;
+  name: string;
+  prompt: string;
+  aspectRatio: AspectRatio;
+  status: 'pending' | 'processing' | 'done' | 'failed';
+  imageUrl?: string;
+  error?: string;
+  enabled: boolean;
+  sourceFile?: string;
+  isSeriesTemplate?: boolean;
+  usedReferenceUrl?: string;
+  skipReference?: boolean;
+}
 
 export type FrameElement = 'name_banner' | 'mana_cost' | 'description_box' | 'power_toughness';
 
@@ -8,18 +24,56 @@ export type BackgroundPatternType = 'texture' | 'abstract' | 'ui_backdrop' | 'mu
 
 export type ChibiProportion = 'standard' | 'deformed_4h' | 'chibi_3h' | 'micro_2h';
 
+export type StyleCategory = 'Game Art' | 'Anime/Manga' | 'Digital Painting' | 'Traditional' | 'Abstract/UI' | 'Retro' | 'Other';
+
+export type AIProvider = 'google' | 'custom';
+
+export interface AIConfig {
+  provider: AIProvider;
+  baseUrl: string;
+  customModelName: string;
+}
+
+export interface ArtStyle {
+  id: string;
+  name: string;
+  promptSnippet: string;
+  description?: string;
+  category?: StyleCategory;
+  isCustom?: boolean;
+  exampleUrl?: string;
+}
+
+export interface StyleCollection {
+  id: string;
+  name: string;
+  styleIds: string[];
+  isLocked?: boolean;
+}
+
 export interface ChibiConfig {
   enabled: boolean;
-  proportions: 'simple' | 'semi'; // 2h vs 3h
+  proportions: 'simple' | 'semi'; // Legacy fallback
+  presetProportion?: ChibiProportion; // Link to standard constants
+  bodyRatio?: string; // e.g. "1:2", "1:3"
   headStyle: 'moe' | 'realistic'; // Ultra-cute vs Defined
   bodyStyle: 'geometric' | 'defined'; // Cylinders vs Defined anatomy
   focus: 'kawaii' | 'detailed'; // Simple vs Textured
+}
+
+// Added ClothesParams to define valid rendering and layout modes for the Clothes Designer feature
+export interface ClothesParams {
+  renderMode: 'model' | 'asset';
+  layout: 'assembled' | 'spread';
+  lockPose: boolean;
+  framing: 'full-body' | 'waist-up' | 'bust' | 'head-only';
 }
 
 export interface GameContext {
   setting: string;
   tone: string;
   visualConstraints: string;
+  defaultStyleId?: string;
 }
 
 export interface RaceArchetype {
@@ -43,10 +97,11 @@ export interface GachaAsset {
   locked?: boolean;
   chibiProportions?: ChibiProportion;
   chibiConfig?: ChibiConfig;
+  framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only';
 }
 
 export interface BackgroundConfig {
-  mode: 'solid' | 'scene' | 'none' | 'pattern' | 'transparent';
+  mode: 'solid' | 'scene' | 'none' | 'pattern' | 'transparent' | 'transparent_neo' | 'prompt_only' | 'auto';
   color: string;
   secondaryColor?: string;
   gradientType?: 'none' | 'linear' | 'radial';
@@ -55,6 +110,20 @@ export interface BackgroundConfig {
   patternType?: BackgroundPatternType;
   removeHoles?: boolean;
   healingPower?: number;
+  
+  // Neo Specifics
+  keyColor?: string; // The chroma key color (e.g. #FF00FF)
+  tolBg?: number;
+  tolEdge?: number;
+  softRadius?: number;
+  decontamStrength?: number;
+  preserveTrueMagenta?: boolean;
+  fxMode?: boolean;
+
+  // Neo v2 SteamSafe
+  steamSafe?: boolean;
+  neutralizeStrength?: number;
+  alphaBias?: number;
 }
 
 export interface HistoryEntry {
@@ -83,6 +152,19 @@ export interface HistoryEntry {
   bgPatternType?: BackgroundPatternType;
   safeZone?: SafeZoneConfig;
   continuityFlags?: Record<string, boolean>;
+  batchQueue?: BatchItem[];
+}
+
+export interface ExportHistoryEntry {
+  id: string;
+  timestamp: number;
+  name: string;
+  itemCount: number;
+  fileSize?: number;
+  type: 'zip' | 'png' | 'csv';
+  blob?: Blob; // Optional: persist the actual file
+  hasBlob?: boolean;
+  url?: string; // For session-only or external links
 }
 
 export interface ExportConfig {
@@ -148,6 +230,10 @@ export interface ResizeItem {
   resultUrl?: string;
 }
 
+export type BatchGenerationMode = 'standard' | 'consistent_series';
+
+export type BatchVariation = 'waist-up' | 'full-body' | 'chibi';
+
 export interface BgReplaceItem extends ResizeItem {
   prompt: string;
   bgConfig: BackgroundConfig;
@@ -164,6 +250,19 @@ export interface CharacterToolState {
   poseDescription: string;
   lookTarget: { x: number; y: number } | null;
   isSettingLookTarget: boolean;
+}
+
+export interface PoseJoint {
+  id: string;
+  name: string;
+  x: number; // percentage 0-100
+  y: number; // percentage 0-100
+  parent?: string;
+}
+
+export interface PoseData {
+  joints: PoseJoint[];
+  showSkeleton: boolean;
 }
 
 export interface LayoutElement {
@@ -184,6 +283,53 @@ export interface LayoutElement {
   textShadow?: string;
 }
 
+export type MapViewMode = 'top-down' | 'isometric';
+export type MapEnvironmentPreset = 'tomb' | 'dungeon' | 'castle' | 'forest_ruins' | 'custom';
+export type MapLightDirection = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'top' | 'bottom';
+export type MapDetailDensity = 'low' | 'medium' | 'high';
+export type MapDecorationLevel = 'none' | 'light' | 'rich';
+
+export interface MapGridConfig {
+  viewMode: MapViewMode;
+  gridWidth: number;
+  gridHeight: number;
+  cellSize: number;
+  showGrid: boolean;
+  snapToGrid: boolean;
+  
+  // Isometric specific
+  tileDiamondRatio: number;
+  verticalHeightMultiplier: number;
+  
+  preset: MapEnvironmentPreset;
+  primaryColor: string;
+  accentColor: string;
+  shadowIntensity: number;
+  lightDirection: MapLightDirection;
+  detailDensity: MapDetailDensity;
+  decorationLevel: MapDecorationLevel;
+  
+  transparentBackground: boolean;
+  exportTileSize: number;
+}
+
+export interface SpriteSheetFrame {
+  id: string;
+  prompt: string;
+  url: string | null;
+  status: 'idle' | 'processing' | 'done' | 'failed';
+  bgConfig: BackgroundConfig;
+  referenceUrl: string | null;
+}
+
+export interface SpriteSheetState {
+  frames: SpriteSheetFrame[];
+  globalPrompt: string;
+  animationGoal: string;
+  aspectRatio: AspectRatio;
+  globalBackground: BackgroundConfig;
+}
+
 export interface CardLayout {
   art: LayoutElement;
   name: LayoutElement;
@@ -192,19 +338,14 @@ export interface CardLayout {
   type: LayoutElement;
 }
 
-export interface ClothesParams {
-  renderMode: 'model' | 'asset';
-  layout?: 'assembled' | 'spread';
-  lockPose?: boolean;
-}
-
-export interface ArtStyle {
+export interface CardTemplate {
   id: string;
   name: string;
-  promptSnippet: string;
-  description?: string;
+  imageUrl: string | null;
+  defaultLayout: CardLayout;
 }
 
+// Added CsvCardData for parsing and mapping CSV rows to card data
 export interface CsvCardData {
   [key: string]: string;
 }
@@ -220,6 +361,8 @@ declare global {
   }
 }
 
+export type Viewpoint = 'none' | 'front' | 'back' | 'side' | 'three-quarter' | 'top-down' | 'high-angle' | 'low-angle' | 'isometric' | 'cinematic';
+
 export interface WorkspaceTab {
   id: string;
   name: string;
@@ -234,6 +377,9 @@ export interface WorkspaceTab {
   selectedAspectRatio: AspectRatio;
   bgConfig: BackgroundConfig;
   bgPatternType: BackgroundPatternType;
+  viewpoint: Viewpoint;
+  seed?: number | null;
+  pixelBitSize: '8-bit' | '16-bit' | '32-bit' | '64-bit';
   
   animConfig: AnimationProject;
   selectedFrameId: string | null;
@@ -241,6 +387,9 @@ export interface WorkspaceTab {
   safeZone: SafeZoneConfig;
   characterTool: CharacterToolState;
   clothesParams: ClothesParams;
+  chibiConfig?: ChibiConfig;
+  noCharacters?: boolean;
+  framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only';
 
   resizeQueue: ResizeItem[];
   selectedResizeId: string | null;
@@ -287,11 +436,21 @@ export interface WorkspaceTab {
 
   // UI Reimagine feature
   uiReimagineChangeBg: boolean;
+  uiPositionsLocked: boolean;
   uiThemeMood: string;
   uiElements: string[];
   uiMoodEnabled: boolean;
   uiElementsEnabled: boolean;
   uiColorsEnabled: boolean;
+  uiMaterialEnabled: boolean;
   uiArchetype: string;
   uiMaterial: string;
+
+  poseData: PoseData;
+  mapGridConfig: MapGridConfig;
+  spriteSheet: SpriteSheetState;
+  batchQueue: BatchItem[];
+  selectedBatchId: string | null;
+  batchGenerationMode: BatchGenerationMode;
+  batchVariations: BatchVariation[];
 }

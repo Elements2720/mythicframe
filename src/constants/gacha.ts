@@ -29,55 +29,63 @@ export const CHIBI_STYLE_CONFIG: Record<ChibiProportion, { label: string; icon: 
   }
 };
 
-export const GACHA_ASSET_PRESETS: { name: string; ratio: AspectRatio; suffix: string; icon: string; bgMode?: string }[] = [
+export const GACHA_ASSET_PRESETS: { name: string; ratio: AspectRatio; suffix: string; icon: string; bgMode?: string; chibi?: boolean; framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only' }[] = [
   {
     name: 'Vassal Card',
     ratio: '3:4',
     icon: 'fa-id-card',
     suffix: 'Waist-up shot of a single anime character (no group), centered, direct gaze, stoic expression, high-quality polished cel-shaded game art, no background or minimal flat color, character only.',
-    bgMode: 'transparent'
+    bgMode: 'solid',
+    framing: 'waist-up'
   },
   {
     name: 'Battle Sprite',
     ratio: '1:1',
     icon: 'fa-sword',
-    suffix: 'Full-body sprite, standing, frontal view, vivid and clear costume or armor details, clean cel-shading, lively pose. Style is polished and visually appealing, designed for tactical RPG battle screens.',
-    bgMode: 'transparent'
+    suffix: 'Full-body sprite, standing, frontal view, vivid and clear costume or armor details, clean cel-shading, lively pose. Style is polished and visually appealing, designed for tactical RPG battle screens. [STRICT NEGATIVE: no moe, no shining eyes, not overly cute, not generic anime style, no exaggerated expressions, no kawaii]',
+    bgMode: 'solid',
+    chibi: true,
+    framing: 'full-body'
   },
   {
-    name: 'Chibi Portrait',
-    ratio: '3:4',
-    icon: 'fa-child',
-    suffix: 'Full-body and centered character portrait. compact and sturdy body, expressive face, vibrant and sharply defined costume or armor. Style is clean cel-shaded with crisp linework, suitable as a collectible portrait.',
-    bgMode: 'transparent'
+    name: 'Avatar Icon',
+    ratio: '1:1',
+    icon: 'fa-circle-user',
+    suffix: 'Headshot / Close-up of a single character, focus entirely on the head and face, centered, direct gaze, solid white background, clean polished game art style.',
+    bgMode: 'solid',
+    framing: 'head-only'
   },
   {
     name: 'Chambers CG',
     ratio: '16:9',
     icon: 'fa-couch',
-    suffix: 'Full character depicted in a detailed anime bedroom or lounge environment, relaxed/at ease pose, soft evening or ambient light, cinematic depth, immersive setting, polished high-quality gacha game CG illustration.',
-    bgMode: 'scene'
+    suffix: 'Full character depicted in a highly detailed personal chamber or room tailored specifically to the character\'s race, class, and personality. The setting MUST be located within the dark and imposing Castle of the Demon Lord. For example, a Prime Titan might have a massive stone cavern with chains, while a noble vampire might have a gothic study. The room should perfectly reflect their nature. Relaxed/at ease pose, soft evening or ambient light, cinematic depth, immersive setting, polished high-quality gacha game CG illustration.',
+    bgMode: 'scene',
+    framing: 'full-body'
   },
   {
     name: 'Dialogue Portrait',
     ratio: '3:4',
     icon: 'fa-comments',
     suffix: 'Anime character close-up portrait, waist-up to shoulders, character faces 45° to viewer’s left, subtle facial emotions, natural posture, focus on face and upper body only, no background, no effects, clean transparent asset for dialogue UI.',
-    bgMode: 'transparent'
+    bgMode: 'solid',
+    framing: 'bust'
   },
   {
     name: 'Splash Art',
     ratio: '16:9',
     icon: 'fa-fire',
     suffix: 'Epic dynamic splash illustration for gacha game, single character full-body, dramatic pose, vibrant action movement, centered composition, highly detailed background, masterpiece lighting, sense of scale, cinematic drama.',
-    bgMode: 'scene'
+    bgMode: 'scene',
+    framing: 'full-body'
   },
   {
     name: 'Full Portrait',
     ratio: '9:16',
     icon: 'fa-user',
     suffix: 'Full body character, fully visible from head to toe, standing, stylish RPG-style costume, detailed and expressive posture, clean polished cel-shading, high-quality illustration suitable for gacha summon view or collection screen.',
-    bgMode: 'scene'
+    bgMode: 'scene',
+    framing: 'full-body'
   }
 ];
 
@@ -89,208 +97,148 @@ export const DEFAULT_GACHA_ASSETS: GachaAsset[] = GACHA_ASSET_PRESETS.map((p, id
   promptSuffix: p.suffix,
   imageUrl: null,
   status: 'pending',
-  bgConfig: { ...DEFAULT_BACKGROUND_CONFIG, mode: (p.bgMode as any) || 'none', removeHoles: true, healingPower: 100 }
+  bgConfig: { ...DEFAULT_BACKGROUND_CONFIG, mode: (p.bgMode as any) || 'auto', removeHoles: true, healingPower: 100 },
+  chibiConfig: p.chibi 
+    ? { 
+        enabled: true, 
+        proportions: 'simple', 
+        headStyle: 'realistic', 
+        bodyStyle: 'geometric', 
+        focus: p.name === 'Battle Sprite' ? 'detailed' : 'kawaii', 
+        presetProportion: p.name === 'Battle Sprite' ? 'deformed_4h' : 'chibi_3h', 
+        bodyRatio: p.name === 'Battle Sprite' ? '1:4' : '1:2' 
+      } 
+    : { enabled: false, proportions: 'simple', headStyle: 'realistic', bodyStyle: 'geometric', focus: 'kawaii' },
+  framing: p.framing || 'full-body'
 }));
 
 export const AETHELGARD_RACES: RaceArchetype[] = [
   { 
+    id: 'construct', 
+    name: 'Construct', 
+    trueName: 'Golem',
+    desc: 'Mechanical or golem-like entities forged in the deep forges of Drakmora. Tireless, emotionless engines of war.', 
+    traitPromptMale: 'male construct, blocky massive frame, made of stone and metal, glowing runic lines, glowing core, emitting steam, mecha golem, mechanical parts, fantasy',
+    traitPromptFemale: 'female construct, blocky massive frame, made of stone and metal, glowing runic lines, glowing core, emitting steam, mecha golem, mechanical parts, fantasy'
+  },
+  { 
+    id: 'dwarf', 
+    name: 'Dwarf', 
+    trueName: 'Khazad',
+    desc: 'Stout subterranean dwellers who bring masterful engineering to the dark forces. Heavily muscled and bearded.', 
+    traitPromptMale: 'male dwarf, stout, heavily muscular, intricate braided beard, soot-stained, glowing forge-runes, heavy metal armor, massive hammer, fantasy',
+    traitPromptFemale: 'female dwarf, stout, muscular, soot-stained, glowing forge-runes, heavy metal armor, massive hammer, fantasy'
+  },
+  { 
+    id: 'familiar', 
+    name: 'Familiar', 
+    trueName: 'Abyssal',
+    desc: 'Summoned beasts, abyssal creatures, and magical constructs of flesh and blood serving as assassins or shields.', 
+    traitPromptMale: 'male creature, monster, glowing arcane markings, unnatural proportions, multiple eyes or limbs, fantasy beast, dark fantasy setting',
+    traitPromptFemale: 'female creature, monster, glowing arcane markings, unnatural proportions, multiple eyes or limbs, fantasy beast, dark fantasy setting'
+  },
+  { 
+    id: 'goblin', 
+    name: 'Goblin', 
+    trueName: 'Gremlin',
+    desc: 'Small, green or grey-skinned scavengers functioning as stealth units or engineers.', 
+    traitPromptMale: 'male goblin, green skin, pointed ears, small stature, ragged clothing, cunning expression',
+    traitPromptFemale: 'female goblin, green skin, pointed ears, small stature, ragged clothing, cunning expression'
+  },
+  { 
+    id: 'harpy', 
+    name: 'Harpy', 
+    trueName: 'Siren-kin',
+    desc: 'Winged humanoids with talons and feathers replacing arms/legs.', 
+    traitPromptMale: 'male harpy, bird wings, feathered, talons, wild hair, avian features',
+    traitPromptFemale: 'female harpy, bird wings, feathered, talons, wild hair, avian features'
+  },
+  { 
     id: 'human', 
     name: 'Human', 
-    trueName: 'Terran',
-    desc: 'Versatile and ambitious. They often wear empire-style tactical gear or traditional medieval armor.', 
-    traitPromptMale: 'male human features, versatile empire tactical gear, tactical armor, standard proportions, determined gaze',
-    traitPromptFemale: 'female human features, versatile empire tactical gear, tactical armor, standard proportions, determined gaze'
+    trueName: 'Demon Apostle',
+    desc: 'Mortal race. Demon Apostles are Humans who have defected from Sanctus to serve Drakmora.', 
+    traitPromptMale: 'male human, scars, corrupted holy symbols, detailed fantasy clothing, corrupted knight armor, practical weaponry, dark fantasy setting',
+    traitPromptFemale: 'female human, scars, corrupted holy symbols, detailed fantasy clothing, corrupted knight armor, practical weaponry, dark fantasy setting'
   },
   { 
-    id: 'cursed_automaton', 
-    name: 'Cursed Automaton', 
-    trueName: 'Chronos-Frame',
-    desc: 'Sentient machines bound by ancient spells. Characterized by porcelain skin, brass machinery, and steam vents.', 
-    traitPromptMale: 'sentient machine, male porcelain skin, brass clockwork machinery, steam vents, glowing blue core, clockwork limbs',
-    traitPromptFemale: 'sentient machine, female porcelain skin, brass clockwork machinery, steam vents, glowing blue core, clockwork limbs'
+    id: 'interloper', 
+    name: 'Interloper', 
+    trueName: 'Terra Prime',
+    desc: 'Warriors pulled through spatial rifts from other worlds, favoring sci-fi or modern tactical aesthetics.', 
+    traitPromptMale: 'male sci-fi techwear, modern soldier in fantasy, VR goggles, tactical gear, firearms, urban aesthetic, interloper',
+    traitPromptFemale: 'female sci-fi techwear, modern soldier in fantasy, VR goggles, tactical gear, firearms, urban aesthetic, interloper'
   },
   { 
-    id: 'true_demon', 
-    name: 'True Demon', 
-    trueName: 'Arch-Abyssal',
-    desc: 'High-tier nobility of the demon realm. Characterized by regal posture, obsidian horns, and ancient silks.', 
-    traitPromptMale: 'regal male demon nobility, majestic posture, obsidian horns, ancient silk robes, vertical pupils, dark energy',
-    traitPromptFemale: 'regal female demon nobility, majestic posture, obsidian horns, ancient silk robes, vertical pupils, dark energy'
+    id: 'minotaur', 
+    name: 'Minotaur', 
+    trueName: 'Asterion',
+    desc: 'Towering half-bull powerhouses wielding immense, crude weapons.', 
+    traitPromptMale: 'male minotaur, bull head, muscular, towering, horned, hooves, crude massive weapon',
+    traitPromptFemale: 'female minotaur, bull head, muscular, towering, horned, hooves, crude massive weapon'
   },
   { 
-    id: 'undead_knight', 
-    name: 'Undead Knight', 
-    trueName: 'Wightlord',
-    desc: 'Resurrected warriors bound in heavy, jagged black armor. Usually featuring glowing eyes and thorn motifs.', 
-    traitPromptMale: 'undead warrior, heavy jagged black plate armor, glowing spectral eyes, thorn motifs, tattered cape, skeletal accents, helmet with glowing eyes (never fully obscured)',
-    traitPromptFemale: 'female undead warrior, heavy jagged black plate armor with some exposed sections subtly revealing pallid or ghostly skin, glowing spectral eyes, thorn motifs, tattered cape, skeletal accents. Helmet partially open or designed so part of the face and eyes are visible, never fully obscured'
+    id: 'hybrid', 
+    name: 'Mythological Hybrid', 
+    trueName: 'Dragonoid',
+    desc: 'Rare legendary entities born from the union of apex predator species like dragons and true demons.', 
+    traitPromptMale: 'male dragonoid, half-dragon, scales on arms and neck, slitted reptilian eyes, draconic horns, imposing wings, thick tail, fantasy, imposing',
+    traitPromptFemale: 'female dragonoid, half-dragon, scales on arms and neck, slitted reptilian eyes, draconic horns, imposing wings, thick tail, fantasy, imposing'
   },
   { 
-    id: 'bear_shifter', 
-    name: 'Bear Shifter', 
-    trueName: 'Beorn',
-    desc: 'Humans who can transform into bears. Usually muscular with bear ears and tribal fur clothing.', 
-    traitPromptMale: 'muscular male build, bear ears, tribal fur clothing, wild hair, primal strength, beast-like gaze',
-    traitPromptFemale: 'muscular female build, bear ears, tribal fur clothing, wild hair, primal strength, beast-like gaze'
+    id: 'shifter', 
+    name: 'Shifter', 
+    trueName: 'Therian',
+    desc: 'Tribal warriors from the untamed edges who harness the power of beasts.', 
+    traitPromptMale: 'male animal ears, tail, fangs, bestial features, feral expression, thick fur, rugged tribal leather armor, war paint, tribal adornments, fantasy',
+    traitPromptFemale: 'female animal ears, tail, fangs, bestial features, feral expression, thick fur, rugged tribal leather armor, war paint, tribal adornments, fantasy'
   },
   { 
-    id: 'gargoyle_shifter', 
-    name: 'Gargoyle Shifter', 
-    trueName: 'Lithos',
-    desc: 'Stone-skinned creatures with wings. They appear sculptural with marble-textured skin.', 
-    traitPromptMale: 'stone-skinned male humanoid, marble-textured skin, large stone wings, sculptural features, glowing cracks',
-    traitPromptFemale: 'stone-skinned female humanoid, marble-textured skin, large stone wings, sculptural features, glowing cracks'
+    id: 'slime', 
+    name: 'Slime', 
+    trueName: 'Ooze',
+    desc: 'Gelatinous creatures capable of absorbing impacts and dissolving matter.', 
+    traitPromptMale: 'male slime creature, gelatinous, translucent body, monster, glowing inside, amorphous features',
+    traitPromptFemale: 'female slime creature, gelatinous, translucent body, monster, glowing inside, amorphous features'
   },
   { 
-    id: 'demon_warrior', 
-    name: 'Demon Warrior', 
-    trueName: 'Hellion',
-    desc: 'Standard demonic combatants. Often tall with black horns and heavy silver or obsidian plate.', 
-    traitPromptMale: 'male demonic combatant, black horns, heavy silver plate armor, obsidian weapons, aggressive stance',
-    traitPromptFemale: 'female demonic combatant, black horns, heavy silver plate armor, obsidian weapons, aggressive stance'
+    id: 'spirit', 
+    name: 'Spirit', 
+    trueName: 'Cosmic',
+    desc: 'Ethereal beings unbound by flesh, representing raw elemental or cosmic forces.', 
+    traitPromptMale: 'male ethereal spirit, translucent glowing body, made of starlight and nebula, floating, swirling elemental effects, cosmic entity, glowing magic',
+    traitPromptFemale: 'female ethereal spirit, translucent glowing body, made of starlight and nebula, floating, swirling elemental effects, cosmic entity, glowing magic'
   },
   { 
-    id: 'dragonoid', 
-    name: 'Dragonoid', 
-    trueName: 'Drake-born',
-    desc: 'Descendants of ancient dragons. Featuring reptilian eyes, spiky hair, small horns, and dragon wings.', 
-    traitPromptMale: 'male reptilian eyes, small draconic horns, dragon wings, scaly skin patches, spiky hair, draconic tail',
-    traitPromptFemale: 'female reptilian eyes, small draconic horns, dragon wings, scaly skin patches, spiky hair, draconic tail'
-  },
-  { 
-    id: 'wolf_kin', 
-    name: 'Wolf-kin', 
-    trueName: 'Fenris',
-    desc: 'Wild warriors with lupine traits. Characterized by wolf ears, fur armor, and messy hair.', 
-    traitPromptMale: 'male wolf ears, fur-trimmed armor, messy hair, predatory gaze, lupine features, sharp claws',
-    traitPromptFemale: 'female wolf ears, fur-trimmed armor, messy hair, predatory gaze, lupine features, sharp claws'
-  },
-  { 
-    id: 'half_demon', 
-    name: 'Half-Demon', 
-    trueName: 'Cambion',
-    desc: 'Hybrids born of two worlds. Usually featuring a single large horn and obsidian blade-like skin.', 
-    traitPromptMale: 'male hybrid humanoid, single large horn, obsidian blade-like skin patches, asymmetrical demonic traits',
-    traitPromptFemale: 'female hybrid humanoid, single large horn, obsidian blade-like skin patches, asymmetrical demonic traits'
-  },
-  { 
-    id: 'lion_shifter', 
-    name: 'Lion Shifter', 
-    trueName: 'Leonin',
-    desc: 'Regal warriors with mane-like hair and lion ears. Associated with sun-fire magic and golden armor.', 
-    traitPromptMale: 'regal male lion ears, mane-like voluminous hair, golden armor, lion-like facial traits, sun-fire glow',
-    traitPromptFemale: 'regal female lion ears, mane-like voluminous hair, golden armor, lion-like facial traits, sun-fire glow'
-  },
-  { 
-    id: 'lizard_kin', 
-    name: 'Lizard-kin', 
-    trueName: 'Saurian',
-    desc: 'Scaled survivalists with lizard-like features. Characterized by green scales, slit eyes, and mud-stained gear.', 
-    traitPromptMale: 'male green scaled skin, lizard slit eyes, mud-stained survivalist gear, reptile snout, primitive accessories',
-    traitPromptFemale: 'female green scaled skin, lizard slit eyes, mud-stained survivalist gear, reptile snout, primitive accessories'
-  },
-  { 
-    id: 'spectre', 
-    name: 'Spectre / Ghost', 
-    trueName: 'Wraith',
-    desc: 'Ethereal beings with translucent skin and spectral fire hair. Melancholy and glowing.', 
-    traitPromptMale: 'ethereal male ghost, translucent skin, spectral fire hair, glowing semi-transparent body, melancholic expression',
-    traitPromptFemale: 'ethereal female ghost, translucent skin, spectral fire hair, glowing semi-transparent body, melancholic expression'
-  },
-  { 
-    id: 'fallen_angel', 
-    name: 'Fallen Angel', 
+    id: 'fallen', 
+    name: 'The Fallen', 
     trueName: 'Castaway',
-    desc: 'Divine beings cast out from heaven. Featuring black wings, silver hair, and divine tattered robes.', 
-    traitPromptMale: 'male black feathered wings, silver hair, tattered divine silk robes, melancholic beauty, broken halo',
-    traitPromptFemale: 'female black feathered wings, silver hair, tattered divine silk robes, melancholic beauty, broken halo'
+    desc: 'Once beings of pure light, now cast out or voluntarily corrupted by the Abyss.', 
+    traitPromptMale: 'male fallen angel, black feathered wings, shattered corrupted halo, dark elegant robes, weeping black tears, corrupted holy fire, majestic but sinister, fantasy',
+    traitPromptFemale: 'female fallen angel, black feathered wings, shattered corrupted halo, dark elegant robes, weeping black tears, corrupted holy fire, majestic but sinister, fantasy'
   },
   { 
-    id: 'origami_spirit', 
-    name: 'Origami Spirit', 
-    trueName: 'Kami-gami',
-    desc: 'Spirits inhabiting paper forms. Their bodies appear flat with paper-like textures and paper charms.', 
-    traitPromptMale: 'male paper-texture body, flat angular paper form, paper charms, ink-drawn features, delicate folding creases',
-    traitPromptFemale: 'female paper-texture body, flat angular paper form, paper charms, ink-drawn features, delicate folding creases'
+    id: 'demon', 
+    name: 'Trueborn Demon', 
+    trueName: 'Arch-Abyssal',
+    desc: 'Original denizens of the dark realms, core nobility and raw magical powerhouse of the Maou\'s forces.', 
+    traitPromptMale: 'male trueborn demon, demonic horns, pointed ears, sharp features, fantasy armor, glowing red eyes, digitigrade legs, tail, dark fantasy setting',
+    traitPromptFemale: 'female trueborn demon, demonic horns, pointed ears, sharp features, fantasy armor, glowing red eyes, digitigrade legs, tail, dark fantasy setting'
   },
   { 
-    id: 'avian_demon', 
-    name: 'Avian Demon / Harpy', 
-    trueName: 'Siren-kin',
-    desc: 'Bird-like humanoids. Characterized by bird eyes, taloned feet, and massive feathered wings.', 
-    traitPromptMale: 'male bird-like eyes, massive feathered wings, taloned feet and hands, bird feathers in hair, sharp features',
-    traitPromptFemale: 'female bird-like eyes, massive feathered wings, taloned feet and hands, bird feathers in hair, sharp features'
+    id: 'undead', 
+    name: 'Undead', 
+    trueName: 'Wightlord',
+    desc: 'Reanimated by powerful necromancy or lingering grudges, ranging from foot soldiers to Liches.', 
+    traitPromptMale: 'male undead, gaunt pale skin, intact skull with attached lower jaw, proportionate head, glowing ethereal eyes, tattered clothing, decaying armor, ominous, dark fantasy',
+    traitPromptFemale: 'female undead, gaunt pale skin, intact skull with attached lower jaw, proportionate head, glowing ethereal eyes, tattered clothing, decaying armor, ominous, dark fantasy'
   },
   { 
-    id: 'naga_gorgon', 
-    name: 'Naga / Gorgon', 
-    trueName: 'Medusan',
-    desc: 'Snake-like humanoids with snake eyes and scales. Gorgons specifically feature hair made of vipers.', 
-    traitPromptMale: 'male snake eyes, scaly patches, serpentine lower body or features, hair made of living vipers',
-    traitPromptFemale: 'female snake eyes, scaly patches, serpentine lower body or features, hair made of living vipers'
-  },
-  { 
-    id: 'cosmic_horror', 
-    name: 'Cosmic Spirit', 
-    trueName: 'Star-Eater',
-    desc: 'Entities made of starlight and ink. Silhouette often filled with nebula stars and moving galaxies.', 
-    traitPromptMale: 'male entity made of starlight and ink, silhouette filled with nebulae, ethereal form, cosmic glow, galaxy skin',
-    traitPromptFemale: 'female entity made of starlight and ink, silhouette filled with nebulae, ethereal form, cosmic glow, galaxy skin'
-  },
-  { 
-    id: 'demon_ranger', 
-    name: 'Demon Ranger', 
-    trueName: 'Shadow-Bow',
-    desc: 'Skilled archers of the demon forests. Characterized by messy hair, green eyes, and tactical archer gear.', 
-    traitPromptMale: 'male demon forest archer, messy hair, emerald green eyes, dark tactical archery gear, nimble build',
-    traitPromptFemale: 'female demon forest archer, messy hair, emerald green eyes, dark tactical archery gear, nimble build'
-  },
-  { 
-    id: 'succubus', 
-    name: 'Succubus Royalty', 
-    trueName: 'Lilim',
-    desc: 'Masters of charm and manipulation. Featuring purple eyes, obsidian horns, and luxurious silks.', 
-    traitPromptMale: 'luxurious male demon silks, purple glowing eyes, obsidian horns, seductive posture, heart motifs',
-    traitPromptFemale: 'luxurious female demon silks, purple glowing eyes, obsidian horns, seductive posture, heart motifs'
-  },
-  { 
-    id: 'vampire', 
-    name: 'Vampire', 
-    trueName: 'Night-Lord',
-    desc: 'Blood-drinking nobles. Characterized by crimson eyes, silver hair buns, and gothic attire.', 
-    traitPromptMale: 'crimson eyes, pale male skin, silver hair, ornate gothic vampire attire, fangs, aristocratic aura',
-    traitPromptFemale: 'crimson eyes, pale female skin, silver hair in a bun, ornate gothic vampire attire, fangs, aristocratic aura'
-  },
-  { 
-    id: 'dryad', 
-    name: 'Dryad', 
-    trueName: 'Silvan',
-    desc: 'Forest spirits with wooden skin, leaf ears, and green vine hair.', 
-    traitPromptMale: 'wooden-textured male skin, pointed leaf ears, green vine hair, flower crown, earthen tones, plant-like features',
-    traitPromptFemale: 'wooden-textured female skin, pointed leaf ears, green vine hair, flower crown, earthen tones, plant-like features'
-  },
-  { 
-    id: 'angel_traitor', 
-    name: 'Angel Traitor', 
-    trueName: 'Oath-Breaker',
-    desc: 'Angels who abandoned heaven. Featuring broken white wings and golden liquid tears.', 
-    traitPromptMale: 'male broken white wings, golden liquid tears, tattered holy robes, tragic expression, cracked halo',
-    traitPromptFemale: 'female broken white wings, golden liquid tears, tattered holy robes, tragic expression, cracked halo'
-  },
-  { 
-    id: 'deep_sea_demon', 
-    name: 'Deep Sea Demon / Mermaid', 
-    trueName: 'Abysso-mar',
-    desc: 'Bioluminescent hunters of the abyss. Characterized by teal hair, gills, and scale jewelry.', 
-    traitPromptMale: 'male teal hair, neck gills, bioluminescent skin markings, scale-textured jewelry, webbed features',
-    traitPromptFemale: 'female teal hair, neck gills, bioluminescent skin markings, scale-textured jewelry, webbed features'
-  },
-  { 
-    id: 'technomage', 
-    name: 'Technomage / Machine', 
-    trueName: 'Cyber-Aether',
-    desc: 'Fusion of mana and machinery. Featuring circuitry skin, glowing veins, and brass mechanical hearts.', 
-    traitPromptMale: 'male circuitry-patterned skin, glowing mana veins, exposed brass mechanical heart, magitech tools, glowing eyes',
-    traitPromptFemale: 'female circuitry-patterned skin, glowing mana veins, exposed brass mechanical heart, magitech tools, glowing eyes'
+    id: 'other', 
+    name: 'Other', 
+    trueName: 'Unknown',
+    desc: 'Anomalous entities or unclassified species.', 
+    traitPromptMale: 'male, unique features, fantasy',
+    traitPromptFemale: 'female, unique features, fantasy'
   }
 ];

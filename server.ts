@@ -1,0 +1,68 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import Database from "better-sqlite3";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const db = new Database("assets.db");
+
+// Initialize DB
+db.exec(`
+  CREATE TABLE IF NOT EXISTS assets (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    prompt TEXT,
+    type TEXT,
+    imageUrl TEXT,
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(express.json({ limit: '50mb' }));
+
+  // API Routes
+  app.get("/api/assets", (req, res) => {
+    const assets = db.prepare("SELECT * FROM assets ORDER BY createdAt DESC").all();
+    res.json(assets);
+  });
+
+  app.post("/api/assets", (req, res) => {
+    const { id, name, prompt, type, imageUrl } = req.body;
+    const stmt = db.prepare("INSERT INTO assets (id, name, prompt, type, imageUrl) VALUES (?, ?, ?, ?, ?)");
+    stmt.run(id, name, prompt, type, imageUrl);
+    res.json({ success: true });
+  });
+
+  app.delete("/api/assets/:id", (req, res) => {
+    const { id } = req.params;
+    db.prepare("DELETE FROM assets WHERE id = ?").run(id);
+    res.json({ success: true });
+  });
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.join(__dirname, "dist")));
+    app.get("*all", (req, res) => {
+      res.sendFile(path.join(__dirname, "dist", "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();

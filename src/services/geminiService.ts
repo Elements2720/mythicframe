@@ -1,23 +1,42 @@
+
+// Service for interacting with Gemini API
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { GenerationModel, ImageSize, AspectRatio, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig } from "../types";
+import { GenerationModel, ImageSize, AspectRatio, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, AIConfig, PoseData, MapGridConfig } from "../types";
 import { 
   buildIllustrationPrompt, 
   buildFramePrompt,
-  buildBackgroundPrompt,
+  buildBackgroundAssetPrompt,
   buildClothesPrompt,
   buildBackgroundRegenPrompt, 
   buildStyleAnalysisPrompt, 
   buildPromptSuggestionsPrompt, 
   buildCardSuggestionsPrompt, 
-  buildRefinementPrompt
+  buildRefinementPrompt,
+  buildPoseStudioPrompt,
+  buildMapGridPrompt,
+  buildSpriteSheetPromptsPrompt,
+  buildSpriteSheetAnimationPromptsPrompt
 } from "./promptTemplates";
 import { optimizeBase64Image, blobUrlToBase64 } from "../utils/imageUtils";
 
-// Helper to get client
+// Helper to get client with strict adherence to Coding Guidelines
 const getClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key not found. Please connect an API key.");
-  return new GoogleGenAI({ apiKey });
+  // CRITICAL: Must use process.env.API_KEY exclusively and directly in named parameter as per initialization rules
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+};
+
+// Helper to get effective model name
+const getModelName = (defaultModel: string): string => {
+  const savedConfig = localStorage.getItem('mythic_ai_config');
+  if (savedConfig) {
+    try {
+      const config: AIConfig = JSON.parse(savedConfig);
+      if (config.provider === 'custom' && config.customModelName) {
+        return config.customModelName;
+      }
+    } catch (e) {}
+  }
+  return defaultModel;
 };
 
 // --- RETRY LOGIC ---
@@ -51,6 +70,7 @@ const callWithRetry = async <T>(fn: () => Promise<T>, retries = 2, delay = 1000)
 };
 
 export const checkApiKey = async (): Promise<boolean> => {
+  // CRITICAL: Priority check for env var as per guidelines
   if (process.env.API_KEY) return true;
   if (window.aistudio && window.aistudio.hasSelectedApiKey) {
     return await window.aistudio.hasSelectedApiKey();
@@ -61,20 +81,6 @@ export const checkApiKey = async (): Promise<boolean> => {
 export const requestApiKey = async (): Promise<void> => {
   if (window.aistudio && window.aistudio.openSelectKey) {
     await window.aistudio.openSelectKey();
-  }
-};
-
-export const verifyManualApiKey = async (key: string): Promise<boolean> => {
-  try {
-    const ai = new GoogleGenAI({ apiKey: key });
-    await callWithRetry(() => ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: { parts: [{ text: 'Ping' }] }
-    }));
-    return true;
-  } catch (e) {
-    console.warn("Key verification failed", e);
-    return false;
   }
 };
 
@@ -91,6 +97,7 @@ function getMimeType(dataUrl: string): string {
 }
 
 export const analyzeImageStyle = async (base64Image: string): Promise<{ description: string; promptSnippet: string }> => {
+  // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const prompt = buildStyleAnalysisPrompt();
   
@@ -99,7 +106,7 @@ export const analyzeImageStyle = async (base64Image: string): Promise<{ descript
   const mimeType = getMimeType(optimizedInput);
 
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
+    model: getModelName('gemini-3-pro-preview'),
     contents: {
       parts: [
         { inlineData: { mimeType: mimeType, data: cleanBase64 } },
@@ -123,7 +130,36 @@ export const analyzeImageStyle = async (base64Image: string): Promise<{ descript
   return JSON.parse(text);
 };
 
-// generateIllustration with enhanced system logic for structural and stylistic strictly adherence
+export const generateStyleExample = async (snippet: string, subject?: string): Promise<string> => {
+  // CRITICAL: Always create instance right before call as per Coding Guidelines
+  const ai = getClient();
+  const defaultSubject = "A majestic high-fantasy knight standing in a heroic pose, holding a glowing sword, detailed armor";
+  const finalPrompt = `${subject || defaultSubject}${snippet}`;
+  
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+    model: getModelName('gemini-2.5-flash-image'),
+    contents: { parts: [{ text: finalPrompt }] },
+    config: {
+      imageConfig: { aspectRatio: '1:1' },
+      systemInstruction: "You are a style showcase tool. Generate ONLY the image matching the style snippet provided."
+    }
+  }));
+
+  const candidate = response.candidates[0];
+  let base64Image = "";
+  if (candidate.content?.parts) {
+      for (const part of candidate.content.parts) {
+          if (part.inlineData && part.inlineData.data) {
+              base64Image = part.inlineData.data;
+              break;
+          }
+      }
+  }
+
+  if (!base64Image) throw new Error("Style example generation failed.");
+  return `data:image/png;base64,${base64Image}`;
+};
+
 export const generateIllustration = async (
   prompt: string,
   model: string,
@@ -141,9 +177,17 @@ export const generateIllustration = async (
   clothesParams?: ClothesParams,
   continuityFlags?: Record<string, boolean>,
   chibiProportion?: ChibiProportion,
-  chibiConfig?: ChibiConfig
+  chibiConfig?: ChibiConfig,
+  poseData?: PoseData,
+  mapGridConfig?: MapGridConfig,
+  viewpoint?: string,
+  noCharacters?: boolean,
+  framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only',
+  seed?: number | null
 ): Promise<{ image: string; metadata: any }> => {
+  // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
+  const activeModel = getModelName(model);
   
   let finalPrompt = "";
   let parts: any[] = [];
@@ -153,21 +197,28 @@ export const generateIllustration = async (
      finalPrompt = buildFramePrompt(prompt, gameContext, styleSnippet, frameElements);
      parts.push({ text: finalPrompt });
   } else if (mode === 'background') {
-     finalPrompt = buildBackgroundPrompt(prompt, gameContext, styleSnippet, bgPatternType);
+     finalPrompt = buildBackgroundAssetPrompt(prompt, gameContext, styleSnippet, bgPatternType);
      parts.push({ text: finalPrompt });
   } else if (mode === 'clothes') {
      const built = buildClothesPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone, clothesParams);
      finalPrompt = built.textPrompt;
      referenceParts = built.referenceParts;
      parts.push({ text: finalPrompt });
+  } else if (mode === 'pose-studio' && poseData) {
+     const built = buildPoseStudioPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, poseData, safeZone);
+     finalPrompt = built.textPrompt;
+     referenceParts = built.referenceParts;
+     parts.push({ text: finalPrompt });
+  } else if (mode === 'map-grid' && mapGridConfig) {
+     finalPrompt = buildMapGridPrompt(prompt, gameContext, styleSnippet, mapGridConfig);
+     parts.push({ text: finalPrompt });
   } else {
-     const built = buildIllustrationPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone, continuityFlags, chibiProportion, chibiConfig);
+     const built = buildIllustrationPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone, continuityFlags, chibiProportion, chibiConfig, viewpoint, noCharacters, framing);
      finalPrompt = built.textPrompt;
      referenceParts = built.referenceParts;
      parts.push({ text: finalPrompt });
   }
 
-  // Inject Reference Guidance (Role Metadata)
   if (referenceParts.length > 0) {
       parts.push(...referenceParts);
   }
@@ -206,20 +257,38 @@ export const generateIllustration = async (
      imageConfig.imageSize = size;
   }
 
-  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: model,
-    contents: { parts },
-    config: { 
-      imageConfig,
-      systemInstruction: `You are a specialized game asset image generator. 
+  // Detect if user is requesting photorealism to override cartoon bias
+  const isPhotorealistic = finalPrompt.toLowerCase().includes('photorealistic') || finalPrompt.toLowerCase().includes('raw photo') || finalPrompt.toLowerCase().includes('lifelike');
+
+  // CRITICAL: Clean up newline characters and multi-spaces from the final prompt
+  // as many image generation APIs fail or exhibit unexpected behavior with multiline strings.
+  const sanitizedPrompt = finalPrompt.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const configObj: any = {
+    imageConfig,
+    systemInstruction: `You are a specialized game asset generator. 
 [STRICT RULES]:
 1. NEVER respond with text, conversation, or helpful introductions.
 2. ONLY output image data.
-3. If a reference is provided, you MUST PRESERVE character identity, including facial structure and skin color.
+3. ABSOLUTELY NO TEXT INSIDE THE IMAGE. No labels, no names, no watermarks, no signatures, no UI elements.
+4. If a reference is provided, you MUST PRESERVE character identity, including facial structure and skin color.
 4. If a "Structural Template" or "Mannequin" role is assigned, do NOT change the pose or body proportions.
 5. If a "Style Lock" is assigned, IGNORE default realistic textures. Use only the provided art style.
-6. Generate ONLY one character/subject unless explicitly told otherwise.`
-    }
+6. If in "POSE-DRIVEN" mode, you MUST treat the provided coordinates as absolute spatial anchors. The character's joints MUST be placed at those exact pixels.
+7. If in "MAP-GRID" mode, you MUST NEVER add characters, UI, HUD, or perspective beyond the selected view. Align strictly to the grid and environment directives.
+${isPhotorealistic ? '8. [PHOTOREALISM OVERRIDE]: You MUST produce a lifelike photograph. NO 2D art, NO anime, NO drawing, NO digital painting textures. Use RAW camera characteristics.' : '8. Strictly follow the user\'s SUBJECT. If the subject is an object, monster, or landscape, do NOT add human characters.'}`
+  };
+  
+  // Gemini 2.5 uses top-level seed while imagen 3 might use something else! 
+  // we add it to both places to be safe and compatible with the dynamic AI configurations since typing is 'any'
+  if (seed !== undefined && seed !== null) {
+      configObj.seed = seed;
+  }
+
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+    model: activeModel,
+    contents: { parts: [{ text: sanitizedPrompt }, ...parts.slice(1)] },
+    config: configObj
   }));
 
   if (!response.candidates || response.candidates.length === 0) {
@@ -244,6 +313,10 @@ export const generateIllustration = async (
 
   if (!base64Image) {
       if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+          // Provide actionable advice for common block reasons
+          if (candidate.finishReason === 'IMAGE_OTHER') {
+              throw new Error("The AI was unable to finalize this image due to internal safety policies or an edge case. Try slightly changing your prompt, subject, or pose description to proceed.");
+          }
           throw new Error(`Generation blocked. Reason: ${candidate.finishReason}. ${textPart}`);
       }
       throw new Error(textPart || "No image generated.");
@@ -262,6 +335,7 @@ export const editImage = async (
   gameContext: GameContext,
   referenceAssets: ReferenceAsset[] = []
 ): Promise<string> => {
+  // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const optimizedInput = await optimizeBase64Image(base64Image, 1024, 0.9);
   const cleanBase64 = base64ImageToBase64(optimizedInput);
@@ -276,11 +350,13 @@ export const editImage = async (
       finalPrompt = "Edit this image.";
   }
 
+  // Sanitize prompt for API compatibility
+  const sanitizedPrompt = finalPrompt.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+
   const parts: any[] = [
     { inlineData: { mimeType: mimeType, data: cleanBase64 } }
   ];
 
-  // Include Reference Images in Edit Request
   if (referenceAssets.length > 0) {
     for (const ref of referenceAssets) {
       try {
@@ -302,13 +378,15 @@ export const editImage = async (
     }
   }
 
-  parts.push({ text: finalPrompt });
+  parts.push({ text: sanitizedPrompt });
+
+  const isPhotorealistic = finalPrompt.toLowerCase().includes('photorealistic') || finalPrompt.toLowerCase().includes('raw photo') || finalPrompt.toLowerCase().includes('lifelike');
 
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-     model: 'gemini-2.5-flash-image', 
+     model: getModelName('gemini-2.5-flash-image'), 
      contents: { parts },
      config: {
-       systemInstruction: "You are an image editing tool. NEVER respond with text. ONLY return image data. Adhere strictly to the requested style and structure. PRESERVE character skin color and features."
+       systemInstruction: `You are an image editing tool. NEVER respond with text. ONLY return image data. Adhere strictly to the requested style and structure. PRESERVE character skin color and features. ${isPhotorealistic ? '[MANDATORY]: Use extreme photorealism. No drawing/painting artifacts.' : ''}`
      }
   }));
 
@@ -328,34 +406,29 @@ export const editImage = async (
   }
 
   if (!resultImage) {
+      if (candidate.finishReason === 'IMAGE_OTHER') {
+          throw new Error("The edit was blocked due to an internal safety filter. Try adjusting your description or masking region.");
+      }
       throw new Error(`Edit failed: ${textPart}`);
   }
   
   return `data:image/png;base64,${resultImage}`;
 };
 
-/**
- * Enhanced Details Refinement
- * Re-runs the image through a detail-oriented prompt to sharpen and improve quality.
- */
 export const enhanceImage = async (
   base64Image: string,
   gameContext: GameContext
 ): Promise<string> => {
+  // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const optimizedInput = await optimizeBase64Image(base64Image, 1024, 1.0);
   const cleanBase64 = base64ImageToBase64(optimizedInput);
   const mimeType = getMimeType(optimizedInput);
 
-  const prompt = `ENHANCE AND REFINE THIS IMAGE.
-1. QUALITY: Sharpen all lines, improve visual fidelity, and add high-end professional digital painting textures.
-2. DETAILS: Refine small details like jewelry, eyes, fabric folds, and lighting effects.
-3. CONSISTENCY (MANDATORY): DO NOT change the subject, pose, composition, hair color, eye color, or overall character design.
-4. FINISH: Make this look like a 4K resolution finished game asset.
-Setting Context: ${gameContext.setting || 'High Fantasy'}. Tone: ${gameContext.tone || 'Epic'}.`;
+  const prompt = `ENHANCE AND REFINE THIS IMAGE. 1. QUALITY: Sharpen all lines, improve visual fidelity, and add high-end professional textures. 2. DETAILS: Refine small details like jewelry, eyes, fabric folds, and lighting effects. 3. CONSISTENCY (MANDATORY): DO NOT change the subject, pose, composition, hair color, eye color, or overall character design. 4. FINISH: Make this look like a 4K resolution finished game asset. Setting Context: ${gameContext.setting || 'High Fantasy'}. Tone: ${gameContext.tone || 'Epic'}.`;
 
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-     model: 'gemini-2.5-flash-image', 
+     model: getModelName('gemini-2.5-flash-image'), 
      contents: {
        parts: [
          { inlineData: { mimeType: mimeType, data: cleanBase64 } },
@@ -380,7 +453,7 @@ Setting Context: ${gameContext.setting || 'High Fantasy'}. Tone: ${gameContext.t
     }
   }
 
-  if (!resultImage) throw new Error("Enhancement failed to produce an image.");
+  if (!resultImage) throw new Error("Enhancement failed to produce an image. This can happen with highly complex scenes.");
   return `data:image/png;base64,${resultImage}`;
 };
 
@@ -388,11 +461,12 @@ export const generateCardSuggestions = async (
   artPrompt: string,
   currentName: string
 ): Promise<{ names: string[]; effects: string[] }> => {
+  // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const prompt = buildCardSuggestionsPrompt(artPrompt, currentName);
   
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: getModelName('gemini-3-flash-preview'),
     contents: { parts: [{ text: prompt }] },
     config: {
       responseMimeType: 'application/json',
@@ -418,6 +492,7 @@ export const generateCardSuggestions = async (
 export const generateCharacterConcept = async (
   context: GameContext
 ): Promise<{ name: string; subtitle: string; gender: string; traits: string }> => {
+  // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const prompt = `Based on the following game world context, suggest a new unique character concept.
 Setting: ${context.setting}
@@ -431,7 +506,7 @@ Return a JSON object with:
 - "traits": A detailed physical description (under 50 words) for an AI master prompt focusing on clothing, hair, and features.`;
 
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: getModelName('gemini-3-flash-preview'),
     contents: { parts: [{ text: prompt }] },
     config: {
       responseMimeType: "application/json",
@@ -458,6 +533,7 @@ export const generateCharacterTraits = async (
   gender: string,
   context: GameContext
 ): Promise<string> => {
+  // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const prompt = `Based on the character "${name}" (${subtitle}, ${gender}) in a game world with this context:
 Setting: ${context.setting}
@@ -469,7 +545,7 @@ Focus on: hairstyle/color, eyes, armor/clothing style, signature items, and dist
 Respond with ONLY the description text, under 60 words.`;
 
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: getModelName('gemini-3-flash-preview'),
     contents: { parts: [{ text: prompt }] }
   }));
 
@@ -477,13 +553,71 @@ Respond with ONLY the description text, under 60 words.`;
 };
 
 export const refinePrompt = async (currentPrompt: string): Promise<string> => {
+  // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const prompt = buildRefinementPrompt(currentPrompt);
   
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: getModelName('gemini-3-flash-preview'),
     contents: { parts: [{ text: prompt }] }
   }));
 
   return response.text || currentPrompt;
+};
+
+export const generateSpriteSheetPrompts = async (
+  globalPrompt: string,
+  frameCount: number,
+  gameContext: GameContext
+): Promise<{ poses: string[]; refinedGlobalPrompt: string }> => {
+  const ai = getClient();
+  const prompt = buildSpriteSheetPromptsPrompt(globalPrompt, frameCount, gameContext);
+  
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+    model: getModelName('gemini-3-flash-preview'),
+    contents: { parts: [{ text: prompt }] },
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          poses: { type: Type.ARRAY, items: { type: Type.STRING } },
+          refinedGlobalPrompt: { type: Type.STRING }
+        }
+      }
+    }
+  }));
+
+  const text = response.text;
+  if (!text) return { poses: [], refinedGlobalPrompt: globalPrompt };
+  return JSON.parse(text);
+};
+
+export const generateSpriteSheetAnimationPrompts = async (
+  globalPrompt: string,
+  animationGoal: string,
+  frameCount: number,
+  gameContext: GameContext
+): Promise<{ poses: string[]; refinedGlobalPrompt: string }> => {
+  const ai = getClient();
+  const prompt = buildSpriteSheetAnimationPromptsPrompt(globalPrompt, animationGoal, frameCount, gameContext);
+  
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+    model: getModelName('gemini-3-flash-preview'),
+    contents: { parts: [{ text: prompt }] },
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          poses: { type: Type.ARRAY, items: { type: Type.STRING } },
+          refinedGlobalPrompt: { type: Type.STRING }
+        }
+      }
+    }
+  }));
+
+  const text = response.text;
+  if (!text) return { poses: [], refinedGlobalPrompt: globalPrompt };
+  return JSON.parse(text);
 };

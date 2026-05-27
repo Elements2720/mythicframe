@@ -36,10 +36,13 @@ export const useAnimation = (
   const handleFrameImageUpload = (id: string, file: File) => {
       if (!(file instanceof Blob)) return;
       const reader = new FileReader();
-      reader.onload = () => {
-         const url = reader.result as string;
-         setAnimConfig((prev: AnimationProject) => ({ ...prev, frames: prev.frames.map(f => f.id === id ? { ...f, imageUrl: url } : f) }));
-         if(activeTab.selectedFrameId === id) setGeneratedImage(url);
+      reader.onload = async () => {
+         try {
+           const { optimizeBase64Image } = await import('../utils/imageUtils');
+           const url = await optimizeBase64Image(reader.result as string, 1024, 0.7);
+           setAnimConfig((prev: AnimationProject) => ({ ...prev, frames: prev.frames.map(f => f.id === id ? { ...f, imageUrl: url } : f) }));
+           if(activeTab.selectedFrameId === id) setGeneratedImage(url);
+         } catch(e) {}
       };
       reader.readAsDataURL(file);
   };
