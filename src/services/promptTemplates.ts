@@ -1,4 +1,3 @@
-
 // Templates for generating prompts for various features
 import {
   GameContext,
@@ -12,9 +11,10 @@ import {
   ChibiProportion,
   ChibiConfig,
   PoseData,
-  MapGridConfig
-} from "../types";
-import { CHIBI_STYLE_CONFIG } from "../constants/gacha";
+  MapGridConfig,
+  UIMode
+} from "../types.js";
+import { CHIBI_STYLE_CONFIG } from "../constants/gacha.js";
 
 /**
  * Helper to detect if a prompt is likely describing a character
