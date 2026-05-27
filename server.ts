@@ -23,7 +23,9 @@ db.exec(`
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const portArgIndex = process.argv.indexOf('--port');
+  const portFromArg = portArgIndex !== -1 ? process.argv[portArgIndex + 1] : process.argv[2];
+  const PORT = parseInt(portFromArg || process.env.PORT || "3000", 10);
 
   app.use(express.json({ limit: '50mb' }));
 

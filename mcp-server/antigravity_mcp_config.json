@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "mythic-image-gen": {
+      "command": "node",
+      "args": [
+        "d:\\GeminiWeb\\mythicframe\\mcp-server\\index.js"
+      ],
+      "env": {
+        "NODE_ENV": "production"
+      },
+      "type": "stdio",
+      "disabled": false
+    }
+  }
+}
