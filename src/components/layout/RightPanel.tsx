@@ -4,7 +4,7 @@ import {
   UIMode, BackgroundConfig, PixelDimensions,
   BackgroundPatternType, AspectRatio, ImageSize, SafeZoneConfig, CharacterToolState, ArtStyle,
   MapGridConfig,
-  Viewpoint, ChibiConfig
+  Viewpoint, ChibiConfig, AvailableModel, GenerationModel
 } from '../../types';
 import { ART_STYLES, BACKGROUND_PATTERNS, VIEWPOINTS } from '../../constants';
 import MapGridPanel from './MapGridPanel';
@@ -63,6 +63,11 @@ interface RightPanelProps {
   usageMap?: Record<string, number>;
   handleGenerateBatch?: () => void;
   handleCancel?: () => void;
+  availableModels?: AvailableModel[];
+  isLoadingModels?: boolean;
+  handleFetchModels?: () => Promise<void>;
+  activeModel?: string;
+  handleSelectModel?: (modelId: string) => void;
 }
 
 const Icon = ({ name, className = "" }: { name: string, className?: string }) => <i className={`fa-solid ${name} ${className}`} />;
@@ -115,7 +120,8 @@ const RightPanel: React.FC<RightPanelProps> = (props) => {
     pixelBitSize, setPixelBitSize,
     chibiConfig, setChibiConfig, noCharacters, setNoCharacters, framing, setFraming,
     seed, setSeed,
-    usageMap, handleGenerateBatch, handleCancel
+    usageMap, handleGenerateBatch, handleCancel,
+    availableModels = [], isLoadingModels = false, handleFetchModels, activeModel, handleSelectModel
   } = props;
 
   // Batch Mode Settings Lock
@@ -294,10 +300,87 @@ const RightPanel: React.FC<RightPanelProps> = (props) => {
 
           <div className="space-y-6">
              <div className="space-y-2">
-                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">{t('ai_model')}</label>
+                <div className="flex items-center justify-between">
+                   <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">{t('ai_model')}</label>
+                   {handleFetchModels && (
+                      <button
+                         onClick={() => handleFetchModels()}
+                         disabled={isLoadingModels}
+                         title="Scan API for available models"
+                         className="flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-300 transition-colors disabled:opacity-50"
+                      >
+                         <i className={`fa-solid fa-arrows-rotate ${isLoadingModels ? 'animate-spin' : ''}`} />
+                         <span>{isLoadingModels ? 'Scanning...' : 'Scan API'}</span>
+                      </button>
+                   )}
+                </div>
                 <div className="flex bg-[#161f32] rounded border border-slate-800 p-1">
-                   <button onClick={() => setUseProModel(false)} className={`flex-1 py-2 text-[11px] font-bold rounded transition-all ${!useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t('std_model')}</button>
-                   <button onClick={() => setUseProModel(true)} className={`flex-1 py-2 text-[11px] font-bold rounded transition-all ${useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}>{t('pro_model')}</button>
+                   <button 
+                      onClick={() => {
+                         setUseProModel(false);
+                         if (handleSelectModel) handleSelectModel('gemini-2.5-flash');
+                      }} 
+                      className={`flex-1 py-1.5 text-[11px] font-bold rounded transition-all ${!useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                   >
+                      {t('std_model')}
+                   </button>
+                   <button 
+                      onClick={() => {
+                         setUseProModel(true);
+                         if (handleSelectModel) handleSelectModel('gemini-2.5-pro');
+                      }} 
+                      className={`flex-1 py-1.5 text-[11px] font-bold rounded transition-all ${useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                   >
+                      {t('pro_model')}
+                   </button>
+                </div>
+                {availableModels && availableModels.length > 0 && (
+                   <div className="relative group">
+                      <select
+                         value={activeModel || (useProModel ? 'gemini-2.5-pro' : 'gemini-2.5-flash')}
+                         onChange={(e) => {
+                            if (handleSelectModel) {
+                               handleSelectModel(e.target.value);
+                            }
+                         }}
+                         className="w-full bg-[#161f32] border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium appearance-none"
+                      >
+                         {availableModels.filter(m => m.isImageModel).length > 0 && (
+                            <optgroup label="🎨 Image Generation Models" className="bg-[#161f32]">
+                               {availableModels.filter(m => m.isImageModel).map(m => (
+                                  <option key={m.id} value={m.id} className="bg-[#161f32] text-purple-300 font-semibold">
+                                     {m.displayName || m.id}
+                                  </option>
+                               ))}
+                            </optgroup>
+                         )}
+                         {availableModels.filter(m => !m.isImageModel).length > 0 && (
+                            <optgroup label="⚡ Multimodal / Chat Models" className="bg-[#161f32]">
+                               {availableModels.filter(m => !m.isImageModel).map(m => (
+                                  <option key={m.id} value={m.id} className="bg-[#161f32] text-slate-300">
+                                     {m.displayName || m.id}
+                                  </option>
+                               ))}
+                            </optgroup>
+                         )}
+                      </select>
+                      <Icon name="fa-caret-down" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-hover:text-white transition-colors" />
+                   </div>
+                )}
+                <div className="flex items-center justify-between text-[10px] text-slate-500 px-1 pt-0.5">
+                   <span className="flex items-center gap-1.5 truncate">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse shrink-0"></span>
+                      <span className="truncate">Active: <code className="text-purple-300 font-mono">{activeModel || (useProModel ? 'gemini-2.5-pro' : 'gemini-2.5-flash')}</code></span>
+                   </span>
+                   {(!availableModels || availableModels.length === 0) && (
+                      <button 
+                         type="button"
+                         onClick={() => handleFetchModels && handleFetchModels()}
+                         className="text-purple-400 hover:text-purple-300 underline underline-offset-2 shrink-0 ml-1"
+                      >
+                         Fetch list
+                      </button>
+                   )}
                 </div>
              </div>
              <div className="space-y-2">

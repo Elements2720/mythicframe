@@ -22,12 +22,22 @@ export const useGeneration = (
   logConsole: (msg: string) => void,
   getTargetDimensions: () => PixelDimensions,
   updateTabById: (id: string, updates: Partial<WorkspaceTab> | ((prev: WorkspaceTab) => Partial<WorkspaceTab>)) => void,
-  recordStyleUsage?: (styleId: string) => void
+  recordStyleUsage?: (styleId: string) => void,
+  activeModel?: string,
+  onError?: (title: string, error: any) => void
 ) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const notifyError = (title: string, err: any) => {
+    if (onError) {
+      onError(title, err);
+    } else {
+      alert(`${title}: ${err?.message || err}`);
+    }
+  };
 
   const clearTimer = () => {
     if (timerRef.current) {
@@ -62,7 +72,7 @@ export const useGeneration = (
     if (isGenerating) return;
     const initiatingTabId = activeTab.id;
     if (!activeTab.generatedImage) return;
-    if (!apiKeyReady) { alert("Please connect your API Key in settings."); return; }
+    if (!apiKeyReady) { notifyError("API Key Required", new Error("Please connect your API Key in Settings first.")); return; }
 
     setIsGenerating(true);
     startTimer("Enhancing Details");
@@ -97,7 +107,7 @@ export const useGeneration = (
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error(e);
-        alert(`Enhancement failed: ${e.message}`);
+        notifyError("Enhancement Failed", e);
       }
     } finally {
       clearTimer();
@@ -112,7 +122,7 @@ export const useGeneration = (
     const initiatingTabId = activeTab.id;
     const sourceImage = activeTab.generatedImage;
     if (!sourceImage && !(fileInput instanceof Blob)) return;
-    if (!apiKeyReady) { alert("Please connect your API Key in settings."); return; }
+    if (!apiKeyReady) { notifyError("API Key Required", new Error("Please connect your API Key in Settings first.")); return; }
 
     setIsGenerating(true);
     startTimer("Extracting Clothes");
@@ -168,7 +178,7 @@ export const useGeneration = (
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error(e);
-        alert(`Extraction failed: ${e.message}`);
+        notifyError("Extraction Failed", e);
       }
     } finally {
       clearTimer();
@@ -187,7 +197,7 @@ export const useGeneration = (
     const sourceBgConfig = targetAsset ? (targetAsset.bgConfig || activeTab.bgConfig) : activeTab.bgConfig;
 
     if (!sourceImage) return;
-    if (!apiKeyReady) { alert("Please connect your API Key in settings."); return; }
+    if (!apiKeyReady) { notifyError("API Key Required", new Error("Please connect your API Key in Settings first.")); return; }
 
     setIsGenerating(true);
     if (isGacha && targetId) {
@@ -243,7 +253,7 @@ export const useGeneration = (
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error(e);
-        alert(`Background replacement failed: ${e.message}`);
+        notifyError("Background Replacement Failed", e);
         if (isGacha && targetId) {
           updateTabById(initiatingTabId, prev => ({
               gachaAssets: prev.gachaAssets.map(a => a.id === targetId ? { ...a, status: 'failed' } : a)
@@ -272,19 +282,19 @@ export const useGeneration = (
        if (!activeTab.selectedPixelizeId) return;
     } else if (activeTab.mode === 'gacha') {
        if (!finalAssetId) {
-          alert("Please select a slot to generate.");
+          notifyError("Selection Required", new Error("Please select a slot to generate."));
           return;
        }
     } else if (activeTab.mode === 'ui-reimagine') {
        if (!activeTab.generatedImage) {
-          alert("Please upload an image to reimagine the UI for.");
+          notifyError("Image Required", new Error("Please upload an image to reimagine the UI for."));
           return;
        }
     } else {
        if (!activeTab.prompt && !activeTab.generatedImage) return; 
     }
 
-    if (!apiKeyReady) { alert("Please connect your API Key in settings."); return; }
+    if (!apiKeyReady) { notifyError("API Key Required", new Error("Please connect your API Key in Settings first.")); return; }
 
     setIsGenerating(true);
     abortControllerRef.current = new AbortController();
@@ -304,7 +314,7 @@ export const useGeneration = (
           }
        }
 
-       const model = useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_2_5;
+       const model = activeModel || (useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_2_5);
        
        const count = (isAppend || ['resize', 'animation', 'fullcard', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine'].includes(activeTab.mode)) ? 1 : batchSize;
 
@@ -499,7 +509,7 @@ export const useGeneration = (
     } catch (e: any) {
        if (e.name !== 'AbortError') {
           console.error(e);
-          alert(`Generation failed: ${e.message}`);
+          notifyError("Generation Failed", e);
           logConsole(`ERROR: ${e.message}`);
           if (finalAssetId && activeTab.mode === 'gacha') {
              updateTabById(initiatingTabId, prev => ({

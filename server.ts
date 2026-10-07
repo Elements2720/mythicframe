@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -46,6 +47,26 @@ async function startServer() {
     const { id } = req.params;
     db.prepare("DELETE FROM assets WHERE id = ?").run(id);
     res.json({ success: true });
+  });
+
+  app.post("/api/config/gemini-key", (req, res) => {
+    const { apiKey } = req.body;
+    try {
+      const envPath = path.join(__dirname, ".env.local");
+      let content = "";
+      if (fs.existsSync(envPath)) {
+        content = fs.readFileSync(envPath, "utf8");
+      }
+      if (content.includes("GEMINI_API_KEY=")) {
+        content = content.replace(/GEMINI_API_KEY=.*/, `GEMINI_API_KEY=${apiKey || ""}`);
+      } else {
+        content = `${content.trim()}\nGEMINI_API_KEY=${apiKey || ""}\n`;
+      }
+      fs.writeFileSync(envPath, content.trim() + "\n");
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // Vite middleware for development

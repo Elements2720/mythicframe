@@ -10,6 +10,7 @@ import ConsolePanel from './components/ui/ConsolePanel';
 import AssetPicker from './components/ui/AssetPicker';
 import CropModal from './components/ui/CropModal';
 import FolderPickerModal from './components/ui/FolderPickerModal';
+import ErrorModal from './components/ui/ErrorModal';
 
 // Views
 import Dashboard from './components/views/Dashboard';
@@ -42,6 +43,15 @@ export default function App() {
         isOpen={engine.showConsole}
         onClose={() => engine.setShowConsole(false)}
         logs={engine.consoleLogs}
+      />
+
+      <ErrorModal
+        error={engine.appError}
+        onClose={() => engine.setAppError(null)}
+        onOpenSettings={() => {
+          engine.setAppError(null);
+          engine.setMode('settings');
+        }}
       />
 
       <AssetPicker 
