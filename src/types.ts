@@ -34,6 +34,21 @@ export interface AIConfig {
   customModelName: string;
 }
 
+export interface AvailableModel {
+  id: string;
+  displayName: string;
+  description?: string;
+  supportedMethods: string[];
+  isImageModel: boolean;
+}
+
+export interface AppError {
+  title: string;
+  message: string;
+  code?: number | string;
+  raw?: any;
+}
+
 export interface ArtStyle {
   id: string;
   name: string;

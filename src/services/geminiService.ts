@@ -1,7 +1,7 @@
 
 // Service for interacting with Gemini API
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { GenerationModel, ImageSize, AspectRatio, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, AIConfig, PoseData, MapGridConfig } from "../types";
+import { GenerationModel, ImageSize, AspectRatio, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, AIConfig, PoseData, MapGridConfig, AvailableModel } from "../types";
 import { 
   buildIllustrationPrompt, 
   buildFramePrompt,
@@ -19,14 +19,127 @@ import {
 } from "./promptTemplates";
 import { optimizeBase64Image, blobUrlToBase64 } from "../utils/imageUtils";
 
+// Dynamic API key resolution with priority:
+// 1. Browser localStorage ('mythic_gemini_api_key')
+// 2. Real environment variable (process.env.API_KEY / GEMINI_API_KEY, ignoring placeholders)
+export const getApiKey = (): string => {
+  if (typeof window !== 'undefined') {
+    const localKey = localStorage.getItem('mythic_gemini_api_key');
+    if (localKey && localKey.trim()) {
+      return localKey.trim();
+    }
+  }
+  const envKey = (process.env.API_KEY || process.env.GEMINI_API_KEY || '').trim();
+  if (envKey && envKey !== 'PLACEHOLDER_API_KEY') {
+    return envKey;
+  }
+  return '';
+};
+
+export const getApiKeySource = (): 'local' | 'env' | 'aistudio' | 'placeholder' | 'none' => {
+  if (typeof window !== 'undefined') {
+    const localKey = localStorage.getItem('mythic_gemini_api_key');
+    if (localKey && localKey.trim()) return 'local';
+  }
+  const envKey = (process.env.API_KEY || process.env.GEMINI_API_KEY || '').trim();
+  if (envKey && envKey !== 'PLACEHOLDER_API_KEY') return 'env';
+  if (envKey === 'PLACEHOLDER_API_KEY') return 'placeholder';
+  if (typeof window !== 'undefined' && (window as any).aistudio?.hasSelectedApiKey) return 'aistudio';
+  return 'none';
+};
+
+export const setStoredApiKey = (key: string): void => {
+  if (typeof window !== 'undefined') {
+    const trimmed = key.trim();
+    if (trimmed) {
+      localStorage.setItem('mythic_gemini_api_key', trimmed);
+    } else {
+      localStorage.removeItem('mythic_gemini_api_key');
+    }
+  }
+};
+
+export const clearStoredApiKey = (): void => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('mythic_gemini_api_key');
+  }
+};
+
+export const getSelectedModel = (): string => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('mythic_selected_model');
+    if (saved && saved.trim()) return saved.trim();
+  }
+  return '';
+};
+
+export const setSelectedModel = (modelId: string): void => {
+  if (typeof window !== 'undefined') {
+    if (modelId && modelId.trim()) {
+      localStorage.setItem('mythic_selected_model', modelId.trim());
+    } else {
+      localStorage.removeItem('mythic_selected_model');
+    }
+  }
+};
+
+export const fetchAvailableModels = async (): Promise<AvailableModel[]> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error("No API key configured. Please set your Gemini API key in Settings first.");
+  }
+
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const errorMsg = errorData.error?.message || `HTTP ${res.status}: ${res.statusText}`;
+    throw new Error(`Failed to fetch models from Gemini API: ${errorMsg}`);
+  }
+
+  const data = await res.json();
+  const rawModels: any[] = data.models || [];
+
+  const models: AvailableModel[] = rawModels.map(m => {
+    const cleanId = (m.name || '').replace(/^models\//, '');
+    const methods: string[] = m.supportedGenerationMethods || [];
+    const isImage = cleanId.includes('image') || 
+                    cleanId.includes('imagen') || 
+                    methods.includes('generateImages');
+
+    return {
+      id: cleanId,
+      displayName: m.displayName || cleanId,
+      description: m.description,
+      supportedMethods: methods,
+      isImageModel: isImage
+    };
+  });
+
+  // Sort so image models come first
+  models.sort((a, b) => {
+    if (a.isImageModel && !b.isImageModel) return -1;
+    if (!a.isImageModel && b.isImageModel) return 1;
+    return a.displayName.localeCompare(b.displayName);
+  });
+
+  return models;
+};
+
 // Helper to get client with strict adherence to Coding Guidelines
 const getClient = () => {
-  // CRITICAL: Must use process.env.API_KEY exclusively and directly in named parameter as per initialization rules
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error("No Gemini API key found. Please provide an API key in Settings or set GEMINI_API_KEY in .env.local.");
+  }
+  return new GoogleGenAI({ apiKey });
 };
 
 // Helper to get effective model name
 const getModelName = (defaultModel: string): string => {
+  const selectedCustom = getSelectedModel();
+  if (selectedCustom) {
+    return selectedCustom;
+  }
   const savedConfig = localStorage.getItem('mythic_ai_config');
   if (savedConfig) {
     try {
@@ -55,8 +168,8 @@ const callWithRetry = async <T>(fn: () => Promise<T>, retries = 2, delay = 1000)
     );
     
     if (msg.includes("Requested entity was not found")) {
-        if (window.aistudio && window.aistudio.openSelectKey) {
-            await window.aistudio.openSelectKey();
+        if (typeof window !== 'undefined' && (window as any).aistudio && (window as any).aistudio.openSelectKey) {
+            await (window as any).aistudio.openSelectKey();
         }
     }
 
@@ -70,17 +183,17 @@ const callWithRetry = async <T>(fn: () => Promise<T>, retries = 2, delay = 1000)
 };
 
 export const checkApiKey = async (): Promise<boolean> => {
-  // CRITICAL: Priority check for env var as per guidelines
-  if (process.env.API_KEY) return true;
-  if (window.aistudio && window.aistudio.hasSelectedApiKey) {
-    return await window.aistudio.hasSelectedApiKey();
+  const key = getApiKey();
+  if (key) return true;
+  if (typeof window !== 'undefined' && (window as any).aistudio && (window as any).aistudio.hasSelectedApiKey) {
+    return await (window as any).aistudio.hasSelectedApiKey();
   }
   return false;
 };
 
 export const requestApiKey = async (): Promise<void> => {
-  if (window.aistudio && window.aistudio.openSelectKey) {
-    await window.aistudio.openSelectKey();
+  if (typeof window !== 'undefined' && (window as any).aistudio && (window as any).aistudio.openSelectKey) {
+    await (window as any).aistudio.openSelectKey();
   }
 };
 

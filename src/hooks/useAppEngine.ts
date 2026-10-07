@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   checkApiKey, requestApiKey, generateIllustration, analyzeImageStyle,
   editImage, refinePrompt, generateCharacterTraits, generateCharacterConcept,
-  generateStyleExample, generateSpriteSheetPrompts, generateSpriteSheetAnimationPrompts
+  generateStyleExample, generateSpriteSheetPrompts, generateSpriteSheetAnimationPrompts,
+  fetchAvailableModels, getSelectedModel, setSelectedModel
 } from '../services/geminiService';
 import { exportResizeBatch, exportSpriteSheet, exportSpriteSheetGrid, exportTileset } from '../services/exportService';
 import { uploadImageToDrive, getDriveConnectionStatus } from '../services/googleDriveService';
@@ -13,7 +14,8 @@ import {
   GenerationModel, ImageSize, AspectRatio, 
   PixelDimensions, ReferenceAsset, GameContext,
   BackgroundPatternType, SafeZoneConfig, ResizeItem,
-  WorkspaceTab, ClothesParams, BgReplaceItem, BackgroundConfig, PixelStyle, PixelizeItem, GachaAsset, Rarity, ArtStyle, StyleCollection
+  WorkspaceTab, ClothesParams, BgReplaceItem, BackgroundConfig, PixelStyle, PixelizeItem, GachaAsset, Rarity, ArtStyle, StyleCollection,
+  AppError, AvailableModel
 } from '../types';
 import { ART_STYLES, DEFAULT_BACKGROUND_CONFIG } from '../constants';
 import { useTabs } from './useTabs';
@@ -62,6 +64,63 @@ export const useAppEngine = () => {
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const [useProModel, setUseProModel] = useState(false);
   const [isRightMinimized, setIsRightMinimized] = useState(() => localStorage.getItem('mythic_right_minimized') === 'true');
+
+  // --- In-App Error Modal State ---
+  const [appError, setAppError] = useState<AppError | null>(null);
+
+  const showError = (title: string, error: any) => {
+    let message = '';
+    if (typeof error === 'string') {
+      message = error;
+    } else if (error && error.message) {
+      message = error.message;
+    } else {
+      message = JSON.stringify(error, null, 2);
+    }
+    setAppError({
+      title,
+      message,
+      raw: error
+    });
+    setConsoleLogs(p => [`ERROR [${title}]: ${message}`, ...p]);
+  };
+
+  // --- Dynamic Model State & Fetching ---
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>(() => {
+    try {
+      const saved = localStorage.getItem('mythic_available_models');
+      return saved ? JSON.parse(saved) : [];
+    } catch(e) { return []; }
+  });
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [activeModel, setActiveModel] = useState<string>(() => {
+    return getSelectedModel() || (useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_2_5);
+  });
+
+  const handleFetchModels = async () => {
+    setIsLoadingModels(true);
+    try {
+      const models = await fetchAvailableModels();
+      setAvailableModels(models);
+      localStorage.setItem('mythic_available_models', JSON.stringify(models));
+      setConsoleLogs(p => [`Successfully fetched ${models.length} models from Gemini API`, ...p]);
+    } catch (err: any) {
+      showError("Failed to Fetch Models", err);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  };
+
+  const handleSelectModel = (modelId: string) => {
+    setActiveModel(modelId);
+    setSelectedModel(modelId);
+    if (modelId === GenerationModel.PRO_3) {
+      setUseProModel(true);
+    } else if (modelId === GenerationModel.FLASH_2_5) {
+      setUseProModel(false);
+    }
+    setConsoleLogs(p => [`Active model set to: ${modelId}`, ...p]);
+  };
   
   const [showInspiration, setShowInspiration] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -484,7 +543,9 @@ export const useAppEngine = () => {
     gachaLogic.setGachaAssets,
     logConsole, getTargetDimensions,
     updateTabById,
-    recordStyleUsage
+    recordStyleUsage,
+    activeModel,
+    showError
   );
 
   const handleGenerateAllResize = async () => {
@@ -811,7 +872,15 @@ export const useAppEngine = () => {
   };
 
   const handleExportAllResize = async () => { await exportResizeBatch(activeTab.resizeQueue); };
-  const handleConnect = async () => { await requestApiKey(); const hasKey = await checkApiKey(); setApiKeyReady(hasKey); };
+  const handleConnect = async () => { 
+    if (typeof window !== 'undefined' && (window as any).aistudio && (window as any).aistudio.openSelectKey) {
+      await requestApiKey(); 
+      const hasKey = await checkApiKey(); 
+      setApiKeyReady(hasKey);
+    } else {
+      setMode('settings');
+    }
+  };
   const handleRefreshKey = async () => { const hasKey = await checkApiKey(); setApiKeyReady(hasKey); };
   const handleSaveToDrive = async () => {
      if (!generatedImage) return;
@@ -955,6 +1024,8 @@ export const useAppEngine = () => {
     handleGenerateAll: generation.handleGenerate, handleGenerateAllBgReplace, handleGenerateAllPixelize, handleExportAllResize,
     handleGenerateBatch, reorderBatchItem, batchIntervention,
     useProModel, setUseProModel, isRightMinimized, setIsRightMinimized, batchSize, setBatchSize,
+    appError, setAppError, showError,
+    availableModels, isLoadingModels, handleFetchModels, activeModel, handleSelectModel,
     showInspiration, setShowInspiration, isAnalyzing, isSuggesting,
     handleMatchReferenceSize, handleAnalyzeStyle, handleRefinePrompt, handleUndoPrompt,
     showOnionSkin, setShowOnionSkin, isPlayingAnimation, setIsPlayingAnimation, animFrameIndex,

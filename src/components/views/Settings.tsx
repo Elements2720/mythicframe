@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { GameContext, AIConfig, AIProvider, ArtStyle } from '../../types';
+import { GameContext, AIConfig, AIProvider, ArtStyle, AvailableModel } from '../../types';
 import { initDriveSystem, signInToDrive, signOutFromDrive, getDriveConnectionStatus } from '../../services/googleDriveService';
+import { 
+  getApiKeySource, setStoredApiKey, clearStoredApiKey, 
+  fetchAvailableModels, getSelectedModel, setSelectedModel 
+} from '../../services/geminiService';
 import { APP_VERSION } from '../../constants';
 import { useLanguage } from '../../i18n/LanguageContext';
 
@@ -24,6 +28,27 @@ const Settings: React.FC<SettingsProps> = ({
   allArtStyles = []
 }) => {
   const { language, setLanguage, t } = useLanguage();
+
+  // Gemini API Key State
+  const [apiKeyInput, setApiKeyInput] = useState(() => {
+    return typeof window !== 'undefined' ? (localStorage.getItem('mythic_gemini_api_key') || '') : '';
+  });
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [keyFeedback, setKeyFeedback] = useState<string | null>(null);
+  const [keySource, setKeySource] = useState<'local' | 'env' | 'aistudio' | 'placeholder' | 'none'>('none');
+  const [isSavingKey, setIsSavingKey] = useState(false);
+
+  // Model Discovery State
+  const [discoveredModels, setDiscoveredModels] = useState<AvailableModel[]>(() => {
+    try {
+      const saved = localStorage.getItem('mythic_available_models');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [isScanningModels, setIsScanningModels] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [selectedActiveModel, setSelectedActiveModel] = useState<string>(() => getSelectedModel());
+  const [scanCopied, setScanCopied] = useState(false);
 
   // Drive State
   const [driveClientId, setDriveClientId] = useState(localStorage.getItem('mythic_drive_client_id') || '');
@@ -72,10 +97,103 @@ const Settings: React.FC<SettingsProps> = ({
   };
 
   const copyOrigin = () => {
-     navigator.clipboard.writeText(originUrl);
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(originUrl);
+    }
   };
 
-  const isUsingEnv = !!process.env.API_KEY;
+  useEffect(() => {
+    setKeySource(getApiKeySource());
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('mythic_gemini_api_key') : null;
+    if (stored) {
+      setApiKeyInput(stored);
+    }
+  }, [apiKeyReady]);
+
+  const handleSaveApiKey = async () => {
+    const trimmed = apiKeyInput.trim();
+    setIsSavingKey(true);
+    try {
+      if (!trimmed) {
+        clearStoredApiKey();
+        setApiKeyInput('');
+        setKeyFeedback('Key cleared');
+      } else {
+        setStoredApiKey(trimmed);
+        setKeyFeedback('Key saved successfully!');
+      }
+
+      // Sync to .env.local via backend endpoint
+      try {
+        await fetch('/api/config/gemini-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: trimmed })
+        });
+      } catch (err) {
+        // Ignore background sync errors
+      }
+
+      setKeySource(getApiKeySource());
+      if (onRefreshKey) {
+        onRefreshKey();
+      }
+    } finally {
+      setIsSavingKey(false);
+      setTimeout(() => setKeyFeedback(null), 3500);
+    }
+  };
+
+  const handleClearApiKey = async () => {
+    clearStoredApiKey();
+    setApiKeyInput('');
+    setKeySource(getApiKeySource());
+    setKeyFeedback('Custom key removed');
+
+    try {
+      await fetch('/api/config/gemini-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: '' })
+      });
+    } catch (err) {}
+
+    if (onRefreshKey) {
+      onRefreshKey();
+    }
+    setTimeout(() => setKeyFeedback(null), 3500);
+  };
+
+  const handleScanModels = async () => {
+    setIsScanningModels(true);
+    setScanError(null);
+    try {
+      const models = await fetchAvailableModels();
+      setDiscoveredModels(models);
+      localStorage.setItem('mythic_available_models', JSON.stringify(models));
+      if (!selectedActiveModel && models.length > 0) {
+        const defaultChoice = models.find(m => m.isImageModel)?.id || models[0].id;
+        setSelectedActiveModel(defaultChoice);
+        setSelectedModel(defaultChoice);
+      }
+    } catch (err: any) {
+      setScanError(err?.message || String(err));
+    } finally {
+      setIsScanningModels(false);
+    }
+  };
+
+  const handleSelectModelSetting = (id: string) => {
+    setSelectedActiveModel(id);
+    setSelectedModel(id);
+  };
+
+  const handleCopyScanError = () => {
+    if (!scanError) return;
+    navigator.clipboard.writeText(scanError);
+    setScanCopied(true);
+    setTimeout(() => setScanCopied(false), 2000);
+  };
 
   return (
     <div className="flex-1 bg-slate-950 p-10 overflow-y-auto">
@@ -174,31 +292,110 @@ const Settings: React.FC<SettingsProps> = ({
                 <div className="w-10 h-10 rounded-full bg-amber-900/30 flex items-center justify-center text-amber-500 shrink-0">
                    <i className="fa-solid fa-key" />
                 </div>
-                <div className="flex-1">
-                   <h3 className="text-lg font-bold text-slate-200 mb-2">{t('api_connection')}</h3>
-                   <p className="text-sm text-slate-400 mb-4">
-                      Manage your connection to Google Gemini. Required for Pro models and high-quality generation.
-                   </p>
-                   
-                   <div className="flex flex-col gap-4">
-                       <div className="flex items-center gap-4">
-                          <div className={`px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 border ${apiKeyReady ? 'bg-green-900/20 text-green-400 border-green-500/30' : 'bg-red-900/20 text-red-400 border-red-500/30'}`}>
-                             <i className={`fa-solid ${apiKeyReady ? 'fa-check-circle' : 'fa-times-circle'}`} />
-                             {apiKeyReady ? 'Connected' : 'Not Connected'}
-                          </div>
-                          <button 
-                             onClick={onConnect}
-                             className="text-sm text-slate-300 hover:text-white underline"
-                          >
-                             {apiKeyReady ? 'Change Key (Google)' : 'Connect with Google'}
-                          </button>
-                       </div>
+                <div className="flex-1 space-y-4">
+                   <div className="flex items-center justify-between">
+                      <div>
+                         <h3 className="text-lg font-bold text-slate-200">{t('api_connection')}</h3>
+                         <p className="text-sm text-slate-400">
+                            Manage your Google Gemini API key. Required for Pro models and high-quality generation.
+                         </p>
+                      </div>
+                      <div className={`px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 border shrink-0 ${apiKeyReady ? 'bg-green-900/20 text-green-400 border-green-500/30' : 'bg-red-900/20 text-red-400 border-red-500/30'}`}>
+                         <i className={`fa-solid ${apiKeyReady ? 'fa-check-circle' : 'fa-times-circle'}`} />
+                         {apiKeyReady ? 'Connected' : 'Not Connected'}
+                      </div>
+                   </div>
 
-                       {isUsingEnv && (
-                           <div className="text-xs text-green-400 flex items-center gap-2 bg-green-900/10 p-2 rounded border border-green-500/20">
-                               <i className="fa-solid fa-code" /> Connected via Environment Variable (API_KEY)
-                           </div>
-                       )}
+                   {/* Key Source Status */}
+                   {keySource === 'local' && (
+                      <div className="text-xs text-green-400 flex items-center gap-2 bg-green-900/10 p-2.5 rounded border border-green-500/20">
+                         <i className="fa-solid fa-database" /> Using custom API Key saved in browser local storage.
+                      </div>
+                   )}
+                   {keySource === 'env' && (
+                      <div className="text-xs text-blue-400 flex items-center gap-2 bg-blue-900/10 p-2.5 rounded border border-blue-500/20">
+                         <i className="fa-solid fa-code" /> Connected via Environment Variable (.env.local / process.env.API_KEY).
+                      </div>
+                   )}
+                   {keySource === 'placeholder' && (
+                      <div className="text-xs text-amber-400 flex items-center gap-2 bg-amber-900/10 p-2.5 rounded border border-amber-500/20">
+                         <i className="fa-solid fa-triangle-exclamation" /> Placeholder key detected in .env.local. Please enter your real Gemini API key below.
+                      </div>
+                   )}
+                   {keySource === 'none' && !apiKeyReady && (
+                      <div className="text-xs text-red-400 flex items-center gap-2 bg-red-900/10 p-2.5 rounded border border-red-500/20">
+                         <i className="fa-solid fa-circle-exclamation" /> No API key configured. Enter your Gemini API key below or set GEMINI_API_KEY in .env.local.
+                      </div>
+                   )}
+
+                   {/* API Key Input Form */}
+                   <div className="space-y-2">
+                      <label className="block text-xs uppercase font-bold text-slate-500">
+                         Gemini API Key
+                      </label>
+                      <div className="flex gap-2">
+                         <div className="relative flex-1">
+                            <input 
+                              type={showApiKey ? "text" : "password"}
+                              value={apiKeyInput}
+                              onChange={(e) => setApiKeyInput(e.target.value)}
+                              placeholder="Paste your Gemini API key (AIzaSy...)"
+                              className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 pr-10 text-sm text-slate-200 font-mono focus:border-purple-500 outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowApiKey(!showApiKey)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                              title={showApiKey ? "Hide Key" : "Show Key"}
+                            >
+                               <i className={`fa-solid ${showApiKey ? 'fa-eye-slash' : 'fa-eye'}`} />
+                            </button>
+                         </div>
+                         <button
+                           type="button"
+                           disabled={isSavingKey}
+                           onClick={handleSaveApiKey}
+                           className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium px-4 py-2 rounded text-sm transition-colors flex items-center gap-2 shrink-0"
+                         >
+                            <i className="fa-solid fa-floppy-disk" /> {isSavingKey ? 'Saving...' : 'Save Key'}
+                         </button>
+                         {keySource === 'local' && (
+                            <button
+                              type="button"
+                              onClick={handleClearApiKey}
+                              className="bg-slate-800 hover:bg-red-900/40 text-slate-300 hover:text-red-300 border border-slate-700 hover:border-red-500/30 px-3 py-2 rounded text-sm transition-colors shrink-0"
+                              title="Remove custom key from browser storage"
+                            >
+                               <i className="fa-solid fa-trash" /> Clear
+                            </button>
+                         )}
+                      </div>
+                      
+                      {keyFeedback && (
+                         <p className="text-xs text-green-400 flex items-center gap-1.5 mt-1">
+                            <i className="fa-solid fa-check" /> {keyFeedback}
+                         </p>
+                      )}
+                   </div>
+
+                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60 text-xs">
+                      <a 
+                        href="https://aistudio.google.com/app/apikey" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300"
+                      >
+                         <i className="fa-solid fa-arrow-up-right-from-square" /> Get API key from Google AI Studio
+                      </a>
+
+                      {typeof window !== 'undefined' && (window as any).aistudio && (
+                         <button 
+                            onClick={onConnect}
+                            className="text-slate-400 hover:text-slate-200 underline"
+                         >
+                            Connect via Google AI Studio
+                         </button>
+                      )}
                    </div>
                 </div>
              </div>
