@@ -22,9 +22,9 @@ This guide provides instructions for both **Humans** (manual setup and daily wor
    ```
 3. Look at the top-right corner and toggle on **Developer mode**.
 4. In the top-left corner, click **Load unpacked**.
-5. In the file picker dialog, navigate to and select this directory:
+5. In the file picker dialog, navigate to and select the `bei-extension` directory inside your cloned MythicFrame repository:
    ```text
-   D:\GeminiWeb\mythicframe\bei-extension
+   <path-to-mythicframe>/bei-extension
    ```
 6. The **MythicFrame BEI** extension card will appear in your extensions list:
    * **Version:** `v1.2.0` (or higher)
@@ -315,3 +315,22 @@ async function testBEI() {
 
 testBEI();
 ```
+
+---
+
+## Part 3: Legal, Privacy & Compliance Transparency
+
+### 1. Truthful Technical Architecture
+* **Local Loopback Only**: The extension communicates exclusively with `ws://127.0.0.1:58925` on your personal machine. It does not connect to any external tracking or telemetry servers.
+* **Assistive DOM Automation**: The extension interacts with your open browser tab purely via standard DOM operations (typing prompt text into the public input box and dispatching click events on the submit button). It does not reverse-engineer private, encrypted RPC protocols or emulate proprietary endpoints.
+* **Bring Your Own Account (BYOA)**: The extension serves as an interactive workflow bridge (similar to how open-source mail clients connect to your mailbox), eliminating the friction of manual tab switching and file downloading.
+
+### 2. Privacy & Security Guarantees
+* **Zero Credential Access**: The extension does **not** read, intercept, or export your account passwords, cookies, authorization tokens, or session headers. Your authentication remains safely confined within your browser's native sandbox.
+* **No Telemetry or Remote Logging**: No personal data, prompts, or generated imagery are ever transmitted to any third-party analytics or cloud server.
+
+### 3. Terms of Service Compliance & User Responsibility
+* **Respect for Platform Limits**: The extension does not crack, bypass, or circumvent rate limits, quotas, safety policies, or feature locks. When a platform returns a cooldown, daily quota exhaustion, or safety refusal, the extension detects and presents that status transparently.
+* **User Responsibility**: Users are solely responsible for ensuring that their personal use of connected web services complies with each platform's respective Terms of Service and Acceptable Use Policies.
+* **Independent Community Project**: MythicFrame is an independent open-source project and is not affiliated with, endorsed by, or sponsored by Google LLC, Alphabet Inc., OpenAI Inc., or any of their affiliates.
+

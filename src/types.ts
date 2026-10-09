@@ -401,16 +401,6 @@ export interface CsvCardData {
   [key: string]: string;
 }
 
-declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-
-  interface Window {
-    aistudio?: AIStudio;
-  }
-}
 
 export type Viewpoint = 'none' | 'front' | 'back' | 'side' | 'three-quarter' | 'top-down' | 'high-angle' | 'low-angle' | 'isometric' | 'cinematic';
 

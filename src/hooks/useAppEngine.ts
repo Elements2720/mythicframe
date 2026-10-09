@@ -908,13 +908,7 @@ export const useAppEngine = () => {
 
   const handleExportAllResize = async () => { await exportResizeBatch(activeTab.resizeQueue); };
   const handleConnect = async () => { 
-    if (typeof window !== 'undefined' && (window as any).aistudio && (window as any).aistudio.openSelectKey) {
-      await requestApiKey(); 
-      const hasKey = await checkApiKey(); 
-      setApiKeyReady(hasKey);
-    } else {
-      setMode('settings');
-    }
+    setMode('settings');
   };
   const handleRefreshKey = async () => { const hasKey = await checkApiKey(); setApiKeyReady(hasKey); };
   const handleSaveToDrive = async () => {

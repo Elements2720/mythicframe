@@ -157,8 +157,8 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ error, onClose, onOpenSe
               </div>
               <p className="text-slate-300 leading-relaxed">
                 Google provides <b>0 quota limit</b> for image generation models on the Free Tier. 
-                Even if you subscribe to consumer <i>Gemini Ultra / Advanced</i>, developer API usage requires enabling 
-                <b> Pay-As-You-Go billing</b> in Google Cloud / Google AI Studio.
+                Even if you subscribe to consumer <i>Gemini Advanced</i>, direct developer API access requires enabling 
+                <b> Pay-As-You-Go billing</b> in Google Cloud / Gemini Developer Console.
               </p>
               <div className="pt-1 flex flex-wrap gap-2">
                 <button 
@@ -169,15 +169,15 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ error, onClose, onOpenSe
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-medium transition-colors cursor-pointer"
                 >
-                  <i className="fa-solid fa-puzzle-piece" /> Switch to BEI Mode (Free Unlimited)
+                  <i className="fa-solid fa-puzzle-piece" /> Switch to BEI Mode (Web Session)
                 </button>
                 <a 
-                  href="https://aistudio.google.com/" 
+                  href="https://ai.google.dev/pricing" 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-medium transition-colors"
                 >
-                  <i className="fa-solid fa-arrow-up-right-from-square" /> Open Google AI Studio Billing
+                  <i className="fa-solid fa-arrow-up-right-from-square" /> Open Gemini API Pricing & Billing
                 </a>
               </div>
             </div>

@@ -113,7 +113,7 @@ MythicFrame embeds a dedicated Model Context Protocol server (`src/mcp/index.ts`
 - **Telemetry**: Measures call latency in milliseconds, success/failure status, and model IDs.
 - **Cost Estimation**: Estimates USD spend per generation across models.
 - **Rate Limit Detection**: Automatically flags HTTP 429 and `RESOURCE_EXHAUSTED` responses.
-- **Live Probes**: Runs diagnostics against Google AI Studio and OpenAI to confirm key validity and remaining quota.
+- **Live Probes**: Runs diagnostics against Google Gemini API and OpenAI to confirm key validity and remaining quota.
 
 ---
 
@@ -155,7 +155,7 @@ Access these pages using the **Project** collapsible section in the sidebar.
 ### Settings & Global World Bible (`settings`)
 - **AI Provider Switcher**: Set primary provider (Gemini, OpenAI, OpenCode, OpenRouter, Pollinations, Offline).
 - **API Key Vault**: Save, view, and test keys.
-- **Dynamic Model Discovery**: Scans Google AI Studio to detect newly released Gemini/Imagen models.
+- **Dynamic Model Discovery**: Scans the Google Gemini API endpoint to detect newly released Gemini/Imagen models.
 - **Game Context ("World Bible")**:
   - `Setting`: Defines the universe (e.g., *"Cozy Victorian Alchemist Shop with Eldritch undertones"*).
   - `Tone`: Emotional atmosphere (e.g., *"Whimsical yet dangerous, vibrant bioluminescent colors"*).

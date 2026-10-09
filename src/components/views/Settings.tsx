@@ -45,7 +45,7 @@ const Settings: React.FC<SettingsProps> = ({
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [keyFeedback, setKeyFeedback] = useState<string | null>(null);
-  const [keySource, setKeySource] = useState<'local' | 'env' | 'aistudio' | 'placeholder' | 'none'>('none');
+  const [keySource, setKeySource] = useState<'local' | 'env' | 'placeholder' | 'none'>('none');
   const [isSavingKey, setIsSavingKey] = useState(false);
 
   // OpenAI State
@@ -694,22 +694,13 @@ const Settings: React.FC<SettingsProps> = ({
 
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60 text-xs">
                          <a 
-                           href="https://aistudio.google.com/app/apikey" 
+                           href="https://ai.google.dev/gemini-api/docs/api-key" 
                            target="_blank" 
                            rel="noopener noreferrer"
                            className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300"
                          >
-                            <i className="fa-solid fa-arrow-up-right-from-square" /> Get API key from Google AI Studio
+                            <i className="fa-solid fa-arrow-up-right-from-square" /> Get API key from Google Gemini Developer Portal
                          </a>
-
-                         {typeof window !== 'undefined' && (window as any).aistudio && (
-                            <button 
-                               onClick={onConnect}
-                               className="text-slate-400 hover:text-slate-200 underline"
-                            >
-                               Connect via Google AI Studio
-                            </button>
-                         )}
                       </div>
 
                       {/* Model Scanner & Picker */}

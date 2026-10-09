@@ -585,25 +585,25 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
               Official Cloud Provider Dashboards
             </h3>
             <p className="text-xs text-slate-400">
-              Direct access to live Google Cloud billing, AI Studio tier quotas, and OpenAI balance sheets.
+              Direct access to live Google Cloud billing, Gemini API quotas, and OpenAI balance sheets.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <a
-              href="https://aistudio.google.com/app/plan_information"
+              href="https://ai.google.dev/pricing"
               target="_blank"
               rel="noopener noreferrer"
               className="p-3 bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-purple-500/50 rounded-lg transition-all group flex flex-col justify-between"
             >
               <div>
                 <div className="font-bold text-xs text-purple-300 group-hover:text-purple-200 flex items-center gap-1.5 mb-1">
-                  <i className="fa-brands fa-google text-amber-400" /> Google AI Studio Plans
+                  <i className="fa-brands fa-google text-amber-400" /> Google Gemini API Quotas
                 </div>
-                <div className="text-[11px] text-slate-400">View free tier RPM/RPD quotas and upgrade to Pay-As-You-Go.</div>
+                <div className="text-[11px] text-slate-400">View free tier RPM/RPD limits and Google Cloud project quotas.</div>
               </div>
               <div className="text-[10px] text-purple-400 font-mono mt-3 flex items-center gap-1">
-                Open Dashboard <i className="fa-solid fa-chevron-right text-[8px]" />
+                Open Documentation <i className="fa-solid fa-chevron-right text-[8px]" />
               </div>
             </a>
 

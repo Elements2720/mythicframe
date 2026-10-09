@@ -889,7 +889,7 @@ var server = new Server(
 );
 var executeImageGeneration = async (promptStr, aspectRatio = "1:1", toolName, apiKey) => {
   if (!apiKey) {
-    throw new Error("Missing geminiApiKey. You MUST ask the user to provide their Google AI Studio API key in the chat (link: https://aistudio.google.com/app/apikey).");
+    throw new Error("Missing geminiApiKey. You MUST ask the user to provide their Gemini API key in the chat (link: https://ai.google.dev/gemini-api/docs/api-key).");
   }
   let aspectForGemini = "1:1";
   const ratio = aspectRatio.split(" ")[0];

@@ -37,7 +37,7 @@ export const getApiKey = (): string => {
   return '';
 };
 
-export const getApiKeySource = (): 'local' | 'env' | 'aistudio' | 'placeholder' | 'none' => {
+export const getApiKeySource = (): 'local' | 'env' | 'placeholder' | 'none' => {
   if (typeof window !== 'undefined') {
     const localKey = localStorage.getItem('mythic_gemini_api_key');
     if (localKey && localKey.trim()) return 'local';
@@ -45,7 +45,6 @@ export const getApiKeySource = (): 'local' | 'env' | 'aistudio' | 'placeholder' 
   const envKey = (process.env.API_KEY || process.env.GEMINI_API_KEY || '').trim();
   if (envKey && envKey !== 'PLACEHOLDER_API_KEY') return 'env';
   if (envKey === 'PLACEHOLDER_API_KEY') return 'placeholder';
-  if (typeof window !== 'undefined' && (window as any).aistudio?.hasSelectedApiKey) return 'aistudio';
   return 'none';
 };
 
@@ -211,12 +210,6 @@ const callWithRetry = async <T>(fn: () => Promise<T>, retries = 2, delay = 1000)
         msg.includes('Rpc failed')
     );
     
-    if (msg.includes("Requested entity was not found")) {
-        if (typeof window !== 'undefined' && (window as any).aistudio && (window as any).aistudio.openSelectKey) {
-            await (window as any).aistudio.openSelectKey();
-        }
-    }
-
     if (isRetryable) {
       console.warn(`API call failed (${msg}). Retrying in ${delay}ms... (${retries} attempts left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -228,17 +221,11 @@ const callWithRetry = async <T>(fn: () => Promise<T>, retries = 2, delay = 1000)
 
 export const checkApiKey = async (): Promise<boolean> => {
   const key = getApiKey();
-  if (key) return true;
-  if (typeof window !== 'undefined' && (window as any).aistudio && (window as any).aistudio.hasSelectedApiKey) {
-    return await (window as any).aistudio.hasSelectedApiKey();
-  }
-  return false;
+  return Boolean(key);
 };
 
 export const requestApiKey = async (): Promise<void> => {
-  if (typeof window !== 'undefined' && (window as any).aistudio && (window as any).aistudio.openSelectKey) {
-    await (window as any).aistudio.openSelectKey();
-  }
+  // Handled via Settings modal
 };
 
 function base64ImageToBase64(dataUrl: string): string {

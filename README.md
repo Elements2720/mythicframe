@@ -10,8 +10,10 @@
     <a href="#core-philosophy">Philosophy</a> •
     <a href="#features">Features</a> •
     <a href="#quick-start">Quick Start</a> •
-    <a href="#bei-architecture">BEI Bridge</a> •
-    <a href="#privacy--security">Privacy & Security</a>
+    <a href="#browser-extension-interface-bei">BEI Bridge</a> •
+    <a href="#privacy--security">Privacy & Security</a> •
+    <a href="#license--terms">License & Terms</a> •
+    <a href="#legal-disclaimers">Legal Disclaimers</a>
   </p>
 </div>
 
@@ -19,10 +21,10 @@
 
 ## 🧭 Core Philosophy
 
-MythicFrame is built for independent creators and game developers who want a unified, friction-free creative workspace for 2D game asset generation.
+MythicFrame is built for independent creators, hobbyists, and game developers who want a unified, friction-free creative workspace for 2D game asset generation.
 
 ### 1. Bring Your Own Account (BYOA) Unified Client
-Much like an open-source email client (such as Thunderbird) or an RSS reader connects to your existing accounts, the Browser Extension Interface (BEI) functions as a single unified frontend client. It simply allows you to access and utilize the services and subscriptions you already legitimately own and pay for directly within your personal creative workspace.
+Much like an open-source email client (such as Thunderbird) or an RSS reader connects to your existing accounts, the Browser Extension Interface (BEI) functions as a single unified frontend client. It allows you to access and utilize the services and subscriptions you already legitimately own and pay for directly within your personal creative workspace.
 
 ### 2. Workflow Consolidation, Not Bot Automation
 Rather than acting as a headless bot or unauthorized scraper, MythicFrame serves as an interactive workflow bridge. It eliminates tedious manual friction—copy-pasting prompts between tabs, downloading images, manually inspecting resolution, and organizing files—by piping your own interactive prompts and results straight to your studio canvas.
@@ -71,28 +73,49 @@ Open your browser at **`http://localhost:3488`**.
 
 ## 🔌 Browser Extension Interface (BEI)
 
-The BEI Chrome Extension connects your existing logged-in browser tabs directly to your MythicFrame canvas:
+The BEI Chrome Extension is a client-side assistive helper connecting your open browser tab to the local studio canvas:
 
 1. Open Chrome and navigate to `chrome://extensions/`.
 2. Toggle on **Developer mode** (top right).
 3. Click **Load unpacked** (top left) and select the `bei-extension` folder inside this repository.
 4. Keep a Gemini Web (`gemini.google.com`) or ChatGPT Web (`chatgpt.com`) tab open.
-5. In MythicFrame Studio, select **Browser Bridge (BEI)** in the AI Engine Selector card.
-6. Generate artwork directly onto your canvas with automatic high-res capture!
+5. In MythicFrame Studio, select **Browser Bridge (BEI)** in the AI Engine Selector.
+6. Generate artwork directly onto your canvas with automatic high-res capture.
 
-> For full setup details, see [`bei-extension/INSTALLATION_AND_USAGE_GUIDE.md`](./bei-extension/INSTALLATION_AND_USAGE_GUIDE.md).
+> For full technical details and automation instructions, see [`bei-extension/INSTALLATION_AND_USAGE_GUIDE.md`](./bei-extension/INSTALLATION_AND_USAGE_GUIDE.md).
 
 ---
 
 ## 🔒 Privacy & Security
 
 * **100% Local Execution:** The application, bridge server, and extension execute strictly on `127.0.0.1` on your machine.
-* **Zero Credential Transmission:** No passwords, cookies, or session tokens are ever extracted or transmitted over any network. All authentication lives exclusively inside your standard browser session.
-* **Manual Stop Interception:** Detects user clicks on browser "Stop response" buttons instantly, aborting generation gracefully with zero daily quota deduction.
-* **Optional Official API Mode:** If you prefer direct API keys, you can provide your own Gemini API key in **Settings**, stored strictly in your browser's private `localStorage`.
+* **Zero Credential Transmission:** No passwords, cookies, or session tokens are ever extracted, intercepted, or transmitted over any network. All authentication lives exclusively inside your standard browser session.
+* **Manual Stop Interception:** Detects user clicks on browser "Stop response" buttons instantly, aborting generation gracefully with zero quota impact.
+* **Optional Official API Mode:** If you prefer direct developer API keys, you can provide your own Gemini or OpenAI API key in **Settings**, stored strictly in your browser's private `localStorage`.
 
 ---
 
-## 📄 License
+## 📄 License & Terms
 
-Open-source under the [MIT License](LICENSE). Non-commercial creative utility.
+MythicFrame is released as open-source software under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**.
+
+### Allowed (Non-Commercial):
+* Personal hobbyist projects, non-commercial indie game development, and game jams.
+* Educational, classroom, and academic learning/research.
+* Open-source contributions, auditing, and enhancements under the same license terms.
+
+### Prohibited (Commercial):
+* Selling, sublicensing, or charging fees for this software.
+* Hosting or operating this software as a paid cloud service, SaaS, or remote API endpoint.
+* Bundling or embedding this software into proprietary, monetized, or commercial products.
+
+For complete terms and rules, read [LICENSE](LICENSE) and [TERMS_OF_USE.md](TERMS_OF_USE.md).
+
+---
+
+## ⚖️ Legal Disclaimers
+
+* **Independent Project:** MythicFrame is an independent community project. It is **not** affiliated with, endorsed by, certified by, or sponsored by Google LLC, Alphabet Inc., OpenAI Inc., or any of their affiliates.
+* **Trademarks:** Google, Gemini, Imagen, and Google Cloud are trademarks or registered trademarks of Google LLC. OpenAI, ChatGPT, and DALL-E are trademarks or registered trademarks of OpenAI, Inc. All other product names, logos, and brands are property of their respective owners.
+* **User Responsibility:** Users who connect third-party web services or API keys are solely responsible for ensuring that their usage complies with all applicable Terms of Service, Acceptable Use Policies, and rate limits of those third parties.
+* **No Warranty:** This software is provided "AS IS", without warranty of any kind, express or implied. The authors and contributors bear no liability for any direct, indirect, or consequential damages resulting from the use of this software.
