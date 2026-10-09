@@ -19,6 +19,7 @@ import MapGridCanvas from '../canvas/MapGridCanvas';
 import { SpriteSheetGrid } from '../SpriteSheet/SpriteSheetGrid';
 import { SpriteSheetControls } from '../SpriteSheet/SpriteSheetControls';
 import { BatchStudio } from '../views/BatchStudio';
+import { AnimationStripStudio } from '../views/AnimationStripStudio';
 import HistoryPanel from '../ui/HistoryPanel';
 import { PromptExportModal } from '../ui/PromptExportModal';
 import { WorkspaceTab, ReferenceAsset } from '../../types';
@@ -105,6 +106,7 @@ export default function StudioLayout({ engine }: { engine: any }) {
         </div>
       </div>
     );
+    if (engine.mode === 'sprite-strip') return <AnimationStripStudio engine={engine} />;
     if (engine.mode === 'batch') return <BatchStudio engine={engine} />;
     return <IllustrationCanvas generatedImage={engine.generatedImage} useCustomResBox={engine.useCustomResBox} customResBox={engine.customResBox} setCustomResBox={engine.setCustomResBox} isEditMode={engine.isEditMode} editRegion={engine.editRegion} setEditRegion={engine.setEditRegion} mode={engine.mode} aspectRatio={engine.selectedAspectRatio} customRes={engine.customRes} isPlaying={engine.isPlayingAnimation} currentFrameIndex={engine.animFrameIndex} totalFrames={engine.animConfig.frames.length} onionSkinImage={engine.showOnionSkin && engine.selectedFrameId && engine.mode === 'animation' && engine.animConfig.frames.findIndex((f:any) => f.id === engine.selectedFrameId) > 0 ? engine.animConfig.frames[engine.animConfig.frames.findIndex((f:any) => f.id === engine.selectedFrameId) - 1].imageUrl : null} safeZone={engine.safeZone} setSafeZone={engine.setSafeZone} onImageUpload={engine.handleImageUpload} onClearImage={engine.handleClearImage} sessionImages={engine.sessionImages} onSelectSessionImage={engine.setGeneratedImage} onGenerateMore={() => engine.handleGenerate(true)} onClearSession={engine.handleClearSession} onRemoveSessionImage={engine.handleRemoveSessionImage} isGenerating={engine.isGenerating} statusMessage={engine.statusMessage} characterTool={engine.characterTool} onCharacterLookClick={engine.handleCharacterLookClick} />;
   };
@@ -113,6 +115,7 @@ export default function StudioLayout({ engine }: { engine: any }) {
     // Character Bible has all controls integrated into the Sheet Canvas, hide bottom bar.
     if (engine.mode === 'gacha') return null;
     if (engine.mode === 'sprite-sheet') return null;
+    if (engine.mode === 'sprite-strip') return null;
     if (engine.mode === 'batch') return null;
     
     if (engine.mode === 'animation') return <AnimationTimeline frames={engine.animConfig.frames} selectedFrameId={engine.selectedFrameId} onSelectFrame={engine.setSelectedFrameId} onAddFrame={engine.handleAddFrame} onUpdateFramePrompt={engine.handleUpdateFramePrompt} onDeleteFrame={engine.handleDeleteFrame} onDuplicateFrame={engine.handleDuplicateFrame} onGenerateFrame={engine.handleGenerateFrame} onGenerateAnimation={engine.handleGenerateAnimation} onClearFrames={engine.handleClearFrames} isGenerating={engine.isGenerating} onCancel={engine.handleCancel} isPlaying={engine.isPlayingAnimation} onTogglePlay={() => engine.setIsPlayingAnimation(!engine.isPlayingAnimation)} onUploadFrameImage={engine.handleFrameImageUpload} referenceAssets={engine.referenceAssets} setReferenceAssets={engine.setReferenceAssets} isAnalyzing={engine.isAnalyzing} onAnalyzeStyle={engine.handleAnalyzeStyle} handleCreateSpinAnimation={engine.handleCreateSpinAnimation} />;
@@ -150,6 +153,7 @@ export default function StudioLayout({ engine }: { engine: any }) {
 
   const isGachaMode = engine.mode === 'gacha';
   const isSpriteSheet = engine.mode === 'sprite-sheet';
+  const isSpriteStrip = engine.mode === 'sprite-strip';
   const isUIReimagine = engine.mode === 'ui-reimagine';
   const isClothesDesigner = engine.mode === 'clothes';
 
@@ -172,14 +176,14 @@ export default function StudioLayout({ engine }: { engine: any }) {
          {renderBottomPanel()}
       </div>
 
-      {!isGachaMode && !engine.isRightMinimized && (
+      {!isGachaMode && !isSpriteStrip && !engine.isRightMinimized && (
          <div 
             onMouseDown={(e) => { e.preventDefault(); dragStartXRef.current = { startX: e.clientX, startWidth: currentWidthRef.current }; setIsResizingRight(true); }} 
             className="w-1.5 bg-slate-900 hover:bg-purple-600 cursor-ew-resize z-[510] transition-colors"
          />
       )}
 
-      {!isGachaMode && (
+      {!isGachaMode && !isSpriteStrip && (
          <div 
             ref={rightPanelRef}
             className={`shrink-0 relative z-[500] overflow-visible ${

@@ -234,7 +234,7 @@ export async function generateWithBEI(options: BEIGenerateOptions): Promise<BEIG
     target = 'gemini',
     accountSlot = 0,
     images = [],
-    timeoutSeconds = 120,
+    timeoutSeconds = 900,
     tabMode = 'current',
     bringTabToFront = false
   } = options;

@@ -620,6 +620,7 @@ export const useGeneration = (
                   chibiConfig: activeTab.chibiConfig,
                   poseData: activeTab.poseData,
                   mapGridConfig: activeTab.mapGridConfig,
+                  spriteStripConfig: activeTab.spriteStripConfig,
                   viewpoint: activeTab.viewpoint,
                   noCharacters: activeTab.noCharacters,
                   framing: activeTab.framing,

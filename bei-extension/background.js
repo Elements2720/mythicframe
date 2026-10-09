@@ -598,7 +598,7 @@ function waitForTabComplete(tabId, timeoutMs = 15000) {
  * 3. If needed, opens a fresh background tab and dispatches
  * 4. 100% eliminates "Receiving end does not exist" failure
  */
-async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds = 120, accountSlot = 0, images = [], tabMode = 'same_window_group', bringTabToFront = false) {
+async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds = 900, accountSlot = 0, images = [], tabMode = 'same_window_group', bringTabToFront = false) {
   // Step 1: Attempt direct message dispatch with script injection
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {

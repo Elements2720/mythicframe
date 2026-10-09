@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { BatchItem, BatchVariation } from '../../types';
+import { BatchItem, BatchVariation, AspectRatio } from '../../types';
 import { parseBatchFile } from '../../utils/batchParser';
 
 interface BatchStudioProps {
@@ -71,12 +71,16 @@ const BatchItemCard: React.FC<{
   onViewImage?: (url: string) => void;
   onUpdatePrompt?: (newPrompt: string) => void;
   onUpdateSkipReference?: (skip: boolean) => void;
+  onUpdateReferenceWeight?: (weight: number) => void;
   onMarkDone?: () => void;
+  onUpdateUsedReference?: (url: string) => void;
   isFirst?: boolean;
   isLast?: boolean;
-}> = ({ item, isExpanded, onToggleExpand, onToggleEnabled, onRemove, onRetry, onRegenerateVariation, onMoveUp, onMoveDown, onViewImage, onUpdatePrompt, onUpdateSkipReference, onMarkDone, isFirst, isLast }) => {
+}> = ({ item, isExpanded, onToggleExpand, onToggleEnabled, onRemove, onRetry, onRegenerateVariation, onMoveUp, onMoveDown, onViewImage, onUpdatePrompt, onUpdateSkipReference, onUpdateReferenceWeight, onMarkDone, onUpdateUsedReference, isFirst, isLast }) => {
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editPromptValue, setEditPromptValue] = useState(item.prompt);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div 
@@ -225,7 +229,16 @@ const BatchItemCard: React.FC<{
           <div className="mt-3 space-y-4">
             {item.imageUrl ? (
               <div className="grid grid-cols-4 gap-2">
-                <div className="col-span-1 aspect-square bg-black/40 rounded-lg border border-slate-800 overflow-hidden group/thumb relative">
+                <div 
+                  className="col-span-1 aspect-square bg-black/40 rounded-lg border border-slate-800 overflow-hidden group/thumb relative"
+                  draggable={true}
+                  onDragStart={(e) => {
+                    if (item.imageUrl) {
+                      e.dataTransfer.setData('text/plain', item.imageUrl);
+                      e.dataTransfer.setData('application/mythic-image-url', item.imageUrl);
+                    }
+                  }}
+                >
                   <img src={item.imageUrl} className="w-full h-full object-cover" />
                   <div className="absolute top-0 left-0 right-0 p-1.5 pt-1 pb-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
                      <span className="text-[8px] font-black text-white truncate block drop-shadow-md tracking-wider">
@@ -271,22 +284,93 @@ const BatchItemCard: React.FC<{
                       </div>
                    )}
                    
-                   {item.usedReferenceUrl && (
-                      <div className="flex items-center gap-2 bg-slate-900/50 p-1.5 rounded-lg border border-slate-800/50 mt-1">
-                         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest pl-1">Reference Used:</span>
-                         <div className="relative group/ref w-6 h-6 rounded overflow-hidden shadow-md">
-                            <img src={item.usedReferenceUrl} className="w-full h-full object-cover" />
-                            {onUpdateSkipReference && (
-                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover/ref:opacity-100 transition-opacity">
-                                <button onClick={() => onUpdateSkipReference(!item.skipReference)} className="text-white hover:text-red-400 transition-colors" title={item.skipReference ? "Include Reference" : "Remove Reference"}>
-                                   <i className={`fa-solid ${item.skipReference ? 'fa-plus' : 'fa-xmark'} text-[10px]`} />
-                                </button>
-                              </div>
+                   <div 
+                     className={`mt-2 p-2 border border-dashed rounded-lg relative cursor-pointer group/dropzone transition-all ${
+                        isDragOver ? 'border-purple-500 bg-purple-500/20' : 'border-slate-700/50 bg-black/20 hover:bg-black/40 hover:border-purple-500/50'
+                     }`}
+                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+                     onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }}
+                     onDrop={(e) => {
+                       e.preventDefault(); e.stopPropagation();
+                       setIsDragOver(false);
+                       const url = e.dataTransfer.getData('application/mythic-image-url') || e.dataTransfer.getData('text/plain');
+                       if (url && (url.startsWith('blob:') || url.startsWith('data:image/') || url.startsWith('http')) && onUpdateUsedReference) {
+                          onUpdateUsedReference(url);
+                       } else {
+                          const file = e.dataTransfer.files?.[0];
+                          if (file && file.type.startsWith('image/') && onUpdateUsedReference) {
+                              const reader = new FileReader();
+                              reader.onload = () => onUpdateUsedReference(reader.result as string);
+                              reader.readAsDataURL(file);
+                          }
+                       }
+                     }}
+                     onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                     }}
+                   >
+                     {/* Hidden file input for native click support */}
+                     <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        accept="image/*" 
+                        onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && onUpdateUsedReference) {
+                                const reader = new FileReader();
+                                reader.onload = () => onUpdateUsedReference(reader.result as string);
+                                reader.readAsDataURL(file);
+                            }
+                        }} 
+                     />
+                     
+                     {item.usedReferenceUrl ? (
+                         <div className="flex items-center gap-2 relative z-10 w-full" onClick={(e) => e.stopPropagation()}>
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest shrink-0">Reference:</span>
+                            <div className="relative group/ref w-6 h-6 rounded overflow-hidden shadow-md shrink-0 border border-slate-700">
+                               <img src={item.usedReferenceUrl} className="w-full h-full object-cover" />
+                               {onUpdateSkipReference && (
+                                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover/ref:opacity-100 transition-opacity">
+                                    <button onClick={() => onUpdateSkipReference(!item.skipReference)} className="text-white hover:text-red-400 transition-colors" title={item.skipReference ? "Include Reference" : "Remove Reference"}>
+                                       <i className={`fa-solid ${item.skipReference ? 'fa-plus' : 'fa-xmark'} text-[10px]`} />
+                                    </button>
+                                  </div>
+                               )}
+                            </div>
+                            {item.skipReference && <span className="text-[8px] font-black text-red-500 uppercase truncate">Excluded <span className="text-slate-500 lowercase font-medium hidden sm:inline">(ignored on regen)</span></span>}
+                            {!item.skipReference && onUpdateReferenceWeight && (
+                               <div className="flex flex-col flex-1 pl-2" onClick={(e) => e.stopPropagation()}>
+                                 <div className="flex items-center justify-between">
+                                   <span className="text-[8px] text-slate-500 uppercase font-black tracking-widest">Weight</span>
+                                   <span className="text-[9px] text-purple-400 font-bold">{item.referenceWeight?.toFixed(2) ?? '0.80'}</span>
+                                 </div>
+                                 <input 
+                                   type="range" 
+                                   min="0.1" 
+                                   max="2.0" 
+                                   step="0.05" 
+                                   value={item.referenceWeight ?? 0.8}
+                                   onChange={(e) => onUpdateReferenceWeight(parseFloat(e.target.value))}
+                                   className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                 />
+                               </div>
                             )}
+                            <div className="flex shrink-0 text-right min-w-0">
+                               <button 
+                                 onClick={(e) => { e.stopPropagation(); onUpdateUsedReference && onUpdateUsedReference(''); }} 
+                                 className="text-[9px] text-slate-500 hover:text-red-400 uppercase font-black"
+                               >Remove</button>
+                            </div>
                          </div>
-                         {item.skipReference && <span className="text-[8px] font-black text-red-500 uppercase">Excluded <span className="text-slate-500 lowercase font-medium">(will be ignored on regen)</span></span>}
-                      </div>
-                   )}
+                     ) : (
+                         <div className="py-2 flex flex-col items-center justify-center pointer-events-none opacity-50 group-hover/dropzone:opacity-100 transition-opacity">
+                            <i className="fa-solid fa-image text-slate-500 mb-1" />
+                            <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">Drag or Click to Add Reference</span>
+                         </div>
+                     )}
+                   </div>
                 </div>
               </div>
             ) : (
@@ -309,8 +393,97 @@ const BatchItemCard: React.FC<{
                         <button onClick={() => setIsEditingPrompt(true)} className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center text-slate-600 hover:text-purple-400 opacity-0 group-hover/prompt:opacity-100 transition-opacity">
                            <i className="fa-solid fa-pen text-[10px]" />
                         </button>
-                      </div>
+                       </div>
                    )}
+                   <div 
+                     className={`mt-2 p-2 border border-dashed rounded-lg relative cursor-pointer group/dropzone transition-all ${
+                        isDragOver ? 'border-purple-500 bg-purple-500/20' : 'border-slate-700/50 bg-black/20 hover:bg-black/40 hover:border-purple-500/50'
+                     }`}
+                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+                     onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }}
+                     onDrop={(e) => {
+                       e.preventDefault(); e.stopPropagation();
+                       setIsDragOver(false);
+                       const url = e.dataTransfer.getData('application/mythic-image-url') || e.dataTransfer.getData('text/plain');
+                       if (url && (url.startsWith('blob:') || url.startsWith('data:image/') || url.startsWith('http')) && onUpdateUsedReference) {
+                          onUpdateUsedReference(url);
+                       } else {
+                          const file = e.dataTransfer.files?.[0];
+                          if (file && file.type.startsWith('image/') && onUpdateUsedReference) {
+                              const reader = new FileReader();
+                              reader.onload = () => onUpdateUsedReference(reader.result as string);
+                              reader.readAsDataURL(file);
+                          }
+                       }
+                     }}
+                     onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                     }}
+                   >
+                     {/* Hidden file input for native click support */}
+                     <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        accept="image/*" 
+                        onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && onUpdateUsedReference) {
+                                const reader = new FileReader();
+                                reader.onload = () => onUpdateUsedReference(reader.result as string);
+                                reader.readAsDataURL(file);
+                            }
+                        }} 
+                     />
+                     
+                     {item.usedReferenceUrl ? (
+                         <div className="flex items-center gap-2 relative z-10 w-full" onClick={(e) => e.stopPropagation()}>
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest shrink-0">Reference:</span>
+                            <div className="relative group/ref w-6 h-6 rounded overflow-hidden shadow-md shrink-0 border border-slate-700">
+                               <img src={item.usedReferenceUrl} className="w-full h-full object-cover" />
+                               {onUpdateSkipReference && (
+                                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover/ref:opacity-100 transition-opacity">
+                                    <button onClick={() => onUpdateSkipReference(!item.skipReference)} className="text-white hover:text-red-400 transition-colors" title={item.skipReference ? "Include Reference" : "Remove Reference"}>
+                                       <i className={`fa-solid ${item.skipReference ? 'fa-plus' : 'fa-xmark'} text-[10px]`} />
+                                    </button>
+                                  </div>
+                               )}
+                            </div>
+                            {item.skipReference && <span className="text-[8px] font-black text-red-500 uppercase truncate">Excluded <span className="text-slate-500 lowercase font-medium hidden sm:inline">(ignored on regen)</span></span>}
+                            {!item.skipReference && onUpdateReferenceWeight && (
+                               <div className="flex flex-col flex-1 pl-2" onClick={(e) => e.stopPropagation()}>
+                                 <div className="flex items-center justify-between">
+                                   <span className="text-[8px] text-slate-500 uppercase font-black tracking-widest">Weight</span>
+                                   <span className="text-[9px] text-purple-400 font-bold">{item.referenceWeight?.toFixed(2) ?? '0.80'}</span>
+                                 </div>
+                                 <input 
+                                   type="range" 
+                                   min="0.1" 
+                                   max="2.0" 
+                                   step="0.05" 
+                                   value={item.referenceWeight ?? 0.8}
+                                   onChange={(e) => onUpdateReferenceWeight(parseFloat(e.target.value))}
+                                   className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                 />
+                               </div>
+                            )}
+                            <div className="flex shrink-0 text-right min-w-0">
+                               <button 
+                                 onClick={(e) => { e.stopPropagation(); onUpdateUsedReference && onUpdateUsedReference(''); }} 
+                                 className="text-[9px] text-slate-500 hover:text-red-400 uppercase font-black"
+                               >Remove</button>
+                            </div>
+                         </div>
+                     ) : (
+                         <div className="py-2 flex flex-col items-center justify-center pointer-events-none opacity-50 group-hover/dropzone:opacity-100 transition-opacity">
+                            <i className={`fa-solid fa-image mb-1 ${isDragOver ? 'text-purple-400 animate-bounce' : 'text-slate-500'}`} />
+                            <span className={`text-[9px] uppercase font-bold tracking-wider ${isDragOver ? 'text-purple-300' : 'text-slate-400'}`}>
+                               {isDragOver ? 'Drop Image Here' : 'Drag or Click to Add Reference'}
+                            </span>
+                         </div>
+                     )}
+                   </div>
                </div>
             )}
             
@@ -341,8 +514,26 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
   const [minimizedFiles, setMinimizedFiles] = useState<Record<string, boolean>>({});
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [quickAddText, setQuickAddText] = useState("");
   const { activeTab, updateActiveTab, handleGenerate, isGenerating, statusMessage, reorderBatchItem } = engine;
   const queue = activeTab.batchQueue || [];
+
+  const handleQuickAdd = () => {
+    if (!quickAddText.trim()) return;
+    const items = parseBatchFile(quickAddText, 'Quick Add');
+    // Force them to be active items (not series templates) even if 2 columns
+    const activeItems = items.map(item => ({
+      ...item,
+      enabled: true,
+      isSeriesTemplate: false,
+      aspectRatio: '1:1' as AspectRatio
+    }));
+    
+    updateActiveTab((prev: any) => ({
+      batchQueue: [...(prev.batchQueue || []), ...activeItems]
+    }));
+    setQuickAddText("");
+  };
 
   const toggleItemEnabled = (id: string) => {
     updateActiveTab({
@@ -411,6 +602,7 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
     const allNewItems: BatchItem[] = [];
     
     for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) continue;
       try {
         const content = await file.text();
         const items = parseBatchFile(content, file.name);
@@ -446,8 +638,8 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
         };
     }
 
-    // Define priority order: Full Body > Waist Up > Chibi
-    const priorityOrder = ['full-body', 'waist-up', 'chibi'];
+    // Define priority order: Full Body > Waist Up > Chibi > Item > Texture > Icon
+    const priorityOrder = ['full-body', 'waist-up', 'chibi', 'item', 'texture', 'icon'];
     const activeVariations = variations
         .filter(v => priorityOrder.includes(v))
         .sort((a, b) => priorityOrder.indexOf(a) - priorityOrder.indexOf(b));
@@ -483,6 +675,15 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
             } else if (v === 'full-body') {
                 newPrompt = `STRICTLY FULL BODY shot, entire character visible from head to toe, absolute full silhouette, character standing centered in the frame with padding at the top and bottom, head and feet clearly and fully in frame, ensure large weapons and accessories are entirely within frame and not clipped by boundaries, standing on ground, standalone character design, facing left side, looking left, ${newPrompt}`;
                 newRatio = '3:4';
+            } else if (v === 'item') {
+                newPrompt = `isolated object, centered, standalone prop asset, pure solid background, ${newPrompt}`;
+                newRatio = '1:1';
+            } else if (v === 'texture') {
+                newPrompt = `seamless repeating map texture, flat top-down view, uniform lighting, no shadows, no characters, no central object, edge-to-edge tileable seamless pattern, ${newPrompt}`;
+                newRatio = '1:1';
+            } else if (v === 'icon') {
+                newPrompt = `standalone icon asset, centered on a pure solid canvas, clean silhouette, ${newPrompt}`;
+                newRatio = '1:1';
             }
 
             newItems.push({
@@ -515,7 +716,7 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
     const currentQueue = [...queue];
     
     const uniqueCoreNames = Array.from(new Set(currentQueue.map(i => getCoreName(i.name))));
-    const priorityOrder = ['full-body', 'waist-up', 'chibi'];
+    const priorityOrder = ['full-body', 'waist-up', 'chibi', 'item', 'texture', 'icon'];
     const activeVariations = variations
         .filter(v => priorityOrder.includes(v))
         .sort((a, b) => priorityOrder.indexOf(a) - priorityOrder.indexOf(b));
@@ -564,6 +765,15 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
                 } else if (v === 'full-body') {
                     newPrompt = `STRICTLY FULL BODY shot, entire character visible from head to toe, absolute full silhouette, character standing centered in the frame with padding at the top and bottom, head and feet clearly and fully in frame, ensure large weapons and accessories are entirely within frame and not clipped by boundaries, standing on ground, standalone character design, facing left side, looking left, ${newPrompt}`;
                     newRatio = '3:4';
+                } else if (v === 'item') {
+                    newPrompt = `isolated object, centered, standalone prop asset, pure solid background, ${newPrompt}`;
+                    newRatio = '1:1';
+                } else if (v === 'texture') {
+                    newPrompt = `seamless repeating map texture, flat top-down view, uniform lighting, no shadows, no characters, no central object, edge-to-edge tileable seamless pattern, ${newPrompt}`;
+                    newRatio = '1:1';
+                } else if (v === 'icon') {
+                    newPrompt = `standalone icon asset, centered on a pure solid canvas, clean silhouette, ${newPrompt}`;
+                    newRatio = '1:1';
                 }
 
                 newItems.push({
@@ -723,8 +933,16 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
         const charFolder = zip.folder(safeCharName);
         
         const styleMatch = item.name.match(/\[(.*?)\]/);
-        const styleSuffix = styleMatch ? `_${styleMatch[1].replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')}` : '';
-        const cleanItemName = `${safeCharName}${styleSuffix}`;
+        let prefix = '';
+        if (styleMatch) {
+            const rawStyle = styleMatch[1].toLowerCase();
+            if (rawStyle.includes('waist up') || rawStyle.includes('waist-up')) prefix = 'WaistUp_';
+            else if (rawStyle.includes('full body') || rawStyle.includes('full-body')) prefix = 'FullBody_';
+            else if (rawStyle.includes('chibi')) prefix = 'Chibi_';
+            else prefix = `${styleMatch[1].replace(/[^a-z0-9]/gi, '')}_`;
+        }
+        
+        const cleanItemName = `${prefix}${safeCharName}`;
         const fileName = `${cleanItemName}.png`;
         if (charFolder) {
           charFolder.file(fileName, blob);
@@ -924,7 +1142,7 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
                 <div className="flex flex-col">
                    <h3 className="text-[10px] font-black text-purple-400 uppercase tracking-widest mb-2 pr-4 italic">Series Variations</h3>
                    <div className="flex gap-2">
-                    {(['full-body', 'waist-up', 'chibi'] as BatchVariation[]).map(v => (
+                    {(['full-body', 'waist-up', 'chibi', 'item', 'texture', 'icon'] as BatchVariation[]).map(v => (
                       <button
                         key={v}
                         onClick={() => {
@@ -957,6 +1175,33 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
               </div>
            </div>
         )}
+
+        {/* Quick Add Form */}
+        <div className="bg-slate-900 border border-purple-500/30 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-xl">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <i className="fa-solid fa-bolt text-purple-400" />
+            <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest italic whitespace-nowrap">Quick Add</span>
+          </div>
+          <div className="flex-1 flex gap-2 w-full">
+             <input 
+               type="text" 
+               placeholder="Item Name | Item full description..." 
+               value={quickAddText}
+               onChange={e => setQuickAddText(e.target.value)}
+               onKeyDown={e => {
+                 if (e.key === 'Enter') handleQuickAdd();
+               }}
+               className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-sm text-white focus:border-purple-500 outline-none"
+             />
+             <button 
+               onClick={handleQuickAdd}
+               disabled={!quickAddText.trim()}
+               className="px-6 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg font-bold text-sm uppercase italic tracking-widest transition-all"
+             >
+               Add
+             </button>
+          </div>
+        </div>
 
         {/* Instructions */}
         <div className="bg-slate-800/40 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
@@ -994,14 +1239,26 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
                        <i className="fa-solid fa-people-group" /> Series Mode (2 Columns)
                     </h4>
                     <p className="text-xs text-slate-300 leading-relaxed font-bold">
-                      Format: <code className="bg-slate-950 px-1.5 py-0.5 rounded text-white font-mono">Character Name | General Description</code>
+                      Format: <code className="bg-slate-950 px-1.5 py-0.5 rounded text-white font-mono">Name | General Description</code>
                     </p>
                     <p className="text-[10px] text-slate-400 mt-2">
                       Use this for character sheets. Provide a <span className="text-white">General Description</span> of the character's appearance (eyes, hair, clothing details, colors). 
                       <br/>Avoid "standing," "running," or framing words. 
-                      <br/>Then use <span className="text-purple-300 font-bold">Populate Series</span> to auto-generate <span className="text-slate-300 italic">Chibi, Waist-Up, and Full Body</span> variants.
+                      <br/>Then use <span className="text-purple-300 font-bold">Populate Series</span> to auto-generate <span className="text-slate-300 italic">Chibi, Waist-Up, Full Body, Item, Texture, and Icon</span> variants.
                     </p>
                     <p className="text-[10px] text-slate-500 mt-2 italic">Example: Lyra | Female elf with glowing green eyes, silver lunar robes, and a wooden staff.</p>
+                  </div>
+                  
+                  <div className="bg-orange-900/10 p-4 rounded-xl border border-orange-500/30">
+                    <h4 className="text-[10px] font-black text-orange-300 uppercase tracking-widest mb-2 flex items-center gap-2 pr-4">
+                       <i className="fa-solid fa-cube" /> Props, Textures & Icons (2 Columns)
+                    </h4>
+                    <p className="text-[10px] text-slate-400 mt-2">
+                      You can also use the Series Mode to define Props, Map Textures, or UI Icons.
+                      <br/>Provide a <span className="text-white">General Description</span> of the prop, texture, or icon.
+                      <br/>Select the <span className="text-slate-300 italic text-bold">Item</span>, <span className="text-slate-300 italic text-bold">Texture</span>, or <span className="text-slate-300 italic text-bold">Icon</span> variation, then use <span className="text-orange-300 font-bold">Populate Series</span>.
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-2 italic">Example: Stone Floor | A cracked cobblestone floor covered in moss</p>
                   </div>
                 </div>
                 <div className="space-y-2 pt-2">
@@ -1188,7 +1445,17 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
                         <div className={viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4" : "grid grid-cols-1 gap-2"}>
                           {items.map((item: BatchItem, idx: number) => (
                             viewMode === 'grid' ? (
-                              <div key={item.id} className="relative group aspect-square rounded-xl bg-slate-950 border border-slate-800 overflow-hidden hover:border-purple-500/50 transition-all shadow-xl">
+                              <div 
+                                key={item.id} 
+                                className="relative group aspect-square rounded-xl bg-slate-950 border border-slate-800 overflow-hidden hover:border-purple-500/50 transition-all shadow-xl"
+                                draggable={true}
+                                onDragStart={(e) => {
+                                  if (item.imageUrl) {
+                                    e.dataTransfer.setData('text/plain', item.imageUrl);
+                                    e.dataTransfer.setData('application/mythic-image-url', item.imageUrl);
+                                  }
+                                }}
+                              >
                                   {item.imageUrl ? (
                                     <>
                                        <img src={item.imageUrl} className="w-full h-full object-cover" />
@@ -1249,6 +1516,8 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
                                 onViewImage={setLightboxUrl}
                                 onUpdatePrompt={(newPrompt) => updateItem(item.id, { prompt: newPrompt })}
                                 onUpdateSkipReference={(skip) => updateItem(item.id, { skipReference: skip })}
+                                onUpdateReferenceWeight={(weight) => updateItem(item.id, { referenceWeight: weight })}
+                                onUpdateUsedReference={(url) => updateItem(item.id, { usedReferenceUrl: url })}
                                 isFirst={idx === 0}
                                 isLast={idx === items.length - 1}
                               />
@@ -1310,7 +1579,17 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
                           <div className={viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4" : "grid grid-cols-1 gap-2"}>
                             {items.map((item: BatchItem, idx: number) => (
                               viewMode === 'grid' ? (
-                                <div key={item.id} className="relative group aspect-square rounded-xl bg-slate-950 border border-slate-800 overflow-hidden hover:border-purple-500/50 transition-all shadow-xl">
+                                <div 
+                                  key={item.id} 
+                                  className="relative group aspect-square rounded-xl bg-slate-950 border border-slate-800 overflow-hidden hover:border-purple-500/50 transition-all shadow-xl"
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    if (item.imageUrl) {
+                                      e.dataTransfer.setData('text/plain', item.imageUrl);
+                                      e.dataTransfer.setData('application/mythic-image-url', item.imageUrl);
+                                    }
+                                  }}
+                                >
                                   <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
                                   <div className="absolute top-0 left-0 right-0 p-2 pt-1 pb-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
                                      <span className="text-[9px] font-black text-white truncate block drop-shadow-md tracking-wider">
@@ -1380,6 +1659,10 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
                                   onRetry={() => handleRetryItem(item.id)}
                                   onMarkDone={() => handleMarkDoneItem(item.id)}
                                   onViewImage={setLightboxUrl}
+                                  onUpdatePrompt={(newPrompt) => updateItem(item.id, { prompt: newPrompt })}
+                                  onUpdateSkipReference={(skip) => updateItem(item.id, { skipReference: skip })}
+                                  onUpdateReferenceWeight={(weight) => updateItem(item.id, { referenceWeight: weight })}
+                                  onUpdateUsedReference={(url) => updateItem(item.id, { usedReferenceUrl: url })}
                                   isFirst={idx === 0}
                                   isLast={idx === items.length - 1}
                                 />

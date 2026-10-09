@@ -109,6 +109,42 @@
     return false;
   }
 
+  function getStopButton() {
+    try {
+      const candidates = Array.from(document.querySelectorAll(STOP_BUTTON_SELECTORS.join(', ')));
+      for (const btn of candidates) {
+        if (btn && btn.offsetParent !== null && !btn.disabled) return btn;
+      }
+      const composerButtons = Array.from(document.querySelectorAll('.input-area button, .bottom-container button, .chat-input-container button, form button'));
+      for (const btn of composerButtons) {
+        if (isStopButtonElement(btn) && btn.offsetParent !== null && !btn.disabled) return btn;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function isGeminiActivelyGenerating() {
+    try {
+      // 1. Native Stop button is present and visible
+      const stopBtn = getStopButton();
+      if (stopBtn) return true;
+
+      // 2. Any active "Creating your image" or shimmering text in the page
+      const bodyText = (document.body.innerText || '').toLowerCase();
+      if (bodyText.includes('creating your image') || bodyText.includes('generating your image') || bodyText.includes('creating image')) {
+        return true;
+      }
+
+      // 3. Shimmer, progress bars, or active spinners
+      const shimmerEl = document.querySelector('.shimmer, .loading, mat-progress-bar, mat-progress-spinner, [aria-label*="creating" i], [aria-label*="loading" i], .spark-icon');
+      if (shimmerEl && shimmerEl.offsetParent !== null) return true;
+
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   let activeRunningJobId = null;
   let activeCancelHandler = null;
 
@@ -507,6 +543,7 @@
     let consecutiveReadyChecks = 0;
     let errorStartTime = null;
     let lastProgressTime = Date.now();
+    let lastProgressPing = Date.now();
 
     console.log(`[MythicFrame BEI] Waiting up to ${Math.round(maxWaitMs / 1000)}s for ${expectedCount} reference image(s) to finish uploading...`);
     if (jobId) reportProgress(jobId, 'verifying_upload', `Verifying reference image upload in Gemini Web...`);
@@ -517,6 +554,13 @@
 
       const now = Date.now();
       const elapsed = now - startTime;
+
+      // Heartbeat: keep bridge alive every 3 seconds even on slower networks (4 Mbps)
+      if (jobId && (now - lastProgressPing > 3000)) {
+        lastProgressPing = now;
+        const elapsedSec = Math.round(elapsed / 1000);
+        reportProgress(jobId, 'uploading_references', `Transmitting reference image to Google media servers (${elapsedSec}s)...`);
+      }
 
       const composer = getComposerElement();
       const inputContainer = composer ? (composer.closest('.bottom-container, .input-area, .chat-input-container, form, main') || composer.parentElement || document.body) : document.body;
@@ -542,10 +586,6 @@
       const isUploading = progressIndicators.length > 0;
       if (isUploading) {
         lastProgressTime = now;
-        if (jobId) {
-          const elapsedSec = Math.round(elapsed / 1000);
-          reportProgress(jobId, 'uploading_references', `Transmitting reference image to Google media servers (${elapsedSec}s)...`);
-        }
       }
 
       // 3. Check for error indicators in chips and retry if possible
@@ -619,18 +659,18 @@
 
       // Dynamic Timeout Evaluation:
       const timeSinceLastProgress = now - lastProgressTime;
-      if (elapsed > maxWaitMs && !isUploading && timeSinceLastProgress > 25000) {
+      if (elapsed > maxWaitMs && !isUploading && timeSinceLastProgress > 60000) {
         console.warn(`[MythicFrame BEI] Attachment upload wait reached timeout (${elapsed}ms, stalled for ${timeSinceLastProgress}ms).`);
         return false;
       }
-      if (elapsed > 300000) {
-        console.warn(`[MythicFrame BEI] Attachment upload reached absolute 5-minute safety ceiling.`);
+      if (elapsed > 900000) {
+        console.warn(`[MythicFrame BEI] Attachment upload reached absolute 15-minute safety ceiling.`);
         return false;
       }
     }
   }
 
-  async function attachReferenceImages(images, composer, jobId = null, maxUploadWaitMs = 150000) {
+  async function attachReferenceImages(images, composer, jobId = null, maxUploadWaitMs = 600000) {
     if (!images || images.length === 0) return true;
     try {
       clearOldAttachments();
@@ -838,7 +878,7 @@
     return { ok: false, reason: 'Pre-send verification timed out after 3 remediation cycles.' };
   }
 
-  async function executePrompt(jobId, prompt, timeoutSeconds = 120, images = []) {
+  async function executePrompt(jobId, prompt, timeoutSeconds = 900, images = []) {
     let keepAlivePort = null;
     try {
       if (chrome.runtime && chrome.runtime.connect) {
@@ -889,7 +929,7 @@
     // Attach reference images if any exist, waiting for upload to fully complete
     if (images && images.length > 0) {
       reportProgress(jobId, 'uploading_references', `Uploading reference image(s) (1/${images.length})...`);
-      const maxUploadWait = Math.max((timeoutSeconds || 120) * 1000, 150000);
+      const maxUploadWait = Math.max((timeoutSeconds || 900) * 1000, 600000);
       const uploadSuccess = await attachReferenceImages(images, composer, jobId, maxUploadWait);
       if (!uploadSuccess) {
         clearComposer();
@@ -1003,7 +1043,8 @@
 
     // Observe mutations and polls for generated images
     const startTime = Date.now();
-    const timeoutMs = (timeoutSeconds || 120) * 1000;
+    const timeoutMs = (timeoutSeconds || 900) * 1000;
+    let lastHeartbeatTime = Date.now();
     let imageDelivered = false;
     let jobCancelled = false;
 
@@ -1128,72 +1169,103 @@
     }
 
     const checkInterval = setInterval(async () => {
-      if (imageDelivered || jobCancelled) {
-        clearInterval(checkInterval);
-        return;
-      }
-
-      const elapsed = Date.now() - startTime;
-      if (elapsed > timeoutMs) {
-        clearInterval(checkInterval);
-        activeRunningJobId = null;
-        activeCancelHandler = null;
-        if (keepAlivePort) keepAlivePort.disconnect();
-        clearComposer();
-        try {
-          chrome.runtime.sendMessage({
-            type: 'GENERATION_FAILED',
-            data: { jobId, error: `Generation timed out after ${timeoutSeconds}s waiting for Gemini Web response.` }
-          });
-        } catch (e) {}
-        return;
-      }
-
-      // Tier 1: Check ONLY model responses created for this turn (excluding user turns!)
-      const currentModelResponses = Array.from(document.querySelectorAll('model-response, [data-test-id*="model-response"]'))
-        .filter(r => !r.closest('user-query, .user-query, .chat-input-container'));
-
-      const latestResponse = currentModelResponses.length > baselineResponseCount
-        ? currentModelResponses[currentModelResponses.length - 1]
-        : (currentModelResponses.length > 0 ? currentModelResponses[currentModelResponses.length - 1] : null);
-
-      if (latestResponse) {
-        // If Gemini is still in "Creating your image" state, WAIT and DO NOT deliver anything!
-        if (isModelResponseGenerating(latestResponse)) {
-          reportProgress(jobId, 'generating', 'Gemini is rendering image ("Creating your image")...');
+      try {
+        if (imageDelivered || jobCancelled) {
+          clearInterval(checkInterval);
           return;
         }
 
-        // 1A: Check images strictly inside this latest model response
-        const respImages = protocol.getAllImagesRecursively(latestResponse);
-        for (const img of respImages) {
-          if (isUserAttachedImage(img)) continue;
-          const src = img.currentSrc || img.src;
-          if (!src || existingImages.has(src)) continue;
+        const elapsed = Date.now() - startTime;
+        const now = Date.now();
 
-          if (protocol.isGeneratedImage(img)) {
-            if (img.complete && (img.naturalWidth > 120 || img.naturalHeight > 120)) {
-              await deliverImage(img, img.naturalWidth, img.naturalHeight);
-              return;
-            }
-          }
+        // Heartbeat: Ping bridge every 3 seconds to keep WebSocket job timer alive
+        if (now - lastHeartbeatTime >= 3000) {
+          lastHeartbeatTime = now;
+          const elapsedSec = Math.round(elapsed / 1000);
+          reportProgress(jobId, 'generating', `Gemini is rendering image (${elapsedSec}s elapsed)...`);
         }
 
-        // 1B: Check for image collection / retrieval URLs strictly inside latest model response
-        const respUrls = protocol.extractImageUrlsFromNode(latestResponse);
-        for (const u of respUrls) {
-          if (!existingUrls.has(u)) {
-            await deliverImage(u);
+        if (elapsed > timeoutMs) {
+          // If Gemini is still actively generating (Stop button is present OR "... Creating your image" / shimmer is visible),
+          // DO NOT ABORT! Continue waiting until completion or manual user cancellation!
+          if (isGeminiActivelyGenerating()) {
             return;
           }
-        }
-      }
 
-      // Tier 2: Check all new images ONLY inside any completed model-response container (NEVER in body or user turns!)
-      for (const modelResp of currentModelResponses) {
-        if (isModelResponseGenerating(modelResp)) continue;
-        const imagesInModel = protocol.getAllImagesRecursively(modelResp);
-        for (const img of imagesInModel) {
+          clearInterval(checkInterval);
+          activeRunningJobId = null;
+          activeCancelHandler = null;
+          if (keepAlivePort) keepAlivePort.disconnect();
+          clearComposer();
+          try {
+            chrome.runtime.sendMessage({
+              type: 'GENERATION_FAILED',
+              data: { jobId, error: `Generation timed out after ${timeoutSeconds}s waiting for Gemini Web response.` }
+            });
+          } catch (e) {}
+          return;
+        }
+
+        // Tier 1: Check ONLY model responses created for this turn (excluding user turns!)
+        const currentModelResponses = Array.from(document.querySelectorAll('model-response, [data-test-id*="model-response"]'))
+          .filter(r => !r.closest('user-query, .user-query, .chat-input-container'));
+
+        const latestResponse = currentModelResponses.length > baselineResponseCount
+          ? currentModelResponses[currentModelResponses.length - 1]
+          : (currentModelResponses.length > 0 ? currentModelResponses[currentModelResponses.length - 1] : null);
+
+        if (latestResponse) {
+          // If Gemini is still in "Creating your image" state, WAIT and DO NOT deliver anything!
+          if (isModelResponseGenerating(latestResponse)) {
+            return;
+          }
+
+          // 1A: Check images strictly inside this latest model response
+          const respImages = protocol.getAllImagesRecursively(latestResponse);
+          for (const img of respImages) {
+            if (isUserAttachedImage(img)) continue;
+            const src = img.currentSrc || img.src;
+            if (!src || existingImages.has(src)) continue;
+
+            if (protocol.isGeneratedImage(img)) {
+              if (img.complete && (img.naturalWidth > 120 || img.naturalHeight > 120)) {
+                await deliverImage(img, img.naturalWidth, img.naturalHeight);
+                return;
+              }
+            }
+          }
+
+          // 1B: Check for image collection / retrieval URLs strictly inside latest model response
+          const respUrls = protocol.extractImageUrlsFromNode(latestResponse);
+          for (const u of respUrls) {
+            if (!existingUrls.has(u)) {
+              await deliverImage(u);
+              return;
+            }
+          }
+        }
+
+        // Tier 2: Check all new images ONLY inside any completed model-response container
+        for (const modelResp of currentModelResponses) {
+          if (isModelResponseGenerating(modelResp)) continue;
+          const imagesInModel = protocol.getAllImagesRecursively(modelResp);
+          for (const img of imagesInModel) {
+            if (isUserAttachedImage(img)) continue;
+            const src = img.currentSrc || img.src;
+            if (!src || existingImages.has(src)) continue;
+
+            if (protocol.isGeneratedImage(img)) {
+              if (img.complete && (img.naturalWidth > 120 || img.naturalHeight > 120)) {
+                await deliverImage(img, img.naturalWidth, img.naturalHeight);
+                return;
+              }
+            }
+          }
+        }
+
+        // Tier 3: Broad document fallback for generated image in modern Gemini turns
+        const allDocImages = protocol.getAllImagesRecursively(document.body);
+        for (const img of allDocImages) {
           if (isUserAttachedImage(img)) continue;
           const src = img.currentSrc || img.src;
           if (!src || existingImages.has(src)) continue;
@@ -1205,93 +1277,97 @@
             }
           }
         }
-      }
 
-      // Tier 4: Cancellation, Refusal & Quota / Rate Limit Detection
-      // Check latest active response if no images were found
-      const newResponses = allResponses.filter(r => !existingResponses.has(r));
-      const targetResponse = newResponses.length > 0 
-        ? newResponses[newResponses.length - 1] 
-        : (allResponses.length > existingResponses.size ? allResponses[allResponses.length - 1] : allResponses[allResponses.length - 1]);
+        // Tier 4: Cancellation, Refusal & Quota / Rate Limit Detection
+        const allCurrentResponses = Array.from(
+          document.querySelectorAll('model-response, message-content, div.response-container, [data-test-id*="response"]')
+        ).filter(r => !r.closest('user-query, .user-query, .chat-input-container'));
+        const newResponses = allCurrentResponses.filter(r => !existingResponses.has(r));
+        const targetResponse = newResponses.length > 0 
+          ? newResponses[newResponses.length - 1] 
+          : (allCurrentResponses.length > existingResponses.size ? allCurrentResponses[allCurrentResponses.length - 1] : null);
 
-      if (targetResponse) {
-        const respText = (targetResponse.innerText || targetResponse.textContent || '').trim();
-        if (respText.length > 5) {
-          // A. User cancellation / stoppage phrase detection
-          for (const pat of GEMINI_CANCELLATION_PATTERNS) {
-            if (pat.test(respText)) {
-              handleCancel(`Gemini Web response stopped: "${respText.substring(0, 100)}"`);
-              return;
+        if (targetResponse) {
+          const respText = (targetResponse.innerText || targetResponse.textContent || '').trim();
+          if (respText.length > 5) {
+            // A. User cancellation / stoppage phrase detection
+            for (const pat of GEMINI_CANCELLATION_PATTERNS) {
+              if (pat.test(respText)) {
+                handleCancel(`Gemini Web response stopped: "${respText.substring(0, 100)}"`);
+                return;
+              }
             }
-          }
 
-          // B. Quota / Rate Limit Detection
-          for (const pat of GEMINI_RATE_LIMIT_PATTERNS) {
-            if (pat.test(respText)) {
-              activeRunningJobId = null;
-              activeCancelHandler = null;
-              clearInterval(checkInterval);
-              if (keepAlivePort) keepAlivePort.disconnect();
-              clearComposer();
-              const quotaMsg = `Gemini quota or rate limit exceeded: "${respText.substring(0, 160)}". Please switch account slot in the MythicFrame BEI dropdown.`;
-              console.warn(`[MythicFrame BEI] ${quotaMsg}`);
-              try {
-                chrome.runtime.sendMessage({
-                  type: 'GENERATION_FAILED',
-                  data: { jobId, error: quotaMsg }
-                });
-              } catch (e) {}
-              return;
+            // B. Quota / Rate Limit Detection
+            for (const pat of GEMINI_RATE_LIMIT_PATTERNS) {
+              if (pat.test(respText)) {
+                activeRunningJobId = null;
+                activeCancelHandler = null;
+                clearInterval(checkInterval);
+                if (keepAlivePort) keepAlivePort.disconnect();
+                clearComposer();
+                const quotaMsg = `Gemini quota or rate limit exceeded: "${respText.substring(0, 160)}". Please switch account slot in the MythicFrame BEI dropdown.`;
+                console.warn(`[MythicFrame BEI] ${quotaMsg}`);
+                try {
+                  chrome.runtime.sendMessage({
+                    type: 'GENERATION_FAILED',
+                    data: { jobId, error: quotaMsg }
+                  });
+                } catch (e) {}
+                return;
+              }
             }
-          }
 
-          // C. Refusal / Safety Policy Detection
-          for (const pat of GEMINI_REFUSAL_PATTERNS) {
-            if (pat.test(respText)) {
-              activeRunningJobId = null;
-              activeCancelHandler = null;
-              clearInterval(checkInterval);
-              if (keepAlivePort) keepAlivePort.disconnect();
-              clearComposer();
-              const excerpt = respText.length > 200 ? respText.substring(0, 200) + '...' : respText;
-              const refusalMsg = `Gemini declined generation: ${excerpt}`;
-              console.warn(`[MythicFrame BEI] ${refusalMsg}`);
-              try {
-                chrome.runtime.sendMessage({
-                  type: 'GENERATION_FAILED',
-                  data: { jobId, error: refusalMsg }
-                });
-              } catch (e) {}
-              return;
-            }
-          }
-        }
-      }
-
-      // Also check any alert dialogs or snackbars for rate limits
-      const toasts = document.querySelectorAll('mat-snack-bar-container, [role="alert"], .notification-toast');
-      for (const toast of toasts) {
-        const toastText = (toast.innerText || toast.textContent || '').trim();
-        if (toastText) {
-          for (const pat of GEMINI_RATE_LIMIT_PATTERNS) {
-            if (pat.test(toastText)) {
-              activeRunningJobId = null;
-              activeCancelHandler = null;
-              clearInterval(checkInterval);
-              if (keepAlivePort) keepAlivePort.disconnect();
-              clearComposer();
-              const quotaMsg = `Gemini quota or rate limit exceeded: "${toastText}". Please switch account slot in the MythicFrame BEI dropdown.`;
-              console.warn(`[MythicFrame BEI] ${quotaMsg}`);
-              try {
-                chrome.runtime.sendMessage({
-                  type: 'GENERATION_FAILED',
-                  data: { jobId, error: quotaMsg }
-                });
-              } catch (e) {}
-              return;
+            // C. Refusal / Safety Policy Detection
+            for (const pat of GEMINI_REFUSAL_PATTERNS) {
+              if (pat.test(respText)) {
+                activeRunningJobId = null;
+                activeCancelHandler = null;
+                clearInterval(checkInterval);
+                if (keepAlivePort) keepAlivePort.disconnect();
+                clearComposer();
+                const excerpt = respText.length > 200 ? respText.substring(0, 200) + '...' : respText;
+                const refusalMsg = `Gemini declined generation: ${excerpt}`;
+                console.warn(`[MythicFrame BEI] ${refusalMsg}`);
+                try {
+                  chrome.runtime.sendMessage({
+                    type: 'GENERATION_FAILED',
+                    data: { jobId, error: refusalMsg }
+                  });
+                } catch (e) {}
+                return;
+              }
             }
           }
         }
+
+        // Also check any alert dialogs or snackbars for rate limits
+        const toasts = document.querySelectorAll('mat-snack-bar-container, [role="alert"], .notification-toast');
+        for (const toast of toasts) {
+          const toastText = (toast.innerText || toast.textContent || '').trim();
+          if (toastText) {
+            for (const pat of GEMINI_RATE_LIMIT_PATTERNS) {
+              if (pat.test(toastText)) {
+                activeRunningJobId = null;
+                activeCancelHandler = null;
+                clearInterval(checkInterval);
+                if (keepAlivePort) keepAlivePort.disconnect();
+                clearComposer();
+                const quotaMsg = `Gemini quota or rate limit exceeded: "${toastText}". Please switch account slot in the MythicFrame BEI dropdown.`;
+                console.warn(`[MythicFrame BEI] ${quotaMsg}`);
+                try {
+                  chrome.runtime.sendMessage({
+                    type: 'GENERATION_FAILED',
+                    data: { jobId, error: quotaMsg }
+                  });
+                } catch (e) {}
+                return;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[MythicFrame BEI] checkInterval non-fatal polling error:', err);
       }
     }, 1000);
   }

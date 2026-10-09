@@ -504,7 +504,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         target: args.target || 'gemini',
         accountSlot: args.accountSlot ?? 0,
         images: args.images || [],
-        timeoutSeconds: args.timeoutSeconds || 120
+        timeoutSeconds: args.timeoutSeconds || 900
       });
       const formattedPath = beiRes.filePath.replace(/\\/g, '/');
       const fileName = path.basename(beiRes.filePath);

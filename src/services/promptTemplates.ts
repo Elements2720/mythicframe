@@ -12,7 +12,8 @@ import {
   ChibiConfig,
   PoseData,
   MapGridConfig,
-  UIMode
+  UIMode,
+  SpriteStripConfig
 } from "../types.js";
 import { CHIBI_STYLE_CONFIG } from "../constants/gacha.js";
 import { DEFAULT_BACKGROUND_CONFIG } from "../constants/backgrounds.js";
@@ -737,6 +738,103 @@ export const buildMapGridPrompt = (
   return fullPrompt;
 };
 
+export const buildAnimationStripPrompt = (
+  prompt: string,
+  gameContext: GameContext,
+  styleSnippet: string,
+  bgConfig: BackgroundConfig,
+  stripConfig: SpriteStripConfig,
+  referenceAssets: ReferenceAsset[],
+  chibiProportion?: string,
+  chibiConfig?: ChibiConfig
+): { textPrompt: string; referenceParts: any[] } => {
+  let fullPrompt = `[MODE: SPRITE ANIMATION STRIP]\n`;
+  fullPrompt += `Generate a SINGLE, WIDE rectangular image containing exactly ${stripConfig.frameCount} evenly-spaced animation frames of the same character in a horizontal row.\n\n`;
+
+  // Core character
+  fullPrompt += `CHARACTER METADATA:\n`;
+  fullPrompt += `Core Identity: ${prompt}\n`;
+  fullPrompt += `Game Setting: ${gameContext.setting}. Theme: ${gameContext.tone}.\n\n`;
+
+  // Action and strip rules
+  fullPrompt += `ANIMATION RULES:\n`;
+  fullPrompt += `Action: ${stripConfig.action}\n`;
+  fullPrompt += `Direction: The character MUST face ${stripConfig.direction} in every frame.\n`;
+  
+  let marginText = "excessive empty whitespace between frames, very far apart";
+  if (stripConfig.frameMargin) {
+    if (stripConfig.frameMargin === 'tight') marginText = "very tight spacing, almost touching";
+    if (stripConfig.frameMargin === 'standard') marginText = "even spacing";
+    if (stripConfig.frameMargin === 'wide') marginText = "generous, wide empty gaps between each frame";
+    if (stripConfig.frameMargin === 'extreme') marginText = "excessive empty whitespace between frames, very far apart";
+  }
+  
+  fullPrompt += `Layout: Draw exactly ${stripConfig.frameCount} instances of the character. IMPORTANT: Do NOT force all frames into a single horizontal row if they will become too small or squished. Instead, arrange them in a multi-row grid (like a traditional sprite sheet, e.g., 2 rows of 4 frames) to maintain maximum character size, high resolution, and ${marginText}. Do not include UI, grids, borders, or lines.\n`;
+  fullPrompt += `Progression: This is a STRICT frame-by-frame animation sequence! Proceeding from left to right (and top to bottom if multiple rows), EACH of the ${stripConfig.frameCount} frames MUST show a DISTINCT and DIFFERENT step progressing through the action. Frame 1, Frame 2, Frame 3, etc., MUST be completely different poses showing movement. NO REPEATED POSES.\n`;
+  fullPrompt += `Continuity: The character's design, proportions, clothing, and colors must remain identical across all ${stripConfig.frameCount} frames.\n\n`;
+
+  // Chibi config
+  if (chibiConfig?.enabled) {
+    fullPrompt += buildChibiFragment(chibiConfig) + "\n";
+  } else if (chibiProportion && CHIBI_STYLE_CONFIG[chibiProportion]) {
+    fullPrompt += `ANATOMY GUIDELINE: ${CHIBI_STYLE_CONFIG[chibiProportion].suffix}\n\n`;
+  }
+
+  // Visual constraints
+  if (styleSnippet) {
+    fullPrompt += `STYLE CONSTRAINT: ${styleSnippet}\n`;
+  }
+  
+  if (bgConfig.mode === 'solid') {
+    fullPrompt += `[STRICT OVERRIDE]: Must be on a pure FLAT ${bgConfig.color} background. No textures, no gradients, no environment.\n`;
+  } else {
+    fullPrompt += `Use a solid white or neutral flat background.\n`;
+  }
+
+  const referenceParts = processReferenceNotes(referenceAssets);
+
+  return { textPrompt: fullPrompt, referenceParts };
+};
+
+export const buildUIScenePrompt = (
+  userPrompt: string,
+  gameContext: GameContext,
+  styleSnippet: string,
+  referenceAssets: ReferenceAsset[]
+): { textPrompt: string; referenceParts: { text?: string }[] } => {
+  let fullPrompt = `GAME SCENE & UI GENERATION TASK.\n`;
+  fullPrompt += `OBJECTIVE: Generate a full screenshot of a game scene, COMPLETE with user interface (UI) elements, HUD, menus, and the environment/characters.\n\n`;
+  
+  if (gameContext.setting || gameContext.tone || gameContext.visualConstraints) {
+    fullPrompt += `GAME CONTEXT:\n`;
+    if (gameContext.setting) fullPrompt += `Setting: ${gameContext.setting}\n`;
+    if (gameContext.tone) fullPrompt += `Tone: ${gameContext.tone}\n`;
+    if (gameContext.visualConstraints) fullPrompt += `Constraints: ${gameContext.visualConstraints}\n`;
+    fullPrompt += `\n`;
+  }
+
+  fullPrompt += `SCENE DESCRIPTION: ${userPrompt}\n\n`;
+
+  if (styleSnippet) {
+    fullPrompt += `ART STYLE: ${styleSnippet}\n`;
+    fullPrompt += `(Ensure the result strictly fits this art style.)\n\n`;
+  }
+
+  if (referenceAssets.length > 0) {
+    fullPrompt += `UI MATCHING DIRECTIVE (CRITICAL):\n`;
+    fullPrompt += `You have been provided with reference images containing existing UI/HUD designs for this game.\n`;
+    fullPrompt += `1. You MUST match the UI theme, colors, button styles, frames, typography style, and layout conventions shown in the references.\n`;
+    fullPrompt += `2. Do NOT copy the exact scene from the references; generate the NEW scene described above, but place the new scene inside the established UI framework.\n`;
+    fullPrompt += `3. The final image should look like a genuine gameplay screenshot belonging to the same game as the references.\n\n`;
+  } else {
+    fullPrompt += `UI DIRECTIVE:\n`;
+    fullPrompt += `Design an appropriate UI/HUD that fits the scene and game context. It must look like a real gameplay screenshot.\n\n`;
+  }
+
+  const referenceParts = processReferenceNotes(referenceAssets);
+  return { textPrompt: fullPrompt, referenceParts };
+};
+
 /**
  * Dynamic Context Assembly: Assembles the full 5-layer MythicFrame prompt:
  * Final Prompt = User Intent + Game Context (Setting/Tone) + Style Snippet + Spatial Constraints + System Rules
@@ -760,6 +858,7 @@ export interface AssemblePromptParams {
   clothesParams?: ClothesParams;
   poseData?: PoseData;
   mapGridConfig?: MapGridConfig;
+  spriteStripConfig?: SpriteStripConfig;
   aspectRatio?: string;
 }
 
@@ -791,6 +890,23 @@ export const assembleFullMythicPrompt = (params: AssemblePromptParams): Assemble
     referenceParts = built.referenceParts;
   } else if (mode === 'pose-studio' && params.poseData) {
     const built = buildPoseStudioPrompt(params.prompt, gameContext, styleSnippet, bgConfig, referenceAssets, params.poseData, params.safeZone);
+    textPrompt = built.textPrompt;
+    referenceParts = built.referenceParts;
+  } else if (mode === 'ui-scene') {
+    const built = buildUIScenePrompt(params.prompt, gameContext, styleSnippet, referenceAssets);
+    textPrompt = built.textPrompt;
+    referenceParts = built.referenceParts;
+  } else if (mode === 'sprite-strip' && params.spriteStripConfig) {
+    const built = buildAnimationStripPrompt(
+      params.prompt,
+      gameContext,
+      styleSnippet,
+      bgConfig,
+      params.spriteStripConfig,
+      referenceAssets,
+      params.chibiProportion,
+      params.chibiConfig
+    );
     textPrompt = built.textPrompt;
     referenceParts = built.referenceParts;
   } else if (mode === 'map-grid' && params.mapGridConfig) {

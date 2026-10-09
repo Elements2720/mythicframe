@@ -1,5 +1,5 @@
 export const APP_NAME = "MythicFrame";
-export const APP_VERSION = "1.5.1";
+export const APP_VERSION = "1.5.3";
 
 export const MODE_CONFIG = {
   dashboard: { title: "Dashboard", icon: "fa-chart-pie", description: "Project overview and stats." },
@@ -20,8 +20,10 @@ export const MODE_CONFIG = {
   background: { title: "Background Mode", icon: "fa-image", description: "Generate background assets." },
   fullcard: { title: "Full Card", icon: "fa-pen-ruler", description: "Design complete cards with layout." },
   "ui-reimagine": { title: "UI Reimagine", icon: "fa-window-restore", description: "Add or redesign UI elements on top of your art." },
+  "ui-scene": { title: "UI Scene", icon: "fa-gamepad", description: "Design game UI scenes and mockups." },
   "pose-studio": { title: "Pose Studio", icon: "fa-bone", description: "Use a skeleton to guide character poses." },
   "map-grid": { title: "Map Grid Generator", icon: "fa-map", description: "Generate 2D maps with custom grid and perspective." },
   "sprite-sheet": { title: "Sprite Sheet Studio", icon: "fa-table-cells", description: "Generate consistent character poses and variations." },
+  "sprite-strip": { title: "Animation Strip", icon: "fa-film", description: "Generate a row of animation frames in a single image." },
   batch: { title: "Batch Studio", icon: "fa-layer-group", description: "Generate multiple images from a file list." }
 };

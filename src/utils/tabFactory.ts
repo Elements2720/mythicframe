@@ -98,6 +98,12 @@ export const createNewTab = (id: string, name: string, mode: UIMode = 'illustrat
   
   poseData: { ...DEFAULT_POSE_DATA },
   mapGridConfig: { ...DEFAULT_MAP_GRID_CONFIG },
+  spriteStripConfig: {
+    prompt: '',
+    action: 'walking',
+    frameCount: 4,
+    direction: 'left'
+  },
   spriteSheet: {
     frames: [
       { id: '1', prompt: 'Front view, idle', url: null, status: 'idle', bgConfig: { ...DEFAULT_BACKGROUND_CONFIG, mode: 'solid' }, referenceUrl: null },
@@ -119,7 +125,7 @@ export const getHashMode = (): UIMode => {
     if (typeof window === 'undefined') return 'dashboard';
     try {
       const hash = window.location.hash.replace(/^#\/?/, '');
-      const validModes: UIMode[] = ['dashboard', 'library', 'settings', 'frame', 'illustration', 'background', 'fullcard', 'animation', 'resize', 'tutorials', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'style-library', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch', 'downloads', 'quota'];
+      const validModes: UIMode[] = ['dashboard', 'library', 'settings', 'frame', 'illustration', 'background', 'fullcard', 'animation', 'resize', 'tutorials', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'style-library', 'pose-studio', 'map-grid', 'sprite-sheet', 'sprite-strip', 'ui-scene', 'batch', 'downloads', 'quota'];
       return validModes.includes(hash as UIMode) ? (hash as UIMode) : 'dashboard';
     } catch (e) {
       return 'dashboard';

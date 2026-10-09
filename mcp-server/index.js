@@ -1026,7 +1026,7 @@ async function generateWithBEI(options) {
     target = "gemini",
     accountSlot = 0,
     images = [],
-    timeoutSeconds = 120,
+    timeoutSeconds = 900,
     tabMode = "current",
     bringTabToFront = false
   } = options;
@@ -1577,7 +1577,7 @@ Summary: ${status.summary}`;
         target: args.target || "gemini",
         accountSlot: args.accountSlot ?? 0,
         images: args.images || [],
-        timeoutSeconds: args.timeoutSeconds || 120
+        timeoutSeconds: args.timeoutSeconds || 900
       });
       const formattedPath = beiRes.filePath.replace(/\\/g, "/");
       const fileName = path2.basename(beiRes.filePath);

@@ -121,7 +121,7 @@ export const useTabs = (defaultStyleId: string = 'none') => {
     const handleHashChange = () => {
       const newMode = getHashMode();
       setRouteMode(newMode);
-      const isStudio = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch'].includes(newMode);
+      const isStudio = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'sprite-strip', 'ui-scene', 'batch'].includes(newMode);
       if (isStudio) {
           setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, mode: newMode } : t));
       }

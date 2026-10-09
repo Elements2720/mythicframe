@@ -370,13 +370,13 @@ export class BEIBridgeServer {
       if (jobId && this.pendingJobs.has(jobId)) {
         const job = this.pendingJobs.get(jobId)!;
         clearTimeout(job.timeoutTimer);
-        // Extend timeout while actively receiving progress updates
+        // Extend timeout while actively receiving progress updates (10 minutes per heartbeat ping)
         job.timeoutTimer = setTimeout(() => {
           if (this.pendingJobs.has(jobId)) {
             this.pendingJobs.delete(jobId);
             job.reject(new Error(`BEI Generation timed out while awaiting browser completion for target ${job.target}`));
           }
-        }, 120000);
+        }, 600000);
       }
       if (data) {
         this.broadcastProgress(data);
@@ -537,8 +537,8 @@ export class BEIBridgeServer {
         }
 
         const effectiveTimeout = Math.max(
-          timeoutSeconds || 120,
-          (images && images.length > 0) ? 210 : 120
+          timeoutSeconds || 900,
+          900
         );
 
         const jobId = `bei_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
