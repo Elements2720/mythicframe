@@ -70,6 +70,9 @@ export interface UnifiedGenerationParams {
   noCharacters?: boolean;
   framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only';
   seed?: number | null;
+  chatSessionMode?: 'temporary_chat' | 'same_chat' | 'new_chat';
+  tabSessionId?: string;
+  hasHoldingImages?: boolean;
 }
 
 export const generateWithActiveProvider = async (

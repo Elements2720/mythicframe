@@ -469,7 +469,10 @@ export const useGeneration = (
                   viewpoint: undefined,
                   noCharacters: activeTab.noCharacters,
                   framing: asset.framing || activeTab.framing,
-                  seed: activeTab.seed
+                  seed: activeTab.seed,
+                  hasHoldingImages: Boolean(activeTab.sessionImages && activeTab.sessionImages.length > 0),
+                  tabSessionId: activeTab.id,
+                  chatSessionMode: (activeTab.sessionImages && activeTab.sessionImages.length > 0) ? 'same_chat' : 'temporary_chat'
               });
 
               const resultBase64 = image;
@@ -620,7 +623,10 @@ export const useGeneration = (
                   viewpoint: activeTab.viewpoint,
                   noCharacters: activeTab.noCharacters,
                   framing: activeTab.framing,
-                  seed: activeTab.seed
+                  seed: activeTab.seed,
+                  hasHoldingImages: Boolean(activeTab.sessionImages && activeTab.sessionImages.length > 0),
+                  tabSessionId: activeTab.id,
+                  chatSessionMode: (activeTab.sessionImages && activeTab.sessionImages.length > 0) ? 'same_chat' : 'temporary_chat'
                });
                resultUrl = base64ToBlobUrl(image);
                finalPrompt = metadata.fullPrompt;

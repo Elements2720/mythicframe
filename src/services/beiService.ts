@@ -13,6 +13,7 @@ export const DEFAULT_BEI_CONFIG: BEIConfig = {
   timeoutSeconds: 120,
   tabMode: 'same_window_group',
   bringTabToFront: false,
+  chatSessionMode: 'temporary_chat',
 };
 
 export const getBEIConfig = (): BEIConfig => {
@@ -299,6 +300,8 @@ export const generateWithBEI = async (
     processedImages = processedImages.slice(0, 4);
   }
 
+  const chatSessionMode = params.chatSessionMode || (params.hasHoldingImages ? 'same_chat' : (config.chatSessionMode || 'temporary_chat'));
+
   const payload = {
     target: config.target,
     prompt: assembled.imagePromptDirective,
@@ -308,6 +311,8 @@ export const generateWithBEI = async (
     timeoutSeconds: Math.max(config.timeoutSeconds || 120, processedImages.length > 0 ? 210 : 120),
     tabMode: config.tabMode || 'same_window_group',
     bringTabToFront: Boolean(config.bringTabToFront),
+    chatSessionMode,
+    tabSessionId: params.tabSessionId,
     images: processedImages,
   };
 
@@ -408,6 +413,66 @@ export const cancelBEIGeneration = async (jobId?: string): Promise<boolean> => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId }),
+      });
+      if (resp.ok) return true;
+    } catch (e) {}
+  }
+  return false;
+};
+
+export const generateBEIText = async (prompt: string, timeoutSeconds = 60): Promise<string> => {
+  const config = getBEIConfig();
+  const port = config.port || DEFAULT_BEI_PORT;
+  const urls = [
+    `http://127.0.0.1:${port}/api/bei/text`,
+    `/api/bei/text`
+  ];
+
+  const payload = {
+    prompt,
+    target: config.target,
+    accountSlot: config.accountSlot || 0,
+    timeoutSeconds
+  };
+
+  let lastError: any = null;
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.text) return data.text.trim();
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw new Error(`BEI text generation failed: ${lastError?.message || 'Bridge unreachable'}`);
+};
+
+export const resetBEISession = async (tabSessionId?: string): Promise<boolean> => {
+  const config = getBEIConfig();
+  const port = config.port || DEFAULT_BEI_PORT;
+  const urls = [
+    `http://127.0.0.1:${port}/api/bei/reset-session`,
+    `/api/bei/reset-session`
+  ];
+
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: config.target,
+          accountSlot: config.accountSlot || 0,
+          tabSessionId
+        })
       });
       if (resp.ok) return true;
     } catch (e) {}

@@ -198,6 +198,10 @@
 
   function isCreateImageTagActive() {
     try {
+      // 1. Direct check for custom injected tag
+      if (document.querySelector('#custom-create-image-tag')) return true;
+
+      // 2. Native Google Angular chips and tool buttons
       const candidates = Array.from(document.querySelectorAll(
         'mat-chip, mat-chip-row, [role="button"], [class*="tag"], [class*="chip"], [data-tool-id*="image" i], [aria-label*="Create image" i], [aria-label*="Remove Create image" i], .tool-chip, [data-test-id*="tool"]'
       ));
@@ -220,6 +224,69 @@
     }
   }
 
+  function injectCustomCreateImageTag() {
+    try {
+      if (document.querySelector('#custom-create-image-tag')) return true;
+
+      const inputContainer = document.querySelector('.text-input-field') || 
+                             document.querySelector('.input-area') || 
+                             document.querySelector('.chat-input-container') ||
+                             document.querySelector('rich-textarea')?.parentElement;
+      if (!inputContainer) {
+        console.warn('[MythicFrame BEI] Chat input area not found for visual tag injection');
+        return false;
+      }
+
+      // Create tag wrapper
+      const tag = document.createElement('div');
+      tag.id = 'custom-create-image-tag';
+      tag.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background-color: var(--lumi-sys-color--surface-dim, #282a2d);
+        color: var(--lumi-sys-color--on-surface, #e3e3e3);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 4px 10px 4px 10px;
+        border-radius: 16px;
+        font-family: Google Sans, Roboto, sans-serif;
+        font-size: 13px;
+        font-weight: 500;
+        margin: 8px 12px 4px 12px;
+        width: fit-content;
+        user-select: none;
+      `;
+
+      tag.innerHTML = `
+        <span style="font-family:'Luminous Symbols', 'Material Symbols Outlined'; font-size:16px;">brush</span>
+        <span>Create image</span>
+        <span style="cursor: pointer; margin-left: 4px; opacity: 0.7; font-size: 14px;" title="Remove" onclick="this.parentElement.remove()">✕</span>
+      `;
+
+      // Insert above the text input
+      inputContainer.prepend(tag);
+      console.log('✅ [MythicFrame BEI] Visual "Create image" tag injected into chat input.');
+      return true;
+    } catch (err) {
+      console.warn('[MythicFrame BEI] Error injecting custom tag:', err);
+      return false;
+    }
+  }
+
+  function ensureTextMessageMode() {
+    try {
+      const customTag = document.querySelector('#custom-create-image-tag');
+      if (customTag) customTag.remove();
+
+      // Also remove any native tool chips if present
+      const toolChips = document.querySelectorAll('[aria-label*="Remove Create image" i], mat-chip:has([aria-label*="Create image" i])');
+      for (const c of toolChips) {
+        const btn = c.querySelector('button') || c;
+        try { btn.click(); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
   async function ensureCreateImageMode(jobId = null) {
     try {
       if (isCreateImageTagActive()) {
@@ -227,94 +294,20 @@
         return true;
       }
 
-      // 1. Helper to find "Create image" inside any open Angular/CDK menu or overlay
-      const findCreateImageItem = () => {
-        const items = Array.from(
-          document.querySelectorAll('.gem-menu-item-label, [role="menuitem"], gem-menu-item, .mat-mdc-menu-item, button, div, span')
-        );
-        return items.find(el => {
-          const inMenu = el.closest('[role="menu"], .cdk-overlay-pane, mat-menu, gem-menu, [role="menuitem"]');
-          if (!inMenu) return false;
-          const text = (el.textContent || '').trim().toLowerCase();
-          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-          return text === 'create image' || text.startsWith('create image') ||
-                 aria === 'create image' || aria.startsWith('create image');
-        });
-      };
-
-      let target = findCreateImageItem();
-
-      // 2. If menu is closed, find and click the '+' (Upload & tools) button
-      if (!target) {
-        const plusSelectors = [
-          'button[aria-label*="Upload" i]',
-          'button[aria-label*="tools" i]',
-          'button[aria-label*="Add" i]',
-          'button[aria-label*="Attach" i]',
-          'button[aria-label*="tools and content" i]',
-          'gem-icon-button button',
-          'button[aria-haspopup="menu"]',
-          '[data-test-id*="tools-button"]',
-          '[data-test-id*="upload-button"]',
-          'button.input-area-button',
-          '.input-area button[aria-haspopup="menu"]',
-          '.chat-input-container button[aria-haspopup="menu"]',
-          'button:has(mat-icon[fonticon="add"])',
-          'button:has(mat-icon[data-mat-icon-name="add"])',
-          'mat-icon[fonticon="add"]',
-          'mat-icon[data-mat-icon-name="add"]',
-          'button[mattooltip*="Upload" i]',
-          'button[mattooltip*="tools" i]',
-          'button[mattooltip*="Add" i]'
-        ];
-
-        let plusButton = null;
-        for (const sel of plusSelectors) {
-          const candidates = Array.from(document.querySelectorAll(sel));
-          for (const btn of candidates) {
-            if (btn.closest('header, nav, [role="navigation"], [aria-label*="Google Account" i], bard-user-menu, .gb_d')) continue;
-            if (btn.closest('.bottom-container, .input-area, .chat-input-container, form, rich-textarea, main') || btn.querySelector('mat-icon[fonticon="add"], mat-icon[fonticon="upload"]')) {
-              plusButton = btn;
-              break;
-            }
-          }
-          if (plusButton) break;
-        }
-
-        if (plusButton) {
-          console.log('[MythicFrame BEI] Clicking "+" tools button in composer...');
-          const clickableBtn = plusButton.closest('button') || plusButton;
-          ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(eventType => {
-            clickableBtn.dispatchEvent(new MouseEvent(eventType, { bubbles: true, cancelable: true }));
-          });
-          clickableBtn.click();
-
-          // Poll Angular CDK overlay for "Create image" menu item (up to 1500ms)
-          for (let i = 0; i < 30; i++) {
-            await new Promise(res => setTimeout(res, 50));
-            target = findCreateImageItem();
-            if (target) break;
-          }
-        }
+      // Close any stray open menus/overlays by clicking body safely
+      const openMenus = document.querySelectorAll('.cdk-overlay-pane [role="menu"]');
+      if (openMenus.length > 0) {
+        document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await new Promise(r => setTimeout(r, 100));
       }
 
-      // 3. Click the menu item and dispatch full event sequence to notify Angular
-      if (target) {
-        const clickable = target.closest('button, [role="menuitem"], gem-menu-item, .mat-mdc-menu-item') || target;
-        console.log('[MythicFrame BEI] Found "Create image" menu item. Dispatching click...');
-        ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(eventType => {
-          clickable.dispatchEvent(new MouseEvent(eventType, { bubbles: true, cancelable: true }));
-        });
-        clickable.click();
-        console.log('✅ [MythicFrame BEI] "Create image" tag activated in Gemini Web!');
-        if (jobId) reportProgress(jobId, 'create_image_mode', '"Create image" tool tag activated in Gemini Web.');
-        await new Promise(res => setTimeout(res, 350));
-        return isCreateImageTagActive() || true;
-      } else {
-        console.warn('[MythicFrame BEI] Angular "Create image" menu option not visible in overlay.');
+      const ok = injectCustomCreateImageTag();
+      if (ok) {
+        if (jobId) reportProgress(jobId, 'create_image_mode', '"Create image" visual tag active.');
+        return true;
       }
     } catch (e) {
-      console.debug('[MythicFrame BEI] Auto-select Create Image notice:', e);
+      console.debug('[MythicFrame BEI] ensureCreateImageMode notice:', e);
     }
     return isCreateImageTagActive();
   }
@@ -329,7 +322,7 @@
         const text = (btn.textContent || '').toLowerCase();
         const chipText = (btn.closest('mat-chip, mat-chip-row, [class*="chip"]') || {}).textContent || '';
         // NEVER dismiss the "Create image" tool tag!
-        if (aria.includes('create image') || text.includes('create image') || chipText.toLowerCase().includes('create image')) {
+        if (aria.includes('create image') || text.includes('create image') || chipText.toLowerCase().includes('create image') || btn.closest('#custom-create-image-tag')) {
           return false;
         }
         return true;
@@ -1053,22 +1046,36 @@
 
       if (typeof imgOrUrl === 'string') {
         srcUrl = protocol.upgradeToHighResUrl(imgOrUrl);
-        finalData = srcUrl;
+        if (imgOrUrl.startsWith('data:image')) {
+          finalData = imgOrUrl;
+        } else {
+          try {
+            finalData = await protocol.fetchBlobAsBase64(srcUrl);
+          } catch (e) {
+            finalData = srcUrl;
+          }
+        }
       } else {
         const rawSrc = imgOrUrl.currentSrc || imgOrUrl.src || '';
         srcUrl = protocol.upgradeToHighResUrl(rawSrc);
         try {
-          if (rawSrc.startsWith('blob:') || rawSrc.startsWith('data:')) {
-            finalData = rawSrc.startsWith('blob:') ? await protocol.fetchBlobAsBase64(rawSrc) : rawSrc;
-          } else if (srcUrl.startsWith('http')) {
-            // High-Res URL passed directly to background worker to fetch full 2048px uncompressed asset
-            finalData = srcUrl;
+          if (rawSrc.startsWith('blob:')) {
+            finalData = await protocol.fetchBlobAsBase64(rawSrc);
+          } else if (rawSrc.startsWith('data:image')) {
+            finalData = rawSrc;
           } else {
             finalData = await protocol.imageToBase64(imgOrUrl);
           }
         } catch (e) {
           finalData = srcUrl;
         }
+      }
+
+      // Final sanity check: if finalData is still not base64 and srcUrl exists, attempt one last authenticated fetch
+      if ((!finalData || !finalData.startsWith('data:image')) && srcUrl) {
+        try {
+          finalData = await protocol.fetchBlobAsBase64(srcUrl);
+        } catch (e) {}
       }
 
       // Candidate grid detection (multiple images in Imagen 3 responses)
@@ -1366,8 +1373,91 @@
     return "";
   }
 
+  async function executeTextPrompt(jobId, prompt, timeoutSeconds = 60) {
+    let keepAlivePort = null;
+    try {
+      if (chrome.runtime && chrome.runtime.connect) {
+        keepAlivePort = chrome.runtime.connect({ name: 'mythicframe-bei-keepalive' });
+      }
+    } catch (e) {}
+
+    reportProgress(jobId, 'preparing', 'Preparing Gemini Web for text generation...');
+
+    // 1. Remove "Create image" tag to ensure clean text mode!
+    ensureTextMessageMode();
+    clearComposer();
+
+    const composer = await waitForComposer(15000);
+    if (!composer) {
+      reportFailed(jobId, 'Composer element not found in Gemini Web.');
+      if (keepAlivePort) keepAlivePort.disconnect();
+      return;
+    }
+
+    // Record response count before sending prompt
+    const initialResponsesCount = document.querySelectorAll('model-response, .message-content, [data-test-id*="model-response"]').length;
+
+    // Set prompt text
+    setComposerText(composer, prompt);
+    await new Promise(r => setTimeout(r, 300));
+
+    // Send prompt
+    const sent = await submitComposer(composer);
+    if (!sent) {
+      reportFailed(jobId, 'Failed to click send button in Gemini Web.');
+      if (keepAlivePort) keepAlivePort.disconnect();
+      return;
+    }
+
+    reportProgress(jobId, 'generating_text', 'Gemini AI generating text...');
+
+    // Poll for text response
+    const startTime = Date.now();
+    const timeoutMs = (timeoutSeconds || 60) * 1000;
+
+    let textDelivered = false;
+
+    const interval = setInterval(async () => {
+      if (textDelivered) return;
+
+      const elapsed = Date.now() - startTime;
+      if (elapsed > timeoutMs) {
+        clearInterval(interval);
+        if (keepAlivePort) keepAlivePort.disconnect();
+        reportFailed(jobId, 'Text generation timed out in browser tab.');
+        return;
+      }
+
+      const allResponses = Array.from(document.querySelectorAll('model-response, .message-content, [data-test-id*="model-response"]'));
+      if (allResponses.length > initialResponsesCount) {
+        const latest = allResponses[allResponses.length - 1];
+        const isGenerating = isModelResponseGenerating(latest);
+        const text = (latest.innerText || latest.textContent || '').trim();
+
+        if (!isGenerating && text.length > 5) {
+          textDelivered = true;
+          clearInterval(interval);
+          if (keepAlivePort) keepAlivePort.disconnect();
+
+          console.log(`[MythicFrame BEI] Captured text response for job ${jobId}`);
+          try {
+            chrome.runtime.sendMessage({
+              type: 'TEXT_COMPLETED',
+              data: {
+                jobId,
+                text,
+                target: 'gemini'
+              }
+            });
+          } catch (e) {}
+        }
+      }
+    }, 400);
+  }
+
   // Expose global execution methods so background worker can invoke directly via executeScript
   window.__MYTHIC_BEI_EXECUTE_PROMPT__ = executePrompt;
+  window.__MYTHIC_BEI_EXECUTE_TEXT_PROMPT__ = executeTextPrompt;
   window.__MYTHIC_BEI_GET_EMAIL__ = extractGoogleAccountEmail;
 
   // CustomEvent listener for direct dispatch from executeScript
@@ -1404,6 +1494,13 @@
     if (request.action === 'EXECUTE_PROMPT') {
       const { jobId, prompt, timeoutSeconds, images } = request.data || {};
       executePrompt(jobId, prompt, timeoutSeconds, images);
+      sendResponse({ success: true, started: true });
+      return true;
+    }
+
+    if (request.action === 'EXECUTE_TEXT_PROMPT') {
+      const { jobId, prompt, timeoutSeconds } = request.data || {};
+      executeTextPrompt(jobId, prompt, timeoutSeconds);
       sendResponse({ success: true, started: true });
       return true;
     }

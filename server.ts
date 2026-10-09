@@ -97,6 +97,14 @@ async function startServer() {
     res.json({ success: true, cancelled: jobId });
   });
 
+  app.post("/api/bei/text", (req, res) => {
+    beiBridge.handleTextRequest(req as any, res as any);
+  });
+
+  app.post("/api/bei/reset-session", (req, res) => {
+    beiBridge.handleResetSessionRequest(req as any, res as any);
+  });
+
   // API Routes
   app.get("/api/assets", (req, res) => {
     const assets = db.prepare("SELECT * FROM assets ORDER BY createdAt DESC").all();

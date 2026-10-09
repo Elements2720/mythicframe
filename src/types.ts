@@ -49,6 +49,7 @@ export interface BEIConfig {
   timeoutSeconds: number;
   tabMode?: BEITabMode;
   bringTabToFront?: boolean;
+  chatSessionMode?: 'temporary_chat' | 'same_chat' | 'new_chat';
 }
 
 export interface AIConfig {

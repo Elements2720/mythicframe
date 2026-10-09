@@ -996,6 +996,10 @@ export const useAppEngine = () => {
           ...prev, sessionImages: [], generatedImage: null,
           resizeOriginalImage: prev.mode === 'resize' ? null : prev.resizeOriginalImage
     }));
+    // Reset browser chat session thread when session holding gallery is cleared
+    import('../services/beiService').then(({ resetBEISession }) => {
+      resetBEISession(tabId).catch(() => {});
+    });
   };
 
   return {

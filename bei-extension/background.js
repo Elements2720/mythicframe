@@ -484,9 +484,10 @@ async function organizeTabIntoBEIGroup(tabId, tabMode = 'same_window_group', bri
 
 /**
  * Finds matching tab or AUTOMATICALLY opens a new tab in the configured group/window.
- * If the tab was stuck on an old chat ID, navigates to clean /app.
+ * If chatSessionMode === 'same_chat', preserves the active chat conversation thread.
+ * If chatSessionMode === 'temporary_chat' or 'new_chat', navigates to clean /app.
  */
-async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_group', bringTabToFront = false) {
+async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null) {
   const targetSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
   const tabs = await discoverTabs();
 
@@ -494,13 +495,17 @@ async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_g
     // 1. Strictly look for a tab matching the requested account slot
     const matched = tabs.find(t => t.target === "gemini" && t.accountSlot === targetSlot);
     if (matched) {
-      // If the tab is currently on an old conversation URL (/app/<chatId>), navigate to clean /app
-      if (matched.url && matched.url.match(/\/app\/[a-zA-Z0-9_-]+/)) {
-        console.log(`[MythicFrame BEI] Navigating tab ${matched.tabId} to clean /u/${targetSlot}/app for a pristine composer...`);
-        try {
-          await chrome.tabs.update(matched.tabId, { url: `https://gemini.google.com/u/${targetSlot}/app` });
-          await waitForTabComplete(matched.tabId, 15000);
-        } catch (e) {}
+      // In same_chat mode (e.g. while holding generations for a tab session), DO NOT navigate away!
+      if (chatSessionMode !== 'same_chat') {
+        if (matched.url && matched.url.match(/\/app\/[a-zA-Z0-9_-]+/)) {
+          console.log(`[MythicFrame BEI] Resetting tab ${matched.tabId} to clean /u/${targetSlot}/app (mode: ${chatSessionMode})...`);
+          try {
+            await chrome.tabs.update(matched.tabId, { url: `https://gemini.google.com/u/${targetSlot}/app` });
+            await waitForTabComplete(matched.tabId, 15000);
+          } catch (e) {}
+        }
+      } else {
+        console.log(`[MythicFrame BEI] Preserving active chat conversation on tab ${matched.tabId} (mode: same_chat, tab: ${tabSessionId || 'default'})`);
       }
       await organizeTabIntoBEIGroup(matched.tabId, tabMode, bringTabToFront);
       await ensureContentScriptInjected(matched.tabId, "gemini");
@@ -723,9 +728,9 @@ function isSlotBusy(target, slot) {
 }
 
 async function startJob(jobData) {
-  const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'same_window_group', bringTabToFront = false } = jobData;
+  const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'same_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null } = jobData;
   const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
-  const tabId = await findOrCreateTab(target, parsedSlot, tabMode, bringTabToFront);
+  const tabId = await findOrCreateTab(target, parsedSlot, tabMode, bringTabToFront, chatSessionMode, tabSessionId);
   if (!tabId) {
     throw new Error(`No available browser tab found or created for target: ${target} (slot: ${parsedSlot})`);
   }
@@ -803,7 +808,7 @@ async function handleBridgeCommand(msg) {
   }
 
   if (type === "EXECUTE_PROMPT") {
-    const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'same_window_group', bringTabToFront = false } = data;
+    const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'same_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null } = data;
     const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
     const slotKey = getSlotKey(target, parsedSlot);
 
@@ -826,12 +831,12 @@ async function handleBridgeCommand(msg) {
         }
         return;
       }
-      queue.push({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront });
+      queue.push({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId });
       return;
     }
 
     try {
-      await startJob({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront });
+      await startJob({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId });
     } catch (err) {
       activeJobs.delete(jobId);
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -841,6 +846,51 @@ async function handleBridgeCommand(msg) {
         }));
       }
       processNextInQueue(target, parsedSlot);
+    }
+    return;
+  }
+
+  if (type === "EXECUTE_TEXT_PROMPT") {
+    const { jobId, target = "gemini", prompt, accountSlot = 0, timeoutSeconds = 60, tabMode = 'same_window_group', bringTabToFront = false } = data;
+    const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
+
+    try {
+      // In text mode, reuse current active tab
+      const tabId = await findOrCreateTab(target, parsedSlot, tabMode, bringTabToFront, 'same_chat');
+      if (!tabId) throw new Error(`No browser tab found for ${target} slot ${parsedSlot}`);
+
+      activeJobs.set(jobId, { tabId, target, prompt, accountSlot: parsedSlot, isText: true });
+
+      chrome.tabs.sendMessage(tabId, {
+        action: "EXECUTE_TEXT_PROMPT",
+        data: { jobId, prompt, timeoutSeconds }
+      }, (res) => {
+        if (chrome.runtime.lastError) {
+          console.warn("[MythicFrame BEI] Direct message warning for text prompt:", chrome.runtime.lastError);
+        }
+      });
+    } catch (err) {
+      activeJobs.delete(jobId);
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "TEXT_FAILED",
+          data: { jobId, error: err.message || String(err) }
+        }));
+      }
+    }
+    return;
+  }
+
+  if (type === "RESET_SESSION") {
+    const { target = "gemini", accountSlot = 0 } = data || {};
+    const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
+    const tabs = await discoverTabs();
+    const matched = tabs.find(t => t.target === target && t.accountSlot === parsedSlot);
+    if (matched) {
+      console.log(`[MythicFrame BEI] Resetting tab ${matched.tabId} to clean /u/${parsedSlot}/app on session clear...`);
+      try {
+        await chrome.tabs.update(matched.tabId, { url: `https://gemini.google.com/u/${parsedSlot}/app` });
+      } catch (e) {}
     }
     return;
   }
@@ -910,25 +960,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       // High-Res URL fetch: Ensure background worker fetches the upgraded high-res URL when converting to Base64 Data URI
       if (typeof image === 'string' && (image.startsWith('http://') || image.startsWith('https://'))) {
-        try {
-          const highResUrl = protocol.upgradeToHighResUrl ? protocol.upgradeToHighResUrl(image) : image;
-          console.log(`[MythicFrame BEI] Background worker fetching high-res image URL: ${highResUrl.substring(0, 80)}...`);
-          const res = await fetch(highResUrl);
-          if (res.ok) {
-            const blob = await res.blob();
-            const dataUrl = await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
-            if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image')) {
-              image = dataUrl;
-              console.log(`[MythicFrame BEI] High-res image converted to Data URI in worker (${Math.round(image.length / 1024)} KB)`);
+        const highResUrl = protocol.upgradeToHighResUrl ? protocol.upgradeToHighResUrl(image) : image;
+        console.log(`[MythicFrame BEI] Background worker fetching high-res image URL: ${highResUrl.substring(0, 80)}...`);
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const res = await fetch(highResUrl);
+            if (res.ok) {
+              const blob = await res.blob();
+              const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image')) {
+                image = dataUrl;
+                console.log(`[MythicFrame BEI] High-res image converted to Data URI in worker (${Math.round(image.length / 1024)} KB)`);
+                break;
+              }
             }
+          } catch (fetchErr) {
+            console.warn(`[MythicFrame BEI] Background fetch attempt ${attempt} notice:`, fetchErr);
           }
-        } catch (fetchErr) {
-          console.warn("[MythicFrame BEI] Background fetch notice for image URL:", fetchErr);
+          await new Promise(r => setTimeout(r, 400 * attempt));
         }
       }
 
@@ -955,6 +1009,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
 
+    sendResponse({ ack: true });
+    return true;
+  }
+
+  if (message.type === "TEXT_COMPLETED") {
+    const { jobId, text, target } = message.data || {};
+    activeJobs.delete(jobId);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: "TEXT_COMPLETED",
+        data: {
+          jobId,
+          text,
+          target
+        }
+      }));
+    }
+    sendResponse({ ack: true });
+    return true;
+  }
+
+  if (message.type === "TEXT_FAILED") {
+    const { jobId, error } = message.data || {};
+    activeJobs.delete(jobId);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: "TEXT_FAILED",
+        data: {
+          jobId,
+          error
+        }
+      }));
+    }
     sendResponse({ ack: true });
     return true;
   }

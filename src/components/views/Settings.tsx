@@ -1473,6 +1473,89 @@ const Settings: React.FC<SettingsProps> = ({
                                </p>
                             </div>
                          </label>
+
+                         {/* Chat Lifecycle / Account Clutter Prevention */}
+                         <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between">
+                               <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                                  <i className="fa-solid fa-clock-rotate-left text-purple-400" />
+                                  Chat Lifecycle & History Retention
+                                </label>
+                                <span className="text-[10px] text-purple-400/80 font-mono bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-800/40">
+                                   No Account Overflow
+                                </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400">
+                               Prevent overflowing your Google / OpenAI accounts with dozens of one-off chat threads:
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
+                               <button
+                                  type="button"
+                                  onClick={() => handleUpdateBEIConfig({ chatSessionMode: 'temporary_chat' })}
+                                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                                     (beiConfigState.chatSessionMode || 'temporary_chat') === 'temporary_chat'
+                                        ? 'bg-purple-950/40 border-purple-500/80 ring-1 ring-purple-500/30'
+                                        : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                                  }`}
+                               >
+                                  <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                     <span className="flex items-center gap-1.5">
+                                        <i className="fa-solid fa-bolt text-amber-400 text-[10px]" /> Temporary Chat (Default)
+                                     </span>
+                                     {(beiConfigState.chatSessionMode || 'temporary_chat') === 'temporary_chat' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                     Reuses conversation while holding images; starts fresh temporary session per tab to keep account sidebar pristine.
+                                  </p>
+                               </button>
+
+                               <button
+                                  type="button"
+                                  onClick={() => handleUpdateBEIConfig({ chatSessionMode: 'same_chat' })}
+                                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                                     beiConfigState.chatSessionMode === 'same_chat'
+                                        ? 'bg-purple-950/40 border-purple-500/80 ring-1 ring-purple-500/30'
+                                        : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                                  }`}
+                               >
+                                  <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                     <span className="flex items-center gap-1.5">
+                                        <i className="fa-solid fa-comments text-blue-400 text-[10px]" /> Same Chat Thread
+                                     </span>
+                                     {beiConfigState.chatSessionMode === 'same_chat' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                     Always keeps the same conversation thread active across prompts without reloading.
+                                  </p>
+                               </button>
+
+                               <button
+                                  type="button"
+                                  onClick={() => handleUpdateBEIConfig({ chatSessionMode: 'new_chat' })}
+                                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                                     beiConfigState.chatSessionMode === 'new_chat'
+                                        ? 'bg-purple-950/40 border-purple-500/80 ring-1 ring-purple-500/30'
+                                        : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                                  }`}
+                               >
+                                  <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                     <span className="flex items-center gap-1.5">
+                                        <i className="fa-solid fa-plus text-emerald-400 text-[10px]" /> New Chat
+                                     </span>
+                                     {beiConfigState.chatSessionMode === 'new_chat' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                     Forces a brand new conversation thread for every single generation request.
+                                  </p>
+                               </button>
+                            </div>
+                         </div>
                       </div>
 
                       {/* Quick-Launch & Auto-Open Notice */}

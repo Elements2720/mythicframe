@@ -34,9 +34,10 @@ interface PendingJob {
   jobId: string;
   target: 'gemini' | 'chatgpt';
   prompt: string;
-  resolve: (value: { success: boolean; image: string; jobId: string; metadata?: any }) => void;
+  resolve: (value: any) => void;
   reject: (reason: any) => void;
   timeoutTimer: NodeJS.Timeout;
+  isText?: boolean;
 }
 
 export class BEIBridgeServer {
@@ -97,7 +98,7 @@ export class BEIBridgeServer {
   }
   private pendingJobs = new Map<string, PendingJob>();
   private lastHeartbeat = Date.now();
-  private extensionVersion = '1.2.4';
+  private extensionVersion = '1.3.1';
   private projectDir = process.cwd();
   public latestProgress: Record<string, { step: string; detail: string; timestamp: number }> = {};
   public globalProgress: { step: string; detail: string; timestamp: number } | null = null;
@@ -231,6 +232,16 @@ export class BEIBridgeServer {
 
         if (req.method === 'POST' && url.pathname === '/api/bei/generate') {
           this.handleGenerateRequest(req, res);
+          return;
+        }
+
+        if (req.method === 'POST' && url.pathname === '/api/bei/text') {
+          this.handleTextRequest(req, res);
+          return;
+        }
+
+        if (req.method === 'POST' && url.pathname === '/api/bei/reset-session') {
+          this.handleResetSessionRequest(req, res);
           return;
         }
 
@@ -410,6 +421,14 @@ export class BEIBridgeServer {
             }
           }
 
+          // Strict image validation: Do NOT resolve with a broken URL or empty data!
+          const isValidBase64 = typeof image === 'string' && image.startsWith('data:image') && image.length > 512;
+          if (!isValidBase64) {
+            console.error(`[MythicFrame BEI Bridge] Corrupted image result for job ${jobId}. Image is not a valid Data URI.`);
+            job.reject(new Error('Image generated in browser, but asset retrieval failed or returned corrupted data. Please click Generate to retry.'));
+            return;
+          }
+
           console.log(`[MythicFrame BEI Bridge] Job ${jobId} completed successfully!`);
           this.broadcastProgress({
             jobId,
@@ -429,6 +448,28 @@ export class BEIBridgeServer {
             }
           });
         })();
+      }
+      return;
+    }
+
+    if (type === 'TEXT_COMPLETED') {
+      const jobId = data?.jobId;
+      if (jobId && this.pendingJobs.has(jobId)) {
+        const job = this.pendingJobs.get(jobId)!;
+        clearTimeout(job.timeoutTimer);
+        this.pendingJobs.delete(jobId);
+        job.resolve({ success: true, text: data.text, jobId });
+      }
+      return;
+    }
+
+    if (type === 'TEXT_FAILED') {
+      const jobId = data?.jobId;
+      if (jobId && this.pendingJobs.has(jobId)) {
+        const job = this.pendingJobs.get(jobId)!;
+        clearTimeout(job.timeoutTimer);
+        this.pendingJobs.delete(jobId);
+        job.reject(new Error(data.error || 'Text generation failed in browser tab'));
       }
       return;
     }
@@ -478,7 +519,7 @@ export class BEIBridgeServer {
     req.on('end', () => {
       try {
         const payload = JSON.parse(body || '{}');
-        const { target = 'gemini', prompt, fullPrompt, aspectRatio = '16:9', accountSlot = 0, timeoutSeconds = 120, images = [], tabMode, bringTabToFront } = payload;
+        const { target = 'gemini', prompt, fullPrompt, aspectRatio = '16:9', accountSlot = 0, timeoutSeconds = 120, images = [], tabMode, bringTabToFront, chatSessionMode = 'temporary_chat', tabSessionId } = payload;
 
         if (!prompt) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -501,7 +542,7 @@ export class BEIBridgeServer {
         );
 
         const jobId = `bei_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-        console.log(`[MythicFrame BEI Bridge] Dispatching job ${jobId} to extension (Target: ${target}, Slot: ${accountSlot}, Images: ${images.length}, Timeout: ${effectiveTimeout}s)`);
+        console.log(`[MythicFrame BEI Bridge] Dispatching job ${jobId} to extension (Target: ${target}, Slot: ${accountSlot}, Images: ${images.length}, Timeout: ${effectiveTimeout}s, ChatMode: ${chatSessionMode})`);
 
         const timeoutTimer = setTimeout(() => {
           if (this.pendingJobs.has(jobId)) {
@@ -542,7 +583,9 @@ export class BEIBridgeServer {
             timeoutSeconds: effectiveTimeout,
             images,
             tabMode,
-            bringTabToFront
+            bringTabToFront,
+            chatSessionMode,
+            tabSessionId
           }
         }));
 
@@ -609,6 +652,101 @@ export class BEIBridgeServer {
       } catch (err: any) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'INVALID_REQUEST', message: err.message }));
+      }
+    });
+  }
+
+  public handleTextRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const { prompt, target = 'gemini', accountSlot = 0, timeoutSeconds = 60 } = payload;
+        if (!prompt) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'MISSING_PROMPT', message: 'Prompt is required' }));
+          return;
+        }
+
+        if (!this.isConnected()) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'BEI_EXTENSION_NOT_CONNECTED', message: 'BEI extension is not connected' }));
+          return;
+        }
+
+        const jobId = `text_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        console.log(`[MythicFrame BEI Bridge] Dispatching text job ${jobId} (Target: ${target}, Slot: ${accountSlot})`);
+
+        const timeoutTimer = setTimeout(() => {
+          if (this.pendingJobs.has(jobId)) {
+            const job = this.pendingJobs.get(jobId)!;
+            this.pendingJobs.delete(jobId);
+            job.reject(new Error('BEI text generation timed out in browser tab'));
+          }
+        }, timeoutSeconds * 1000);
+
+        const jobPromise = new Promise<{ success: boolean; text: string; jobId: string }>((resolve, reject) => {
+          this.pendingJobs.set(jobId, {
+            jobId,
+            target,
+            prompt,
+            resolve,
+            reject,
+            timeoutTimer,
+            isText: true
+          });
+        });
+
+        this.extensionSocket!.send(JSON.stringify({
+          type: 'EXECUTE_TEXT_PROMPT',
+          data: {
+            jobId,
+            target,
+            prompt,
+            accountSlot,
+            timeoutSeconds
+          }
+        }));
+
+        jobPromise
+          .then(result => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          })
+          .catch(err => {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'TEXT_GEN_FAILED', message: err?.message || String(err) }));
+          });
+
+      } catch (e: any) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'INVALID_JSON', message: e.message }));
+      }
+    });
+  }
+
+  public handleResetSessionRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const { target = 'gemini', accountSlot = 0, tabSessionId } = payload;
+        console.log(`[MythicFrame BEI Bridge] Resetting session for ${target} slot ${accountSlot} (TabSession: ${tabSessionId || 'none'})`);
+
+        if (this.isConnected()) {
+          this.extensionSocket!.send(JSON.stringify({
+            type: 'RESET_SESSION',
+            data: { target, accountSlot, tabSessionId }
+          }));
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, reset: true }));
+      } catch (e: any) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'INVALID_JSON', message: e.message }));
       }
     });
   }

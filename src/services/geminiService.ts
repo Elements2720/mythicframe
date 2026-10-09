@@ -939,42 +939,57 @@ export const refinePrompt = async (currentPrompt: string): Promise<string> => {
   const apiKey = getApiKey();
   const currentProvider = (typeof window !== 'undefined' ? localStorage.getItem('mythic_active_ai_provider') : null) || 'google';
 
-  // If in BEI mode, Pollinations mode, or no Gemini API key configured, use free Zero-Key AI text generation
-  // IMPORTANT: Does NOT consume any image generation quota!
-  if (currentProvider === 'bei' || currentProvider === 'pollinations' || !apiKey) {
+  const refinementDirective = `You are an expert game concept artist and prompt engineer for AI image generators. Refine and enhance the following prompt with vivid art details, lighting, cinematic atmosphere, materials, and high visual fidelity: "${currentPrompt}". Keep the core character/scene concept intact. Respond with ONLY the refined prompt text, under 60 words. No intro, remarks, or quotes.`;
+
+  // 1. BEI Mode: Execute text generation directly via authenticated browser session (Zero API key needed)
+  if (currentProvider === 'bei') {
     try {
-      const { generateAIText } = await import('./pollinationsService');
-      const refinementDirective = `You are a professional prompt engineer for game asset AI image generators. Refine and enhance the following prompt with vivid art details, lighting, cinematic atmosphere, and high visual fidelity: "${currentPrompt}". Keep the original core subject intact. Respond with ONLY the refined prompt text, under 60 words. No intro, remarks, or quotes.`;
-      const aiResult = await generateAIText(currentPrompt, refinementDirective);
-      if (aiResult && aiResult.length > 10) {
-        return aiResult;
+      const { generateBEIText } = await import('./beiService');
+      const textResult = await generateBEIText(refinementDirective);
+      if (textResult && textResult.length > 10) {
+        return textResult.replace(/^["']|["']$/g, '').trim();
       }
     } catch (err) {
-      console.warn('[Refine Prompt] Zero-key AI text notice, using fallback:', err);
+      console.warn('[Refine Prompt] BEI text generation notice, falling back:', err);
     }
-
-    // Offline / Network fallback
-    const enhancements = [
-      "volumetric lighting and cinematic composition",
-      "sharp focus, intricate high-detail textures",
-      "masterpiece game art, vibrant atmospheric colors"
-    ];
-    const base = currentPrompt.trim();
-    if (!base) return "high fantasy champion artwork, cinematic lighting, ultra-detailed masterpiece";
-    const missing = enhancements.filter(e => !base.toLowerCase().includes(e.split(' ')[0]));
-    return `${base}, ${missing.slice(0, 2).join(', ')}`;
   }
 
-  // Official Gemini API path when API key is provided
-  const ai = getClient();
-  const prompt = buildRefinementPrompt(currentPrompt);
-  
-  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: getModelName('gemini-3.8-flash'),
-    contents: { parts: [{ text: prompt }] }
-  }));
+  // 2. Official Gemini API path when API key is provided
+  if (apiKey) {
+    try {
+      const ai = getClient();
+      const prompt = buildRefinementPrompt(currentPrompt);
+      const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+        model: getModelName('gemini-3.8-flash'),
+        contents: { parts: [{ text: prompt }] }
+      }));
+      if (response.text) {
+        return response.text.replace(/^["']|["']$/g, '').trim();
+      }
+    } catch (apiErr) {
+      console.warn('[Refine Prompt] Gemini API text notice, falling back:', apiErr);
+    }
+  }
 
-  return response.text || currentPrompt;
+  // 3. Fallback to Pollinations AI text
+  try {
+    const { generateAIText } = await import('./pollinationsService');
+    const aiResult = await generateAIText(currentPrompt, refinementDirective);
+    if (aiResult && aiResult.length > 10) {
+      return aiResult.replace(/^["']|["']$/g, '').trim();
+    }
+  } catch (err) {}
+
+  // 4. Clean enhancement fallback
+  const enhancements = [
+    "volumetric lighting and cinematic composition",
+    "sharp focus, intricate high-detail textures",
+    "masterpiece game art, vibrant atmospheric colors"
+  ];
+  const base = currentPrompt.trim();
+  if (!base) return "high fantasy champion artwork, cinematic lighting, ultra-detailed masterpiece";
+  const missing = enhancements.filter(e => !base.toLowerCase().includes(e.split(' ')[0]));
+  return `${base}, ${missing.slice(0, 2).join(', ')}`;
 };
 
 export const generateInspirationPrompt = async (
@@ -992,31 +1007,43 @@ export const generateInspirationPrompt = async (
 Describe the character or scene with vivid colors, distinctive outfit/props, dramatic lighting, and intricate composition. 
 Respond with ONLY the prompt text, under 50 words. No quotes, no intro.`;
 
-  // Zero-key AI for BEI and free modes (Zero image quota used)
-  if (currentProvider === 'bei' || currentProvider === 'pollinations' || !apiKey) {
+  // 1. BEI Mode: Execute text prompt directly via authenticated browser session
+  if (currentProvider === 'bei') {
     try {
-      const { generateAIText } = await import('./pollinationsService');
-      const aiResult = await generateAIText(directive);
-      if (aiResult && aiResult.length > 15) {
-        return aiResult;
+      const { generateBEIText } = await import('./beiService');
+      const textResult = await generateBEIText(directive);
+      if (textResult && textResult.length > 15) {
+        return textResult.replace(/^["']|["']$/g, '').trim();
       }
     } catch (err) {
-      console.warn('[Inspire Prompt] Zero-key AI notice, using fallback:', err);
+      console.warn('[Inspire Prompt] BEI text generation notice, falling back:', err);
     }
-  } else {
+  }
+
+  // 2. Official Gemini API path when API key is provided
+  if (apiKey) {
     try {
       const ai = getClient();
       const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model: getModelName('gemini-3.8-flash'),
         contents: { parts: [{ text: directive }] }
       }));
-      if (response.text) return response.text.trim();
+      if (response.text) return response.text.replace(/^["']|["']$/g, '').trim();
     } catch (e) {
       console.warn('[Inspire Prompt] Gemini API error:', e);
     }
   }
 
-  // Fallback inspirations
+  // 3. Fallback to Pollinations AI text
+  try {
+    const { generateAIText } = await import('./pollinationsService');
+    const aiResult = await generateAIText(directive);
+    if (aiResult && aiResult.length > 15) {
+      return aiResult.replace(/^["']|["']$/g, '').trim();
+    }
+  } catch (err) {}
+
+  // 4. Default game inspirations
   const fallbacks = [
     `A mythical celestial kitsune warrior wielding a glowing starlight katana, cherry blossom petals swirling in storm winds, ${styleName} style, 8k resolution`,
     `An ancient arcane rune guardian hovering over crystalline ruins at twilight, glowing mystic sigils, dramatic volumetric lighting, ${styleName} style`,

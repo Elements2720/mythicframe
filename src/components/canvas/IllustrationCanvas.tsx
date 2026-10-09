@@ -257,7 +257,20 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                           onClick={() => onSelectSessionImage && onSelectSessionImage(img)}
                           className={`w-12 h-12 rounded-full overflow-hidden border-2 transition-all relative shrink-0 ${generatedImage === img ? 'border-purple-500 scale-110 ring-2 ring-purple-500/50 z-10' : 'border-slate-600 hover:border-white opacity-80 hover:opacity-100 hover:scale-105'}`}
                         >
-                           <img src={img} className="w-full h-full object-cover" />
+                           <img 
+                             src={img} 
+                             className="w-full h-full object-cover" 
+                             onError={(e) => {
+                               (e.currentTarget as HTMLElement).style.display = 'none';
+                               const parent = (e.currentTarget as HTMLElement).parentElement;
+                               if (parent && !parent.querySelector('.broken-fallback')) {
+                                 const fallback = document.createElement('div');
+                                 fallback.className = 'broken-fallback w-full h-full flex items-center justify-center bg-slate-800 text-amber-400 text-xs';
+                                 fallback.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+                                 parent.appendChild(fallback);
+                               }
+                             }}
+                           />
                         </button>
                         
                         <button
@@ -380,6 +393,16 @@ const IllustrationCanvas: React.FC<IllustrationCanvasProps> = ({
                src={generatedImage} 
                alt="Generated" 
                className="w-full h-full object-contain block relative z-0"
+               onError={(e) => {
+                 (e.currentTarget as HTMLElement).style.display = 'none';
+                 const parent = (e.currentTarget as HTMLElement).parentElement;
+                 if (parent && !parent.querySelector('.broken-main-fallback')) {
+                   const fallback = document.createElement('div');
+                   fallback.className = 'broken-main-fallback absolute inset-0 flex flex-col items-center justify-center text-slate-400 gap-2';
+                   fallback.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-3xl text-amber-400"></i><p class="text-xs">Image asset could not be loaded or was corrupted</p>';
+                   parent.appendChild(fallback);
+                 }
+               }}
              />
              
              {/* Toolbar Overlay */}

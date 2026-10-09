@@ -224,42 +224,68 @@
       return Array.from(new Set(urls));
     },
 
-    imageToBase64(imgElement) {
-      return new Promise((resolve, reject) => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = imgElement.naturalWidth || imgElement.width || 1024;
-          canvas.height = imgElement.naturalHeight || imgElement.height || 1024;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            const rawSrc = imgElement.currentSrc || imgElement.src || '';
-            resolve(this.upgradeToHighResUrl(rawSrc));
-            return;
-          }
+    async imageToBase64(imgElement) {
+      if (!imgElement) return '';
+      const rawSrc = imgElement.currentSrc || imgElement.src || '';
+      
+      // Attempt 1: Canvas export
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = imgElement.naturalWidth || imgElement.width || 1024;
+        canvas.height = imgElement.naturalHeight || imgElement.height || 1024;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
           ctx.drawImage(imgElement, 0, 0);
           const dataUrl = canvas.toDataURL('image/png');
-          resolve(dataUrl);
-        } catch (err) {
-          // If tainted canvas due to CORS, return upgraded src URL
-          const rawSrc = imgElement.currentSrc || imgElement.src || '';
-          resolve(this.upgradeToHighResUrl(rawSrc));
+          if (dataUrl && dataUrl.startsWith('data:image/png') && dataUrl.length > 1024) {
+            return dataUrl;
+          }
         }
-      });
+      } catch (err) {
+        console.debug('[MythicBEI] Canvas export notice (likely CORS), falling back to in-page authenticated fetch:', err);
+      }
+
+      // Attempt 2: In-page authenticated blob fetch (inherits Google session cookies)
+      if (rawSrc) {
+        try {
+          const fetched = await this.fetchBlobAsBase64(rawSrc);
+          if (fetched && fetched.startsWith('data:image') && fetched.length > 1024) {
+            return fetched;
+          }
+        } catch (fetchErr) {
+          console.warn('[MythicBEI] In-page authenticated fetch notice:', fetchErr);
+        }
+      }
+
+      // Fallback: return upgraded URL
+      return this.upgradeToHighResUrl(rawSrc);
     },
 
-    fetchBlobAsBase64(url) {
-      return new Promise((resolve, reject) => {
-        const targetUrl = this.upgradeToHighResUrl(url);
-        fetch(targetUrl)
-          .then(res => res.blob())
-          .then(blob => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          })
-          .catch(reject);
-      });
+    async fetchBlobAsBase64(url) {
+      if (!url) return '';
+      const targetUrl = this.upgradeToHighResUrl(url);
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await (typeof window !== 'undefined' && window.fetch ? window.fetch(targetUrl, { credentials: 'include' }) : fetch(targetUrl));
+          if (res.ok) {
+            const blob = await res.blob();
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+            if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image') && dataUrl.length > 1024) {
+              return dataUrl;
+            }
+          }
+        } catch (e) {
+          console.debug(`[MythicBEI] fetchBlobAsBase64 attempt ${attempt} notice:`, e);
+        }
+        await new Promise(r => setTimeout(r, 300 * attempt));
+      }
+      return targetUrl;
     }
   };
 
