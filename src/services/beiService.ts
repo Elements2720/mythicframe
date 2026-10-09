@@ -159,7 +159,7 @@ export const openBEITab = async (
   const config = getBEIConfig();
   const port = config.port || DEFAULT_BEI_PORT;
   const chosenTabMode = tabMode || config.tabMode || 'same_window_group';
-  const chosenBringFront = bringTabToFront !== undefined ? bringTabToFront : Boolean(config.bringTabToFront);
+  const chosenBringFront = bringTabToFront !== undefined ? bringTabToFront : true;
   const urls = [
     `http://127.0.0.1:${port}/api/bei/open-tab`,
     `/api/bei/open-tab`

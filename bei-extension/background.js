@@ -121,8 +121,8 @@ async function scanGoogleAccounts() {
     // 1. Discover already open tabs first
     await discoverTabs();
 
-    // 2. Probe unknown slots 0, 1, 2, 3
-    const slots = [0, 1, 2, 3];
+    // 2. Probe unknown slots 0 through 5
+    const slots = [0, 1, 2, 3, 4, 5];
     for (const slot of slots) {
       if (knownGoogleAccounts.has(slot) && knownGoogleAccounts.get(slot).email) {
         continue; // Already identified!
@@ -719,14 +719,17 @@ async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_g
       }
 
       if (matchedTab && matchedTab.id) {
-        console.log(`[MythicFrame BEI] Reusing existing Gemini tab ${matchedTab.id} for slot ${targetSlot} (In BEI Group: ${beiGroupTabIds.has(matchedTab.id)}). No duplicates created.`);
+        console.log(`[MythicFrame BEI] Reusing existing Gemini tab ${matchedTab.id} for slot ${targetSlot} (In BEI Group: ${beiGroupTabIds.has(matchedTab.id)}).`);
+
+        // Ensure tab is organized into BEI group immediately
+        await organizeTabIntoBEIGroup(matchedTab.id, tabMode, bringTabToFront);
 
         // Wake up tab if discarded by Chrome Memory Saver
         if (matchedTab.discarded) {
           console.log(`[MythicFrame BEI] Tab ${matchedTab.id} was discarded by Chrome. Waking up...`);
           try {
             await chrome.tabs.reload(matchedTab.id);
-            await waitForTabReady(matchedTab.id, 15000);
+            await waitForTabReady(matchedTab.id, 10000);
           } catch (e) {}
         }
 
@@ -737,13 +740,11 @@ async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_g
             console.log(`[MythicFrame BEI] Resetting tab ${matchedTab.id} to clean /u/${targetSlot}/app (mode: ${chatSessionMode})...`);
             try {
               await chrome.tabs.update(matchedTab.id, { url: `https://gemini.google.com/u/${targetSlot}/app` });
-              await waitForTabReady(matchedTab.id, 15000);
+              await waitForTabReady(matchedTab.id, 10000);
             } catch (e) {}
           }
         }
 
-        await organizeTabIntoBEIGroup(matchedTab.id, tabMode, bringTabToFront);
-        await waitForTabReady(matchedTab.id, 8000);
         await ensureContentScriptInjected(matchedTab.id, "gemini");
         return matchedTab.id;
       }
@@ -754,10 +755,10 @@ async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_g
         url: `https://gemini.google.com/u/${targetSlot}/app`,
         active: Boolean(bringTabToFront)
       });
-      await waitForTabReady(newTab.id, 20000);
+      // Organize into BEI group IMMEDIATELY upon creation
       await organizeTabIntoBEIGroup(newTab.id, tabMode, bringTabToFront);
+      await waitForTabReady(newTab.id, 15000);
       await ensureContentScriptInjected(newTab.id, "gemini");
-      await new Promise(r => setTimeout(r, 1000));
 
       const updatedTabs = await discoverTabs();
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -788,15 +789,14 @@ async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_g
       }
 
       if (matchedTab && matchedTab.id) {
-        console.log(`[MythicFrame BEI] Reusing existing ChatGPT tab ${matchedTab.id}. No duplicates created.`);
+        console.log(`[MythicFrame BEI] Reusing existing ChatGPT tab ${matchedTab.id}.`);
+        await organizeTabIntoBEIGroup(matchedTab.id, tabMode, bringTabToFront);
         if (matchedTab.discarded) {
           try {
             await chrome.tabs.reload(matchedTab.id);
-            await waitForTabReady(matchedTab.id, 15000);
+            await waitForTabReady(matchedTab.id, 10000);
           } catch (e) {}
         }
-        await organizeTabIntoBEIGroup(matchedTab.id, tabMode, bringTabToFront);
-        await waitForTabReady(matchedTab.id, 8000);
         await ensureContentScriptInjected(matchedTab.id, "chatgpt");
         return matchedTab.id;
       }
@@ -806,10 +806,10 @@ async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_g
         url: "https://chatgpt.com/",
         active: Boolean(bringTabToFront)
       });
-      await waitForTabReady(newTab.id, 20000);
+      // Organize into BEI group IMMEDIATELY upon creation
       await organizeTabIntoBEIGroup(newTab.id, tabMode, bringTabToFront);
+      await waitForTabReady(newTab.id, 15000);
       await ensureContentScriptInjected(newTab.id, "chatgpt");
-      await new Promise(r => setTimeout(r, 1000));
 
       const updatedTabs = await discoverTabs();
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1036,7 +1036,8 @@ async function handleBridgeCommand(msg) {
   }
 
   if (type === "OPEN_TAB") {
-    const { target = "gemini", accountSlot = 0, tabMode = 'same_window_group', bringTabToFront = true } = data || {};
+    const { target = "gemini", accountSlot = 0, tabMode = 'same_window_group' } = data || {};
+    const bringTabToFront = data?.bringTabToFront !== undefined ? Boolean(data.bringTabToFront) : true;
     const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
     const tabId = await findOrCreateTab(target, parsedSlot, tabMode, bringTabToFront);
     const tabs = await discoverTabs();

@@ -116,7 +116,7 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
     setBEIState(prev => ({ ...prev, accountSlot: slot }));
     const hasTab = beiStatus.tabs?.some(t => t.target === 'gemini' && (t.accountSlot ?? 0) === slot);
     if (!hasTab && beiStatus.connected) {
-      openBEITab('gemini', slot).then(() => {
+      openBEITab('gemini', slot, beiConfig.tabMode, true).then(() => {
         setTimeout(() => checkBEIConnection().then(setBEIStatus), 2000);
       });
     }
@@ -152,7 +152,7 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
 
   const handleOpenTab = async () => {
     setIsOpeningTab(true);
-    await openBEITab(beiConfig.target, beiConfig.accountSlot);
+    await openBEITab(beiConfig.target, beiConfig.accountSlot, beiConfig.tabMode, true);
     setTimeout(async () => {
       const res = await checkBEIConnection();
       setBEIStatus(res);
@@ -349,26 +349,35 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
                   onChange={(e) => updateBEISlot(parseInt(e.target.value, 10))}
                   className="w-full bg-slate-900 border border-cyan-500/40 rounded-lg px-3 py-2 text-xs text-slate-100 outline-none hover:border-cyan-400 transition-colors cursor-pointer font-medium appearance-none pr-8 focus:ring-1 focus:ring-cyan-500 font-mono"
                 >
-                  {[0, 1, 2, 3].map(slot => {
-                    const geminiTabs = beiStatus.tabs?.filter(t => t.target === 'gemini') || [];
-                    const tab = geminiTabs.find(t => (t.accountSlot ?? 0) === slot);
-                    const acc = (beiStatus.accounts || []).find(a => a.slot === slot) || knownAccounts.find(a => a.slot === slot);
-                    const rawEmail = tab?.email || acc?.email;
-                    const displayEmail = rawEmail 
-                      ? (isIncognito ? formatDisplayEmail(rawEmail, true) : rawEmail) 
-                      : `Slot ${slot + 1} (Auto-opens on generate)`;
-                    const hasTab = Boolean(tab);
+                  {(() => {
+                    const availableSlots = Array.from(new Set([
+                      0, 1, 2, 3,
+                      ...(beiStatus.accounts || []).map(a => a.slot),
+                      ...(knownAccounts || []).map(a => a.slot),
+                      ...(beiStatus.tabs || []).filter(t => t.target === 'gemini' && typeof t.accountSlot === 'number').map(t => t.accountSlot!)
+                    ])).sort((a, b) => a - b);
 
-                    return (
-                      <option 
-                        key={`acc-${slot}`} 
-                        value={String(slot)}
-                        className="bg-[#121927] text-slate-100 font-medium py-1.5"
-                      >
-                        📧 {displayEmail} {hasTab ? '• [Tab Open]' : ''}
-                      </option>
-                    );
-                  })}
+                    return availableSlots.map(slot => {
+                      const geminiTabs = beiStatus.tabs?.filter(t => t.target === 'gemini') || [];
+                      const tab = geminiTabs.find(t => (t.accountSlot ?? 0) === slot);
+                      const acc = (beiStatus.accounts || []).find(a => a.slot === slot) || knownAccounts.find(a => a.slot === slot);
+                      const rawEmail = tab?.email || acc?.email;
+                      const displayEmail = rawEmail 
+                        ? (isIncognito ? formatDisplayEmail(rawEmail, true) : rawEmail) 
+                        : `Slot ${slot + 1} (/u/${slot}/) • Auto-opens on generate`;
+                      const hasTab = Boolean(tab);
+
+                      return (
+                        <option 
+                          key={`acc-${slot}`} 
+                          value={String(slot)}
+                          className="bg-[#121927] text-slate-100 font-medium py-1.5"
+                        >
+                          📧 {displayEmail} {hasTab ? '• [Tab Open]' : ''}
+                        </option>
+                      );
+                    });
+                  })()}
                 </select>
                 <i className="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-cyan-400 pointer-events-none text-xs" />
               </div>
