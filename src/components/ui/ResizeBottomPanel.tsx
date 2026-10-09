@@ -46,6 +46,7 @@ const ResizeBottomPanel: React.FC<ResizeBottomPanelProps> = ({
 
   const panelRef = useRef<HTMLDivElement>(null);
   const currentHeightRef = useRef(height);
+  const dragStartRef = useRef<{ startY: number; startHeight: number }>({ startY: 0, startHeight: 380 });
 
   useEffect(() => {
     currentHeightRef.current = height;
@@ -54,7 +55,8 @@ const ResizeBottomPanel: React.FC<ResizeBottomPanelProps> = ({
   useEffect(() => {
     if (!isResizing) return;
     const handleMouseMove = (e: MouseEvent) => {
-      const newHeight = Math.max(150, Math.min(window.innerHeight * 0.9, window.innerHeight - e.clientY));
+      const deltaY = dragStartRef.current.startY - e.clientY;
+      const newHeight = Math.max(150, Math.min(window.innerHeight * 0.9, dragStartRef.current.startHeight + deltaY));
       currentHeightRef.current = newHeight;
       if (panelRef.current) {
         panelRef.current.style.height = `${newHeight}px`;
@@ -93,7 +95,7 @@ const ResizeBottomPanel: React.FC<ResizeBottomPanelProps> = ({
        }`}
        style={{ height: isMinimized ? 48 : height }}
     >
-       <div className="h-2 bg-slate-900/80 hover:bg-purple-600 cursor-ns-resize w-full flex items-center justify-center transition-colors group absolute -top-2 z-50 touch-none py-1" onMouseDown={(e) => { e.preventDefault(); setIsResizing(true); }}>
+       <div className="h-2 bg-slate-900/80 hover:bg-purple-600 cursor-ns-resize w-full flex items-center justify-center transition-colors group absolute -top-2 z-50 touch-none py-1" onMouseDown={(e) => { e.preventDefault(); dragStartRef.current = { startY: e.clientY, startHeight: currentHeightRef.current }; setIsResizing(true); }}>
          <div className="w-20 h-1 bg-slate-700 rounded-full group-hover:bg-purple-300 opacity-50 transition-colors"></div>
        </div>
 

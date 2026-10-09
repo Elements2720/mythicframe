@@ -973,8 +973,13 @@
     protocol.extractImageUrlsFromNode(document.body).forEach(u => existingUrls.add(u));
 
     const existingResponses = new Set(
-      document.querySelectorAll('model-response, message-content, div.response-container, conversation-turn, [data-test-id*="response"]')
+      document.querySelectorAll('model-response, message-content, div.response-container, [data-test-id*="response"]')
     );
+
+    // Track baseline model responses so we NEVER inspect previous turns or user turns
+    const baselineModelResponses = Array.from(document.querySelectorAll('model-response, [data-test-id*="model-response"]'))
+      .filter(r => !r.closest('user-query, .user-query, .chat-input-container'));
+    const baselineResponseCount = baselineModelResponses.length;
 
     // Wait until send button is enabled (not disabled, not aria-disabled)
     let sendBtn = getSendButton();
@@ -1091,6 +1096,30 @@
       }
     };
 
+    function isUserAttachedImage(img) {
+      if (!img) return false;
+      // STRICT FILTER: NEVER grab images inside user query, prompt bubble, attachment containers, or composer
+      if (img.closest('user-query, .user-query-container, .user-query, rich-textarea, .attachment, mat-chip, [data-test-id*="user"], .user-message, .input-area, .chat-input-container, form, gem-composer')) {
+        return true;
+      }
+      return false;
+    }
+
+    function isModelResponseGenerating(node) {
+      if (!node) return false;
+      const text = (node.innerText || node.textContent || '').toLowerCase();
+      if (text.includes('creating your image') || 
+          text.includes('generating your image') || 
+          text.includes('creating image') ||
+          text.includes('generating image')) {
+        return true;
+      }
+      if (node.querySelector('.loading, .shimmer, [aria-label*="creating" i], [aria-label*="loading" i], mat-progress-bar, mat-progress-spinner, .progress-bar')) {
+        return true;
+      }
+      return false;
+    }
+
     const checkInterval = setInterval(async () => {
       if (imageDelivered || jobCancelled) {
         clearInterval(checkInterval);
@@ -1113,25 +1142,37 @@
         return;
       }
 
-      // Tier 1: Check the latest response container first (most accurate for current turn)
-      const allResponses = Array.from(document.querySelectorAll('model-response, message-content, div.response-container, conversation-turn, [data-test-id*="response"]'));
-      const latestResponse = allResponses[allResponses.length - 1];
+      // Tier 1: Check ONLY model responses created for this turn (excluding user turns!)
+      const currentModelResponses = Array.from(document.querySelectorAll('model-response, [data-test-id*="model-response"]'))
+        .filter(r => !r.closest('user-query, .user-query, .chat-input-container'));
+
+      const latestResponse = currentModelResponses.length > baselineResponseCount
+        ? currentModelResponses[currentModelResponses.length - 1]
+        : (currentModelResponses.length > 0 ? currentModelResponses[currentModelResponses.length - 1] : null);
 
       if (latestResponse) {
-        // 1A: Check images inside the latest response (including shadow DOM)
+        // If Gemini is still in "Creating your image" state, WAIT and DO NOT deliver anything!
+        if (isModelResponseGenerating(latestResponse)) {
+          reportProgress(jobId, 'generating', 'Gemini is rendering image ("Creating your image")...');
+          return;
+        }
+
+        // 1A: Check images strictly inside this latest model response
         const respImages = protocol.getAllImagesRecursively(latestResponse);
         for (const img of respImages) {
+          if (isUserAttachedImage(img)) continue;
           const src = img.currentSrc || img.src;
-          if (!src) continue;
+          if (!src || existingImages.has(src)) continue;
+
           if (protocol.isGeneratedImage(img)) {
-            if (img.complete && (img.naturalWidth > 80 || img.naturalHeight > 80 || !existingImages.has(src))) {
+            if (img.complete && (img.naturalWidth > 120 || img.naturalHeight > 120)) {
               await deliverImage(img, img.naturalWidth, img.naturalHeight);
               return;
             }
           }
         }
 
-        // 1B: Check for image collection / retrieval URLs in links or text within latest response
+        // 1B: Check for image collection / retrieval URLs strictly inside latest model response
         const respUrls = protocol.extractImageUrlsFromNode(latestResponse);
         for (const u of respUrls) {
           if (!existingUrls.has(u)) {
@@ -1141,26 +1182,21 @@
         }
       }
 
-      // Tier 2: Check all new images on document (including shadow roots)
-      const allCurrentImages = protocol.getAllImagesRecursively(document.body);
-      for (const img of allCurrentImages) {
-        const src = img.currentSrc || img.src;
-        if (!src || existingImages.has(src)) continue;
+      // Tier 2: Check all new images ONLY inside any completed model-response container (NEVER in body or user turns!)
+      for (const modelResp of currentModelResponses) {
+        if (isModelResponseGenerating(modelResp)) continue;
+        const imagesInModel = protocol.getAllImagesRecursively(modelResp);
+        for (const img of imagesInModel) {
+          if (isUserAttachedImage(img)) continue;
+          const src = img.currentSrc || img.src;
+          if (!src || existingImages.has(src)) continue;
 
-        if (protocol.isGeneratedImage(img)) {
-          if (img.complete && (img.naturalWidth > 80 || img.naturalHeight > 80)) {
-            await deliverImage(img, img.naturalWidth, img.naturalHeight);
-            return;
+          if (protocol.isGeneratedImage(img)) {
+            if (img.complete && (img.naturalWidth > 120 || img.naturalHeight > 120)) {
+              await deliverImage(img, img.naturalWidth, img.naturalHeight);
+              return;
+            }
           }
-        }
-      }
-
-      // Tier 3: Check all new URLs / links on the document
-      const allCurrentUrls = protocol.extractImageUrlsFromNode(document.body);
-      for (const u of allCurrentUrls) {
-        if (!existingUrls.has(u)) {
-          await deliverImage(u);
-          return;
         }
       }
 
@@ -1393,4 +1429,28 @@
   } catch (err) {
     console.warn('[MythicFrame BEI] Could not bind onMessage listener:', err);
   }
+
+  // Proactively extract and announce logged-in email to background worker
+  function announceTabEmail() {
+    try {
+      const email = extractGoogleAccountEmail();
+      const slot = protocol.extractGeminiAccountSlot(window.location.href);
+      if (email && !isSystemEmail(email) && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage({
+          type: 'TAB_INFO_PROACTIVE',
+          data: {
+            target: 'gemini',
+            email,
+            accountSlot: slot,
+            url: window.location.href
+          }
+        }, () => {});
+      }
+    } catch (e) {}
+  }
+
+  // Announce immediately and retry after DOM elements hydrate
+  setTimeout(announceTabEmail, 500);
+  setTimeout(announceTabEmail, 2000);
+  setTimeout(announceTabEmail, 5000);
 })();

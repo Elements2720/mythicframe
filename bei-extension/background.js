@@ -273,6 +273,9 @@ async function extractTabEmail(tabId, target, accountSlot = 0) {
     });
     if (resp && resp.email && !isSystemEmail(resp.email)) {
       tabEmailsCache.set(tabId, resp.email);
+      if (target === "gemini") {
+        knownGoogleAccounts.set(accountSlot, { slot: accountSlot, email: resp.email, name: resp.email });
+      }
       return resp.email;
     }
   } catch (e) {}
@@ -342,6 +345,9 @@ async function extractTabEmail(tabId, target, accountSlot = 0) {
         for (const r of results) {
           if (r && r.result && !isSystemEmail(r.result)) {
             tabEmailsCache.set(tabId, r.result);
+            if (target === "gemini") {
+              knownGoogleAccounts.set(accountSlot, { slot: accountSlot, email: r.result, name: r.result });
+            }
             return r.result;
           }
         }
@@ -373,6 +379,9 @@ async function discoverTabs() {
         const slotMatch = tab.url.match(/\/u\/(\d+)/);
         const slot = slotMatch ? parseInt(slotMatch[1], 10) : 0;
         const email = await extractTabEmail(tab.id, "gemini", slot);
+        if (email && !isSystemEmail(email)) {
+          knownGoogleAccounts.set(slot, { slot, email, name: email });
+        }
         tabsList.push({
           tabId: tab.id,
           url: tab.url,
@@ -967,6 +976,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         type: "GENERATION_FAILED",
         data: { jobId, error }
       }));
+    }
+    sendResponse({ ack: true });
+    return true;
+  }
+
+  if (message.type === "TAB_INFO_PROACTIVE" || message.type === "TAB_EMAIL_DETECTED") {
+    const { target, email, accountSlot } = message.data || {};
+    if (sender?.tab?.id && email && !isSystemEmail(email)) {
+      tabEmailsCache.set(sender.tab.id, email);
+      if (target === "gemini") {
+        const slot = accountSlot !== undefined ? accountSlot : 0;
+        knownGoogleAccounts.set(slot, { slot, email, name: email });
+        console.log(`[MythicFrame BEI] Registered active email for slot ${slot}: ${email}`);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          discoverTabs().then(tabs => {
+            ws.send(JSON.stringify({
+              type: "tab_status_update",
+              data: {
+                tabs,
+                accounts: Array.from(knownGoogleAccounts.values())
+              }
+            }));
+          });
+        }
+      }
     }
     sendResponse({ ack: true });
     return true;

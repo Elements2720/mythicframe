@@ -1,3 +1,4 @@
+import { formatDisplayEmail, getIncognitoMode } from './privacyService';
 import { BEIConfig, BEITarget } from '../types';
 import { UnifiedGenerationParams } from './aiProviderService';
 import { assembleFullMythicPrompt } from './promptTemplates';
@@ -52,6 +53,8 @@ export interface BEITabDetail {
   active?: boolean;
 }
 
+export { formatDisplayEmail, getIncognitoMode };
+
 export interface BEIAccountDetail {
   slot: number;
   email: string;
@@ -61,8 +64,8 @@ export interface BEIAccountDetail {
 }
 
 export const DEFAULT_KNOWN_ACCOUNTS: BEIAccountDetail[] = [
-  { slot: 0, email: 'primary.account@example.com', name: 'Primary Account (Default)', tier: 'pro' },
-  { slot: 1, email: 'secondary.account@example.com', name: 'Account 2', tier: 'free' },
+  { slot: 0, email: '', name: 'Account 1 (Default)', tier: 'pro' },
+  { slot: 1, email: '', name: 'Account 2', tier: 'free' },
 ];
 
 const BEI_ACCOUNTS_KEY = 'mythic_bei_accounts';
@@ -73,7 +76,14 @@ export const getSavedBEIAccounts = (): BEIAccountDetail[] => {
       const saved = localStorage.getItem(BEI_ACCOUNTS_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Purge dummy example.com emails from previous sessions
+          return parsed.map((acc: BEIAccountDetail) => ({
+            ...acc,
+            email: (acc.email && !acc.email.includes('example.com')) ? acc.email : '',
+            name: (acc.name && !acc.name.includes('example.com')) ? acc.name : `Account ${acc.slot + 1}`
+          }));
+        }
       }
     } catch (e) {}
   }
@@ -169,9 +179,48 @@ export const checkBEIConnection = async (): Promise<BEIStatusResponse> => {
       if (resp.ok) {
         const data = await resp.json();
         let accounts = getSavedBEIAccounts();
+        let changed = false;
+
+        // Clean any accounts sent from bridge
         if (Array.isArray(data.accounts) && data.accounts.length > 0) {
-          accounts = data.accounts;
+          const validBridgeAccounts = data.accounts
+            .filter((a: any) => a && typeof a === 'object')
+            .map((a: any) => ({
+              slot: typeof a.slot === 'number' ? a.slot : 0,
+              email: (a.email && !a.email.includes('example.com')) ? a.email : '',
+              name: (a.name && !a.name.includes('example.com')) ? a.name : `Account ${(a.slot ?? 0) + 1}`,
+              tier: a.tier || 'pro'
+            }));
+          if (validBridgeAccounts.length > 0) {
+            accounts = validBridgeAccounts;
+            changed = true;
+          }
+        }
+
+        // Merge discovered emails directly from open tabs
+        if (Array.isArray(data.tabs)) {
+          for (const tab of data.tabs) {
+            if (tab.email && !tab.email.includes('example.com') && tab.target === 'gemini') {
+              const slot = tab.accountSlot ?? 0;
+              const idx = accounts.findIndex(a => a.slot === slot);
+              if (idx !== -1) {
+                if (accounts[idx].email !== tab.email) {
+                  accounts[idx] = { ...accounts[idx], email: tab.email, name: tab.email };
+                  changed = true;
+                }
+              } else {
+                accounts.push({ slot, email: tab.email, name: tab.email, tier: 'pro' });
+                changed = true;
+              }
+            }
+          }
+        }
+
+        if (changed) {
           setSavedBEIAccounts(accounts);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('mythic_bei_accounts_changed', { detail: accounts }));
+          }
         }
 
         return {

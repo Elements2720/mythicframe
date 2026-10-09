@@ -10,6 +10,7 @@ import { getOpenAIApiKey, setOpenAIApiKey, testOpenAIConnection } from '../../se
 import { getOpenCodeConfig, setOpenCodeConfig, testOpenCodeConnection, OpenCodeConfig } from '../../services/openCodeService';
 import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, BEIStatusResponse, DEFAULT_BEI_PORT } from '../../services/beiService';
 import { getBEIAccountQuota, resetBEISlotCooldown } from '../../services/quotaTrackerService';
+import { getIncognitoMode, setIncognitoMode, formatDisplayEmail } from '../../services/privacyService';
 import { APP_VERSION } from '../../constants';
 import { useLanguage } from '../../i18n/LanguageContext';
 
@@ -68,6 +69,7 @@ const Settings: React.FC<SettingsProps> = ({
   const [extensionPathCopied, setExtensionPathCopied] = useState(false);
   const [isOpeningTab, setIsOpeningTab] = useState(false);
   const [quotaRefreshKey, setQuotaRefreshKey] = useState(0);
+  const [isIncognito, setIsIncognito] = useState(() => getIncognitoMode());
 
   // Model Discovery State
   const [discoveredModels, setDiscoveredModels] = useState<AvailableModel[]>(() => {
@@ -76,6 +78,14 @@ const Settings: React.FC<SettingsProps> = ({
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
+  useEffect(() => {
+    const handleIncognito = (e: any) => {
+      setIsIncognito(typeof e?.detail === 'boolean' ? e.detail : getIncognitoMode());
+    };
+    window.addEventListener('mythic_incognito_mode_changed', handleIncognito);
+    return () => window.removeEventListener('mythic_incognito_mode_changed', handleIncognito);
+  }, []);
+
   const [isScanningModels, setIsScanningModels] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [selectedActiveModel, setSelectedActiveModel] = useState<string>(() => getSelectedModel());
@@ -1112,11 +1122,14 @@ const Settings: React.FC<SettingsProps> = ({
                                         t.target === beiConfigState.target && 
                                         (beiConfigState.target !== 'gemini' || (t.accountSlot ?? 0) === (beiConfigState.accountSlot ?? 0))
                                      );
-                                     return activeTab?.email ? (
-                                        <span className="text-emerald-400 font-semibold">{activeTab.email}</span>
+                                     const acc = beiStatus?.accounts?.find(a => a.slot === (beiConfigState.accountSlot ?? 0));
+                                     const rawEmail = activeTab?.email || acc?.email;
+                                     const displayEmail = rawEmail ? formatDisplayEmail(rawEmail, isIncognito) : null;
+                                     return displayEmail ? (
+                                        <span className="text-emerald-400 font-semibold">{displayEmail}</span>
                                      ) : (
                                         <span className="text-amber-400/90 italic">
-                                           Tab not open yet (Will auto-open in Chrome on generation)
+                                           Slot {beiConfigState.accountSlot ?? 0} (Tab auto-opens in Chrome on generation)
                                         </span>
                                      );
                                   })()}
@@ -1131,6 +1144,42 @@ const Settings: React.FC<SettingsProps> = ({
                          >
                             <i className={`fa-solid ${isOpeningTab ? 'fa-spinner fa-spin' : 'fa-arrow-up-right-from-square'}`} />
                             {isOpeningTab ? 'Opening...' : 'Open Tab in Chrome'}
+                         </button>
+                      </div>
+
+                      {/* Incognito / Streamer Mode Card */}
+                      <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5 flex items-center justify-between gap-4">
+                         <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                               <i className={`fa-solid ${isIncognito ? 'fa-eye-slash text-amber-400' : 'fa-eye text-cyan-400'} text-xs`} />
+                               <span className="text-xs font-bold text-slate-200">Incognito / Streamer Mode</span>
+                               <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                                  isIncognito 
+                                     ? 'bg-amber-950/60 text-amber-300 border-amber-500/40' 
+                                     : 'bg-slate-900 text-slate-400 border-slate-700'
+                               }`}>
+                                  {isIncognito ? 'MASKED' : 'VISIBLE'}
+                               </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400">
+                               Masks Google account emails across the studio UI (e.g. <code>{formatDisplayEmail('example.creator@gmail.com', true)}</code>) for privacy during streams and video recordings. Real connected accounts remain fully functional.
+                            </p>
+                         </div>
+                         <button
+                            type="button"
+                            onClick={() => {
+                               const next = !isIncognito;
+                               setIncognitoMode(next);
+                               setIsIncognito(next);
+                            }}
+                            className={`px-3 py-1.5 rounded text-xs font-bold transition-all border shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                               isIncognito
+                                  ? 'bg-amber-600 hover:bg-amber-500 text-white border-amber-400 shadow-sm'
+                                  : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700'
+                            }`}
+                         >
+                            <i className={`fa-solid ${isIncognito ? 'fa-toggle-on text-sm' : 'fa-toggle-off text-sm'}`} />
+                            <span>{isIncognito ? 'Enabled' : 'Disabled'}</span>
                          </button>
                       </div>
 

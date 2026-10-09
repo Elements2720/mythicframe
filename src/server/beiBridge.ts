@@ -16,6 +16,7 @@ export interface BEIAccountInfo {
   slot: number;
   email: string;
   name?: string;
+  tier?: 'free' | 'pro';
 }
 
 export interface BEIBridgeStatus {
@@ -44,10 +45,56 @@ export class BEIBridgeServer {
   private wss: WebSocketServer | null = null;
   private extensionSocket: WebSocket | null = null;
   private knownTabs: BEITabInfo[] = [];
-  private knownAccounts: BEIAccountInfo[] = [
-    { slot: 0, email: 'primary.account@example.com', name: 'Primary Account (Default)' },
-    { slot: 1, email: 'secondary.account@example.com', name: 'Account 2' },
-  ];
+  private knownAccounts: BEIAccountInfo[] = [];
+
+  private syncKnownAccounts(incomingAccounts?: any[]) {
+    if (Array.isArray(incomingAccounts) && incomingAccounts.length > 0) {
+      for (const acc of incomingAccounts) {
+        if (acc && typeof acc.slot === 'number') {
+          const email = (acc.email && !acc.email.includes('example.com')) ? acc.email : '';
+          const idx = this.knownAccounts.findIndex(a => a.slot === acc.slot);
+          if (idx !== -1) {
+            this.knownAccounts[idx] = {
+              ...this.knownAccounts[idx],
+              email: email || this.knownAccounts[idx].email,
+              name: (acc.name && !acc.name.includes('example.com')) ? acc.name : (email || this.knownAccounts[idx].name),
+              tier: acc.tier || this.knownAccounts[idx].tier
+            };
+          } else {
+            this.knownAccounts.push({
+              slot: acc.slot,
+              email,
+              name: (acc.name && !acc.name.includes('example.com')) ? acc.name : (email || `Account ${acc.slot + 1}`),
+              tier: acc.tier || 'pro'
+            });
+          }
+        }
+      }
+    }
+
+    // Always extract and merge emails discovered from live tabs
+    for (const tab of this.knownTabs) {
+      if (tab.email && !tab.email.includes('example.com') && tab.target === 'gemini') {
+        const slot = tab.accountSlot ?? 0;
+        const idx = this.knownAccounts.findIndex(a => a.slot === slot);
+        if (idx !== -1) {
+          this.knownAccounts[idx].email = tab.email;
+          if (!this.knownAccounts[idx].name || this.knownAccounts[idx].name.includes('Account')) {
+            this.knownAccounts[idx].name = tab.email;
+          }
+        } else {
+          this.knownAccounts.push({
+            slot,
+            email: tab.email,
+            name: tab.email,
+            tier: 'pro'
+          });
+        }
+      }
+    }
+
+    this.knownAccounts.sort((a, b) => a.slot - b.slot);
+  }
   private pendingJobs = new Map<string, PendingJob>();
   private lastHeartbeat = Date.now();
   private extensionVersion = '1.2.4';
@@ -279,9 +326,7 @@ export class BEIBridgeServer {
       if (Array.isArray(data?.tabs)) {
         this.knownTabs = data.tabs;
       }
-      if (Array.isArray(data?.accounts) && data.accounts.length > 0) {
-        this.knownAccounts = data.accounts;
-      }
+      this.syncKnownAccounts(data?.accounts);
       console.log(`[MythicFrame BEI Bridge] Extension registered. Discovered tabs: ${this.knownTabs.length}, Accounts: ${this.knownAccounts.length}`);
       return;
     }
@@ -305,9 +350,7 @@ export class BEIBridgeServer {
           this.knownTabs.push(data);
         }
       }
-      if (Array.isArray(data?.accounts) && data.accounts.length > 0) {
-        this.knownAccounts = data.accounts;
-      }
+      this.syncKnownAccounts(data?.accounts);
       return;
     }
 

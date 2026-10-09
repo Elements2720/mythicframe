@@ -43,6 +43,7 @@ export default function StudioLayout({ engine }: { engine: any }) {
   const [isResizingRight, setIsResizingRight] = useState(false);
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const currentWidthRef = useRef(rightPanelWidth);
+  const dragStartXRef = useRef<{ startX: number; startWidth: number }>({ startX: 0, startWidth: 320 });
 
   useEffect(() => {
     currentWidthRef.current = rightPanelWidth;
@@ -52,7 +53,8 @@ export default function StudioLayout({ engine }: { engine: any }) {
      if (!isResizingRight) return;
 
      const handleMouseMove = (e: MouseEvent) => {
-        const newWidth = Math.max(200, Math.min(800, window.innerWidth - e.clientX));
+        const deltaX = dragStartXRef.current.startX - e.clientX;
+        const newWidth = Math.max(200, Math.min(800, dragStartXRef.current.startWidth + deltaX));
         currentWidthRef.current = newWidth;
         if (rightPanelRef.current) {
            rightPanelRef.current.style.width = `${newWidth}px`;
@@ -172,7 +174,7 @@ export default function StudioLayout({ engine }: { engine: any }) {
 
       {!isGachaMode && !engine.isRightMinimized && (
          <div 
-            onMouseDown={(e) => { e.preventDefault(); setIsResizingRight(true); }} 
+            onMouseDown={(e) => { e.preventDefault(); dragStartXRef.current = { startX: e.clientX, startWidth: currentWidthRef.current }; setIsResizingRight(true); }} 
             className="w-1.5 bg-slate-900 hover:bg-purple-600 cursor-ew-resize z-[510] transition-colors"
          />
       )}
