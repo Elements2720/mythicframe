@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { fileURLToPath } from "url";
 
 const configPath = path.join(os.homedir(), ".gemini", "config", "mcp_config.json");
 
@@ -21,10 +22,9 @@ try {
   }
 
   const serverConfig = {
-    command: "npx",
+    command: "node",
     args: [
-      "tsx",
-      path.resolve(process.cwd(), "..", "src", "mcp", "index.ts")
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "index.js")
     ],
     env: {
       NODE_ENV: "production"

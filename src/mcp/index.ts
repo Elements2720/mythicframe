@@ -32,11 +32,36 @@ const server = new Server(
 
 import fs from "fs";
 import path from "path";
+import { spawn } from "child_process";
+import {
+  checkMythicStatus,
+  launchMythicServer,
+  openBEITab,
+  generateWithBEI
+} from "./beiClient.js";
 
 // Helper to format output instructions for image generation
 const executeImageGeneration = async (promptStr: string, aspectRatio: string = "1:1", toolName: string, apiKey?: string) => {
-    if (!apiKey) {
-        throw new Error("Missing geminiApiKey. You MUST ask the user to provide their Gemini API key in the chat (link: https://ai.google.dev/gemini-api/docs/api-key).");
+    const effectiveKey = apiKey || process.env.GEMINI_API_KEY;
+    if (!effectiveKey) {
+        // Fallback: Check if BEI extension bridge is available
+        const status = await checkMythicStatus();
+        if (status.beiConnected && status.tabs.some(t => t.target === 'gemini' || t.target === 'chatgpt')) {
+            const beiRes = await generateWithBEI({
+                prompt: promptStr,
+                aspectRatio,
+                target: 'gemini'
+            });
+            const formattedPath = beiRes.filePath.replace(/\\/g, '/');
+            return `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nAgent, the image has been generated using Browser Extension Interface (BEI) with active Google Gemini session and saved here: ${beiRes.filePath}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${path.basename(beiRes.filePath)}](file:///${formattedPath}) so they can easily open it!`;
+        }
+
+        throw new Error(
+            "Missing geminiApiKey and no active BEI browser session connected.\n" +
+            "Options to generate:\n" +
+            "1. Pass 'geminiApiKey' or set GEMINI_API_KEY in .env.local (link: https://ai.google.dev/gemini-api/docs/api-key).\n" +
+            "2. Ensure MythicFrame is running (use 'mythic_launch_server') and open Google Gemini in Chrome with the BEI extension."
+        );
     }
     let aspectForGemini = "1:1";
     const ratio = aspectRatio.split(" ")[0];
@@ -45,7 +70,7 @@ const executeImageGeneration = async (promptStr: string, aspectRatio: string = "
     if (ratio === "3:4") { aspectForGemini = "3:4"; }
     if (ratio === "4:3") { aspectForGemini = "4:3"; }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${effectiveKey}`;
     const body = {
       instances: [{ prompt: promptStr }],
       parameters: { sampleCount: 1, aspectRatio: aspectForGemini }
@@ -73,7 +98,7 @@ const executeImageGeneration = async (promptStr: string, aspectRatio: string = "
         const filePath = path.join(outDir, fileName);
 
         fs.writeFileSync(filePath, arrayBuffer);
-        return `IMAGE GENERATED SUCCESSFULLY!\n\nAgent, the image has been generated using Gemini Imagen 3 and saved here: ${filePath}\n\nPlease embed this image for the user, AND provide a clickable markdown link [filename](file:///${filePath.replace(/\\\\/g, '/')}) so they can easily open it!`;
+        return `IMAGE GENERATED SUCCESSFULLY!\n\nAgent, the image has been generated using Gemini Imagen 3 and saved here: ${filePath}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${filePath.replace(/\\\\/g, '/')}) so they can easily open it!`;
     } catch (e: any) {
         throw new Error(`Failed to generate Gemini image: ${e.message}`);
     }
@@ -254,12 +279,78 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: "launch_web_ui",
-        description: "Manually launches the MythicFrame web UI on localhost port 5777 if the auto-launch failed.",
+        name: "mythic_status",
+        description: "Checks whether MythicFrame web server (localhost:3488) and BEI browser bridge (port 58925) are running, and returns active browser tabs, logged-in Google/ChatGPT accounts, and available image engines.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      },
+      {
+        name: "mythic_launch_server",
+        description: "Auto-launches the MythicFrame server (web UI & BEI bridge on port 3488 and 58925) if it is currently offline.",
         inputSchema: {
           type: "object",
           properties: {
-            geminiApiKey: { type: "string" },},
+            port: { type: "number", description: "Port number (default 3488)" }
+          },
+          required: []
+        }
+      },
+      {
+        name: "mythic_open_tab",
+        description: "Opens or focuses a Google Gemini or ChatGPT tab in Chrome via BEI so the user can log in with their browser account.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            target: { type: "string", enum: ["gemini", "chatgpt"], description: "Browser target (default 'gemini')" },
+            accountSlot: { type: "number", description: "Account slot (default 0)" }
+          },
+          required: []
+        }
+      },
+      {
+        name: "mythic_bei_generate",
+        description: "Generates an image via the Browser Extension Interface (BEI) using active Google Gemini or ChatGPT browser sessions with ZERO API key required.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            prompt: { type: "string", description: "Image generation prompt" },
+            aspectRatio: { type: "string", description: "'1:1', '16:9', '9:16', '3:4', or '4:3' (default '1:1')" },
+            target: { type: "string", enum: ["gemini", "chatgpt"], description: "AI service target (default 'gemini')" },
+            accountSlot: { type: "number", description: "Account slot index (default 0)" },
+            images: { type: "array", items: { type: "string" }, description: "Array of reference image paths or base64 data URIs" },
+            style: { type: "string", description: "Optional art style snippet" },
+            timeoutSeconds: { type: "number", description: "Timeout in seconds (default 120)" }
+          },
+          required: ["prompt"]
+        }
+      },
+      {
+        name: "mythic_smart_generate",
+        description: "Unified generator for MythicFrame that intelligently discovers and routes to the best available engine (BEI browser extension or Gemini API key).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            prompt: { type: "string", description: "Image generation prompt" },
+            engine: { type: "string", enum: ["auto", "bei", "gemini-api", "prompt-only"], description: "Engine route (default 'auto')" },
+            geminiApiKey: { type: "string", description: "Optional Gemini API key if using gemini-api route" },
+            aspectRatio: { type: "string", description: "'1:1', '16:9', '9:16', '3:4', '4:3'" },
+            style: { type: "string", description: "Art style snippet" },
+            images: { type: "array", items: { type: "string" }, description: "Optional reference images" },
+            target: { type: "string", enum: ["gemini", "chatgpt"] },
+            accountSlot: { type: "number" }
+          },
+          required: ["prompt"]
+        }
+      },
+      {
+        name: "launch_web_ui",
+        description: "Manually launches the MythicFrame web UI on localhost port 3488 if the auto-launch failed.",
+        inputSchema: {
+          type: "object",
+          properties: {},
           required: [],
         },
       }
@@ -369,21 +460,138 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       return { content: [{ type: "text", text: resultsLog }] };
     } 
-    else if (name === "launch_web_ui") {
-      try {
-          const projectRoot = "d:\\\\GeminiWeb\\\\mythicframe";
-          const devServer = spawn("cmd.exe", ["/c", "start", "/MIN", "npm.cmd", "run", "dev", "--", "--port", "5777"], {
-              cwd: projectRoot,
-              detached: true,
-              stdio: "ignore",
-              windowsHide: false,
-              env: { ...process.env, NODE_ENV: "development" }
-          });
-          devServer.unref();
-          return { content: [{ type: "text", text: "Successfully launched MythicFrame localhost on port 5777!" }] };
-      } catch(e: any) {
-          throw new Error(`Failed to launch localhost: ${e.message}`);
+    else if (name === "mythic_status") {
+      const status = await checkMythicStatus();
+      const accountsList = status.accounts && status.accounts.length > 0
+        ? status.accounts.map(a => `• Slot ${a.slot}: ${a.email || 'Google Account'}`).join('\n')
+        : '• No accounts discovered yet in Chrome';
+      const tabsList = status.tabs && status.tabs.length > 0
+        ? status.tabs.map(t => `• Tab #${t.tabId} (${t.target}): ${t.title || t.url} [${t.email || 'Active'}]`).join('\n')
+        : '• No active Gemini/ChatGPT tabs open in Chrome';
+
+      const responseText = 
+        `⚡ MYTHICFRAME ENGINE STATUS\n\n` +
+        `Web Server: ${status.serverRunning ? `ONLINE (http://localhost:3488)` : `OFFLINE (use 'mythic_launch_server')`}\n` +
+        `BEI Extension Bridge: ${status.bridgeRunning ? `ONLINE (Port ${status.bridgePort})` : `OFFLINE`}\n` +
+        `BEI Extension Client: ${status.beiConnected ? `CONNECTED` : `NOT CONNECTED (open Chrome tab with extension)`}\n` +
+        `Gemini API Key: ${status.hasGeminiApiKey ? `CONFIGURED` : `NOT CONFIGURED (optional with BEI)`}\n` +
+        `Available Generation Engines: ${status.availableEngines.join(', ')}\n\n` +
+        `Discovered Accounts:\n${accountsList}\n\n` +
+        `Discovered Tabs:\n${tabsList}\n\n` +
+        `Summary: ${status.summary}`;
+
+      return { content: [{ type: "text", text: responseText }] };
+    }
+    else if (name === "mythic_launch_server") {
+      const res = await launchMythicServer();
+      return { content: [{ type: "text", text: res.message }] };
+    }
+    else if (name === "mythic_open_tab") {
+      const target = args.target || 'gemini';
+      const slot = args.accountSlot ?? 0;
+      const res = await openBEITab(target, slot);
+      return { content: [{ type: "text", text: res.message }] };
+    }
+    else if (name === "mythic_bei_generate") {
+      let promptToSend = args.prompt;
+      if (args.style) {
+        const built = buildIllustrationPrompt(args.prompt, defaultGameContext, args.style, defaultBgConfig, []);
+        promptToSend = built.textPrompt;
       }
+      const beiRes = await generateWithBEI({
+        prompt: promptToSend,
+        aspectRatio: args.aspectRatio || '1:1',
+        target: args.target || 'gemini',
+        accountSlot: args.accountSlot ?? 0,
+        images: args.images || [],
+        timeoutSeconds: args.timeoutSeconds || 120
+      });
+      const formattedPath = beiRes.filePath.replace(/\\/g, '/');
+      const fileName = path.basename(beiRes.filePath);
+      return {
+        content: [{
+          type: "text",
+          text: `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nImage saved to: ${beiRes.filePath}\nJob ID: ${beiRes.jobId}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${formattedPath}) so they can easily open it!`
+        }]
+      };
+    }
+    else if (name === "mythic_smart_generate") {
+      const engineChoice = args.engine || 'auto';
+      let promptToSend = args.prompt;
+      if (args.style) {
+        const built = buildIllustrationPrompt(args.prompt, defaultGameContext, args.style, defaultBgConfig, []);
+        promptToSend = built.textPrompt;
+      }
+
+      if (engineChoice === 'prompt-only') {
+        return { content: [{ type: "text", text: formatTextInstruction(promptToSend) }] };
+      }
+
+      if (engineChoice === 'bei') {
+        const beiRes = await generateWithBEI({
+          prompt: promptToSend,
+          aspectRatio: args.aspectRatio || '1:1',
+          target: args.target || 'gemini',
+          accountSlot: args.accountSlot ?? 0,
+          images: args.images || []
+        });
+        const formattedPath = beiRes.filePath.replace(/\\/g, '/');
+        const fileName = path.basename(beiRes.filePath);
+        return {
+          content: [{
+            type: "text",
+            text: `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nImage saved to: ${beiRes.filePath}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${formattedPath}) so they can easily open it!`
+          }]
+        };
+      }
+
+      if (engineChoice === 'gemini-api') {
+        const resText = await executeImageGeneration(promptToSend, args.aspectRatio || '1:1', 'mythic_smart', args.geminiApiKey);
+        return { content: [{ type: "text", text: resText }] };
+      }
+
+      // Auto routing: probe status
+      const status = await checkMythicStatus();
+      if (status.beiConnected && status.tabs.some(t => t.target === 'gemini' || t.target === 'chatgpt')) {
+        const beiRes = await generateWithBEI({
+          prompt: promptToSend,
+          aspectRatio: args.aspectRatio || '1:1',
+          target: args.target || 'gemini',
+          accountSlot: args.accountSlot ?? 0,
+          images: args.images || []
+        });
+        const formattedPath = beiRes.filePath.replace(/\\/g, '/');
+        const fileName = path.basename(beiRes.filePath);
+        return {
+          content: [{
+            type: "text",
+            text: `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nImage saved to: ${beiRes.filePath}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${formattedPath}) so they can easily open it!`
+          }]
+        };
+      }
+
+      if (args.geminiApiKey || status.hasGeminiApiKey) {
+        const resText = await executeImageGeneration(promptToSend, args.aspectRatio || '1:1', 'mythic_smart', args.geminiApiKey);
+        return { content: [{ type: "text", text: resText }] };
+      }
+
+      // Neither engine ready: return structured diagnostic message
+      return {
+        content: [{
+          type: "text",
+          text: `CANNOT GENERATE: NO ENGINE READY\n\n` +
+                `Status summary:\n${status.summary}\n\n` +
+                `Options to proceed:\n` +
+                `1. Zero-Key BEI Route: Run 'mythic_launch_server', then open Chrome and log in at gemini.google.com.\n` +
+                `2. Gemini API Route: Provide 'geminiApiKey' or set it in .env.local.\n` +
+                `3. Prompt-only: Pass engine: 'prompt-only' to view the optimized generation prompt.`
+        }],
+        isError: true
+      };
+    }
+    else if (name === "launch_web_ui") {
+      const res = await launchMythicServer();
+      return { content: [{ type: "text", text: res.message }] };
     }
     else if (name === "prepare_ui_reimagine_prompt") {
       result = buildUIReimaginePrompt(args.prompt, defaultGameContext, args.styleSnippet || "", true, args.uiMood, undefined, undefined, args.uiArchetype, args.uiMaterial, false);
@@ -444,8 +652,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   }
 });
-
-import { spawn } from "child_process";
 
 async function run() {
   const transport = new StdioServerTransport();
