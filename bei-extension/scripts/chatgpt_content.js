@@ -141,6 +141,22 @@
     return clicked;
   }
 
+  function isChatGPTActivelyGenerating() {
+    for (const sel of STOP_BUTTON_SELECTORS) {
+      try {
+        const btn = document.querySelector(sel);
+        if (btn && btn.offsetParent !== null && !btn.disabled) return true;
+      } catch (e) {}
+    }
+    const allButtons = document.querySelectorAll('button, [role="button"]');
+    for (const btn of allButtons) {
+      if (isStopButtonElement(btn) && btn.offsetParent !== null && !btn.disabled) return true;
+    }
+    const streaming = document.querySelector('.result-streaming, [data-testid*="stop"], [aria-label*="Stop generating" i]');
+    if (streaming && streaming.offsetParent !== null) return true;
+    return false;
+  }
+
   let activeRunningJobId = null;
   let activeCancelHandler = null;
 
@@ -447,26 +463,38 @@
     };
 
     const checkInterval = setInterval(async () => {
-      if (imageDelivered || jobCancelled) {
-        clearInterval(checkInterval);
-        return;
-      }
+      try {
+        if (imageDelivered || jobCancelled) {
+          clearInterval(checkInterval);
+          return;
+        }
 
-      const elapsed = Date.now() - startTime;
-      if (elapsed > timeoutMs) {
-        clearInterval(checkInterval);
-        activeRunningJobId = null;
-        activeCancelHandler = null;
-        if (keepAlivePort) keepAlivePort.disconnect();
-        clearComposer();
-        try {
-          chrome.runtime.sendMessage({
-            type: 'GENERATION_FAILED',
-            data: { jobId, error: `Generation timed out after ${timeoutSeconds}s waiting for ChatGPT image.` }
-          });
-        } catch (e) {}
-        return;
-      }
+        const elapsed = Date.now() - startTime;
+        const isGenerating = isChatGPTActivelyGenerating();
+
+        if (isGenerating && elapsed > timeoutMs) {
+          // Never abort while ChatGPT is actively generating or streaming!
+          if (Math.floor(elapsed / 1000) % 3 === 0) {
+            reportProgress(jobId, 'generating', `ChatGPT is still generating (active in browser)... (${Math.round(elapsed/1000)}s)`);
+          }
+        } else if (elapsed > timeoutMs) {
+          clearInterval(checkInterval);
+          activeRunningJobId = null;
+          activeCancelHandler = null;
+          if (keepAlivePort) keepAlivePort.disconnect();
+          clearComposer();
+          try {
+            chrome.runtime.sendMessage({
+              type: 'GENERATION_FAILED',
+              data: { jobId, error: `Generation timed out after ${timeoutSeconds}s waiting for ChatGPT image.` }
+            });
+          } catch (e) {}
+          return;
+        }
+
+        if (isGenerating && Math.floor(elapsed / 1000) % 3 === 0) {
+          reportProgress(jobId, 'generating', `ChatGPT is generating image... (${Math.round(elapsed/1000)}s)`);
+        }
 
       // 1. Check for newly generated images
       const allImages = protocol.getAllImagesRecursively(document.body);
@@ -574,7 +602,10 @@
           }
         }
       }
-    }, 1000);
+    } catch (err) {
+      console.error('[MythicFrame BEI] ChatGPT checkInterval non-fatal polling error:', err);
+    }
+  }, 1000);
   }
 
   function extractChatGPTAccountEmail() {
