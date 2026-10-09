@@ -12,8 +12,8 @@ import {
   ChibiConfig,
   PoseData,
   MapGridConfig,
-  SpriteStripConfig,
-  UIMode
+  UIMode,
+  SpriteStripConfig
 } from "../types.js";
 import { CHIBI_STYLE_CONFIG } from "../constants/gacha.js";
 import { DEFAULT_BACKGROUND_CONFIG } from "../constants/backgrounds.js";
@@ -739,33 +739,29 @@ export const buildMapGridPrompt = (
 };
 
 export const buildAnimationStripPrompt = (
-  userPrompt: string,
-  stripConfig: SpriteStripConfig,
+  prompt: string,
   gameContext: GameContext,
   styleSnippet: string,
   bgConfig: BackgroundConfig,
+  stripConfig: SpriteStripConfig,
   referenceAssets: ReferenceAsset[],
-  chibiProportion?: ChibiProportion,
+  chibiProportion?: string,
   chibiConfig?: ChibiConfig
-): { textPrompt: string; referenceParts: { text?: string }[] } => {
-  let fullPrompt = `SPRITE SHEET ANIMATION SEQUENCE GENERATION TASK.\n`;
-  fullPrompt += `OBJECTIVE: Generate a single cohesive image containing multiple sequential frames of the SAME character performing a specific animation action.\n\n`;
+): { textPrompt: string; referenceParts: any[] } => {
+  let fullPrompt = `[MODE: SPRITE ANIMATION STRIP]\n`;
+  fullPrompt += `Generate a SINGLE, WIDE rectangular image containing exactly ${stripConfig.frameCount} evenly-spaced animation frames of the same character in a horizontal row.\n\n`;
 
-  // Game Context
-  if (gameContext.setting || gameContext.tone || gameContext.visualConstraints) {
-    fullPrompt += `GAME CONTEXT:\n`;
-    if (gameContext.setting) fullPrompt += `Setting: ${gameContext.setting}\n`;
-    if (gameContext.tone) fullPrompt += `Tone: ${gameContext.tone}\n`;
-    if (gameContext.visualConstraints) fullPrompt += `Constraints: ${gameContext.visualConstraints}\n`;
-    fullPrompt += `\n`;
-  }
+  // Core character
+  fullPrompt += `CHARACTER METADATA:\n`;
+  fullPrompt += `Core Identity: ${prompt}\n`;
+  fullPrompt += `Game Setting: ${gameContext.setting}. Theme: ${gameContext.tone}.\n\n`;
 
-  // Action & Subject
-  fullPrompt += `ACTION TO ANIMATE: ${stripConfig.action}\n`;
-  fullPrompt += `DIRECTION FACING: facing ${stripConfig.direction}\n`;
-  fullPrompt += `SUBJECT DESCRIPTION: ${userPrompt}\n\n`;
-
-  let marginText = "standard spacing";
+  // Action and strip rules
+  fullPrompt += `ANIMATION RULES:\n`;
+  fullPrompt += `Action: ${stripConfig.action}\n`;
+  fullPrompt += `Direction: The character MUST face ${stripConfig.direction} in every frame.\n`;
+  
+  let marginText = "excessive empty whitespace between frames, very far apart";
   if (stripConfig.frameMargin) {
     if (stripConfig.frameMargin === 'tight') marginText = "very tight spacing, almost touching";
     if (stripConfig.frameMargin === 'standard') marginText = "even spacing";
@@ -896,22 +892,25 @@ export const assembleFullMythicPrompt = (params: AssemblePromptParams): Assemble
     const built = buildPoseStudioPrompt(params.prompt, gameContext, styleSnippet, bgConfig, referenceAssets, params.poseData, params.safeZone);
     textPrompt = built.textPrompt;
     referenceParts = built.referenceParts;
-  } else if (mode === 'map-grid' && params.mapGridConfig) {
-    textPrompt = buildMapGridPrompt(params.prompt, gameContext, styleSnippet, params.mapGridConfig);
-  } else if (mode === 'sprite-strip') {
-    const stripConfig: SpriteStripConfig = params.spriteStripConfig || {
-      prompt: params.prompt,
-      action: 'walking',
-      frameCount: 4,
-      direction: 'left'
-    };
-    const built = buildAnimationStripPrompt(params.prompt, stripConfig, gameContext, styleSnippet, bgConfig, referenceAssets, params.chibiProportion, params.chibiConfig);
-    textPrompt = built.textPrompt;
-    referenceParts = built.referenceParts;
   } else if (mode === 'ui-scene') {
     const built = buildUIScenePrompt(params.prompt, gameContext, styleSnippet, referenceAssets);
     textPrompt = built.textPrompt;
     referenceParts = built.referenceParts;
+  } else if (mode === 'sprite-strip' && params.spriteStripConfig) {
+    const built = buildAnimationStripPrompt(
+      params.prompt,
+      gameContext,
+      styleSnippet,
+      bgConfig,
+      params.spriteStripConfig,
+      referenceAssets,
+      params.chibiProportion,
+      params.chibiConfig
+    );
+    textPrompt = built.textPrompt;
+    referenceParts = built.referenceParts;
+  } else if (mode === 'map-grid' && params.mapGridConfig) {
+    textPrompt = buildMapGridPrompt(params.prompt, gameContext, styleSnippet, params.mapGridConfig);
   } else {
     const built = buildIllustrationPrompt(
       params.prompt,

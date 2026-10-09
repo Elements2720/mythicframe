@@ -1,7 +1,7 @@
 
 // Service for interacting with Gemini API
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { GenerationModel, ImageSize, AspectRatio, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, AIConfig, PoseData, MapGridConfig, AvailableModel } from "../types";
+import { GenerationModel, ImageSize, AspectRatio, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, AIConfig, PoseData, MapGridConfig, AvailableModel, SpriteStripConfig } from "../types";
 import { 
   buildIllustrationPrompt, 
   buildFramePrompt,
@@ -15,7 +15,9 @@ import {
   buildPoseStudioPrompt,
   buildMapGridPrompt,
   buildSpriteSheetPromptsPrompt,
-  buildSpriteSheetAnimationPromptsPrompt
+  buildSpriteSheetAnimationPromptsPrompt,
+  buildAnimationStripPrompt,
+  buildUIScenePrompt
 } from "./promptTemplates";
 import { optimizeBase64Image, blobUrlToBase64 } from "../utils/imageUtils";
 import { DEFAULT_BACKGROUND_CONFIG } from "../constants";
@@ -387,6 +389,85 @@ export const generateStyleExample = async (snippet: string, subject?: string): P
   return base64Image;
 };
 
+export const suggestAttackAction = async (charDesc: string, frameCount: number, base64Image?: string): Promise<{ action: string }> => {
+  const ai = getClient();
+  let parts: any[] = [];
+  
+  if (base64Image) {
+     const optimizedInput = await optimizeBase64Image(base64Image, 512, 0.7);
+     const cleanBase64 = base64ImageToBase64(optimizedInput);
+     const mimeType = getMimeType(optimizedInput);
+     parts.push({ inlineData: { mimeType: mimeType, data: cleanBase64 } });
+  }
+
+  const prompt = `Analyze the character description (and image if provided). Identify any weapons they might be holding or are described as having. Based on that weapon (or their hands/magic if unarmed), suggest a highly specific, logical attack animation prompt for a sprite sheet. 
+Crucially, describe the progression of the animation step-by-step across EXACTLY ${frameCount} frames, moving from left to right (e.g., from idle windup, to strike, to follow-through).
+DO NOT use the word "or" in your suggestions. Be absolute and definitive in EACH frame's description. You MUST describe exactly ${frameCount} consecutive frames (Frame 1 to Frame ${frameCount}).
+Character Description: ${charDesc}
+Examples for Sword (4 frames): "Animation sequence: Frame 1 idle stance, Frame 2 raising sword back for strike, Frame 3 swinging sword in intense downward arc, Frame 4 follow-through and recovering"
+Example for Spear/Trident (4 frames): "Animation sequence: Frame 1 idle stance holding weapon, Frame 2 pulling weapon back to thrust, Frame 3 violently thrusting weapon forward, Frame 4 returning to idle stance"
+Example for Bow (4 frames): "Animation sequence: Frame 1 holding bow down, Frame 2 knocking arrow, Frame 3 drawing bowstring fully back, Frame 4 releasing arrow"
+Return only the action string in the JSON payload.`;
+
+  parts.push({ text: prompt });
+
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+    model: getModelName('gemini-3.8-flash'),
+    contents: { parts },
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          action: { type: Type.STRING }
+        }
+      }
+    }
+  }));
+
+  const text = response.text;
+  if (!text) return { action: "attacking" };
+  return JSON.parse(text);
+};
+
+export const analyzeCharacterDesign = async (base64Image: string): Promise<{ charDesc: string, weapon: string, action: string }> => {
+  const ai = getClient();
+  const prompt = `Analyze this character reference image. Extract three things for an animation prompt:
+1. charDesc: A short, concise visual description of the character's physical appearance and clothing (e.g. "red-haired knight in silver armor"). Keep it simple.
+2. weapon: Any weapon or prop they are holding. If none, write "none".
+3. action: A plausible action they could be performing based on the image (e.g. "running cycle", "attacking with sword", "idle breathing").`;
+  
+  const optimizedInput = await optimizeBase64Image(base64Image, 512, 0.7);
+  const cleanBase64 = base64ImageToBase64(optimizedInput);
+  const mimeType = getMimeType(optimizedInput);
+
+  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+    model: getModelName('gemini-3.8-flash'),
+    contents: {
+      parts: [
+        { inlineData: { mimeType: mimeType, data: cleanBase64 } },
+        { text: prompt }
+      ]
+    },
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          charDesc: { type: Type.STRING },
+          weapon: { type: Type.STRING },
+          action: { type: Type.STRING }
+        },
+        required: ["charDesc", "weapon", "action"]
+      }
+    }
+  }));
+
+  const responseText = response.text;
+  if (!responseText) throw new Error("No analysis returned");
+  return JSON.parse(responseText);
+};
+
 export const generateIllustration = async (
   prompt: string,
   model: string,
@@ -410,7 +491,8 @@ export const generateIllustration = async (
   viewpoint?: string,
   noCharacters?: boolean,
   framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only',
-  seed?: number | null
+  seed?: number | null,
+  spriteStripConfig?: SpriteStripConfig
 ): Promise<{ image: string; metadata: any }> => {
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
@@ -431,8 +513,16 @@ export const generateIllustration = async (
      const built = buildPoseStudioPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, poseData, safeZone);
      finalPrompt = built.textPrompt;
      referenceParts = built.referenceParts;
+  } else if (mode === 'ui-scene') {
+     const built = buildUIScenePrompt(prompt, gameContext, styleSnippet, referenceAssets);
+     finalPrompt = built.textPrompt;
+     referenceParts = built.referenceParts;
   } else if (mode === 'map-grid' && mapGridConfig) {
      finalPrompt = buildMapGridPrompt(prompt, gameContext, styleSnippet, mapGridConfig);
+  } else if (mode === 'sprite-strip' && spriteStripConfig) {
+     const built = buildAnimationStripPrompt(prompt, gameContext, styleSnippet, bgConfig, spriteStripConfig, referenceAssets, chibiProportion, chibiConfig);
+     finalPrompt = built.textPrompt;
+     referenceParts = built.referenceParts;
   } else {
      const built = buildIllustrationPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone, continuityFlags, chibiProportion, chibiConfig, viewpoint, noCharacters, framing);
      finalPrompt = built.textPrompt;

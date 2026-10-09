@@ -1,5 +1,5 @@
 
-export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'illustration' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize' | 'frame' | 'background' | 'fullcard' | 'gacha' | 'ui-reimagine' | 'style-library' | 'pose-studio' | 'map-grid' | 'sprite-sheet' | 'batch' | 'downloads' | 'quota' | 'sprite-strip' | 'ui-scene';
+export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'illustration' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize' | 'frame' | 'background' | 'fullcard' | 'gacha' | 'ui-reimagine' | 'ui-scene' | 'style-library' | 'pose-studio' | 'map-grid' | 'sprite-sheet' | 'sprite-strip' | 'batch' | 'downloads' | 'quota';
 
 export interface BatchItem {
   id: string;

@@ -18,8 +18,11 @@ export const translations = {
     "bg-replace": "Background Replacer",
     pixelize: "Pixel Studio",
     "ui-reimagine": "UI Reimagine",
+    "ui-scene": "UI Scene",
     "pose-studio": "Pose Studio",
     "map-grid": "Map Grid",
+    "sprite-sheet": "Sprite Sheet Studio",
+    "sprite-strip": "Animation Strip",
     batch: "Batch Studio",
 
     // Dashboard
@@ -189,8 +192,11 @@ export const translations = {
     "bg-replace": "Замена Фона",
     pixelize: "Пиксель Студия",
     "ui-reimagine": "Переосмысление UI",
+    "ui-scene": "Сцена UI",
     "pose-studio": "Поза Студия",
     "map-grid": "Генератор Карт",
+    "sprite-sheet": "Спрайт-лист Студия",
+    "sprite-strip": "Анимационная полоса",
     batch: "Пакетная Студия",
 
     // Dashboard

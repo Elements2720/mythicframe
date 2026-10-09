@@ -602,6 +602,7 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
     const allNewItems: BatchItem[] = [];
     
     for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) continue;
       try {
         const content = await file.text();
         const items = parseBatchFile(content, file.name);
@@ -1579,16 +1580,16 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
                             {items.map((item: BatchItem, idx: number) => (
                               viewMode === 'grid' ? (
                                 <div 
-                                key={item.id} 
-                                className="relative group aspect-square rounded-xl bg-slate-950 border border-slate-800 overflow-hidden hover:border-purple-500/50 transition-all shadow-xl"
-                                draggable={true}
-                                onDragStart={(e) => {
-                                  if (item.imageUrl) {
-                                    e.dataTransfer.setData('text/plain', item.imageUrl);
-                                    e.dataTransfer.setData('application/mythic-image-url', item.imageUrl);
-                                  }
-                                }}
-                              >
+                                  key={item.id} 
+                                  className="relative group aspect-square rounded-xl bg-slate-950 border border-slate-800 overflow-hidden hover:border-purple-500/50 transition-all shadow-xl"
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    if (item.imageUrl) {
+                                      e.dataTransfer.setData('text/plain', item.imageUrl);
+                                      e.dataTransfer.setData('application/mythic-image-url', item.imageUrl);
+                                    }
+                                  }}
+                                >
                                   <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
                                   <div className="absolute top-0 left-0 right-0 p-2 pt-1 pb-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
                                      <span className="text-[9px] font-black text-white truncate block drop-shadow-md tracking-wider">

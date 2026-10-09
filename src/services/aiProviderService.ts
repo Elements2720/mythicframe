@@ -1,5 +1,4 @@
-// Unified AI Provider Service
-import { AIProvider, AIConfig, AspectRatio, ImageSize, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, PoseData, MapGridConfig } from '../types';
+import { AIProvider, AIConfig, AspectRatio, ImageSize, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, PoseData, MapGridConfig, SpriteStripConfig } from '../types';
 import { generateIllustration, editImage, checkApiKey as checkGeminiApiKey } from './geminiService';
 import { generateOpenAIImage, getOpenAIApiKey } from './openAIService';
 import { generateOpenCodeImage, getOpenCodeConfig } from './openCodeService';
@@ -66,6 +65,7 @@ export interface UnifiedGenerationParams {
   chibiConfig?: ChibiConfig;
   poseData?: PoseData;
   mapGridConfig?: MapGridConfig;
+  spriteStripConfig?: SpriteStripConfig;
   viewpoint?: string;
   noCharacters?: boolean;
   framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only';
@@ -147,7 +147,8 @@ export const generateWithActiveProvider = async (
           params.viewpoint,
           params.noCharacters,
           params.framing,
-          params.seed
+          params.seed,
+          params.spriteStripConfig
         );
         break;
       }

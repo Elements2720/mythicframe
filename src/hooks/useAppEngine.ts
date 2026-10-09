@@ -168,6 +168,16 @@ export const useAppEngine = () => {
   const seed = activeTab.seed;
   const setSeed = (val: number | null) => updateActiveTab({ seed: val });
 
+  const spriteStripConfig = activeTab.spriteStripConfig || {
+    prompt: '',
+    action: 'walking',
+    frameCount: 4,
+    direction: 'left'
+  };
+  const setSpriteStripConfig = (val: any) => updateActiveTab(prev => ({
+    spriteStripConfig: typeof val === 'function' ? val(prev.spriteStripConfig || spriteStripConfig) : val
+  }));
+
   // --- Art Style & Library Management ---
 
   const [customArtStyles, setCustomArtStyles] = useState<ArtStyle[]>(() => {
@@ -631,12 +641,15 @@ export const useAppEngine = () => {
     const pending = queue.filter(i => i.status === 'pending' && i.enabled && !i.isSeriesTemplate);
     if (pending.length === 0) return;
 
-    // Sort pending items by priority: Full Body > Waist Up > Chibi > General
+    // Sort pending items by priority: Full Body > Waist Up > Chibi > Item > Texture > Icon > General
     const getPriority = (n: string) => {
       if (n.includes('[FULL BODY]')) return 1;
       if (n.includes('[WAIST UP]')) return 2;
       if (n.includes('[CHIBI]')) return 3;
-      return 4;
+      if (n.includes('[ITEM]')) return 4;
+      if (n.includes('[TEXTURE]')) return 5;
+      if (n.includes('[ICON]')) return 6;
+      return 7;
     };
     
     // Maintain chronological group order based on their first appearance in the queue
@@ -683,9 +696,16 @@ export const useAppEngine = () => {
 
         const coreName = item.name.split('[')[0].trim();
         const effectiveReferences = [...activeTab.referenceAssets];
-        let appliedRefUrl: string | undefined = undefined;
+        let appliedRefUrl: string | undefined = item.usedReferenceUrl;
 
-        if (activeTab.batchGenerationMode === 'consistent_series' && !item.skipReference) {
+        if (appliedRefUrl && !item.skipReference) {
+            effectiveReferences.push({ 
+                id: `ref-${item.id}-manual`,
+                url: appliedRefUrl, 
+                role: 'CHARACTER_CONSISTENCY',
+                weight: item.referenceWeight ?? 0.8
+            } as any);
+        } else if (activeTab.batchGenerationMode === 'consistent_series' && !item.skipReference) {
            const refUrl = referenceMap.get(coreName) || referenceMap.get(item.name);
            if (refUrl) {
               appliedRefUrl = refUrl;
@@ -693,7 +713,7 @@ export const useAppEngine = () => {
                 id: `ref-${item.id}`,
                 url: refUrl, 
                 role: 'CHARACTER_CONSISTENCY',
-                weight: item.referenceWeight ?? (item.name.includes('[WAIST UP]') ? 0.6 : 1.0) 
+                weight: item.referenceWeight ?? (item.name.includes('[WAIST UP]') ? 0.6 : 1.0)
               } as any);
            }
         }
@@ -732,8 +752,9 @@ export const useAppEngine = () => {
                 chibiConfig: item.name.includes('[CHIBI]') ? { ...activeTab.chibiConfig, enabled: true } : undefined,
                 viewpoint: activeTab.viewpoint,
                 noCharacters: item.name.includes('[ITEM]') || item.name.includes('[TEXTURE]') || item.name.includes('[ICON]') || activeTab.noCharacters,
-                framing: item.name.includes('[FULL-BODY]') || item.name.includes('[FULL BODY]') ? 'full-body' :
-                         item.name.includes('[WAIST-UP]') || item.name.includes('[WAIST UP]') ? 'waist-up' :
+                framing: (item.name.includes('[ITEM]') || item.name.includes('[TEXTURE]') || item.name.includes('[ICON]')) ? undefined :
+                         (item.name.includes('[FULL-BODY]') || item.name.includes('[FULL BODY]')) ? 'full-body' :
+                         (item.name.includes('[WAIST-UP]') || item.name.includes('[WAIST UP]')) ? 'waist-up' :
                          item.name.includes('[CHIBI]') ? 'full-body' :
                          activeTab.framing,
                 seed: activeTab.seed
@@ -1111,6 +1132,7 @@ export const useAppEngine = () => {
     uiElementsEnabled, setUiElementsEnabled, uiColorsEnabled, setUiColorsEnabled, uiMaterialEnabled, setUiMaterialEnabled, uiArchetype, setUiArchetype, uiMaterial, setUiMaterial,
     pixelBitSize, setPixelBitSize,
     poseData, setPoseData, mapGridConfig, setMapGridConfig,
+    spriteStripConfig, setSpriteStripConfig,
     viewpoint, setViewpoint, seed, setSeed,
     exports,
     showPromptExportModal, setShowPromptExportModal,

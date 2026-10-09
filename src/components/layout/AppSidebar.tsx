@@ -83,7 +83,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
     );
   };
 
-  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch'].includes(mode);
+  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'sprite-strip', 'batch'].includes(mode);
 
   return (
     <div className={`${isMinimized ? 'w-16' : 'w-64'} h-full bg-slate-950 border-r border-slate-900 flex flex-col shrink-0 transition-all duration-300 overflow-hidden z-50 select-none`}>
@@ -130,6 +130,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
              <div className="overflow-hidden space-y-0.5">
                <NavButton targetMode="illustration" />
                <NavButton targetMode="sprite-sheet" />
+               <NavButton targetMode="sprite-strip" />
                <NavButton targetMode="pose-studio" />
                <NavButton targetMode="gacha" />
                <NavButton targetMode="clothes" />

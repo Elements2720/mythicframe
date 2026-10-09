@@ -300,7 +300,7 @@
     }
   }
 
-  async function executePrompt(jobId, prompt, timeoutSeconds = 120, images = []) {
+  async function executePrompt(jobId, prompt, timeoutSeconds = 900, images = []) {
     let keepAlivePort = null;
     try {
       if (chrome.runtime && chrome.runtime.connect) {
@@ -381,7 +381,8 @@
     console.log(`[MythicFrame BEI] Prompt submitted to ChatGPT for job ${jobId}. Watching for generated image...`);
 
     const startTime = Date.now();
-    const timeoutMs = (timeoutSeconds || 120) * 1000;
+    const timeoutMs = (timeoutSeconds || 900) * 1000;
+    let lastHeartbeatTime = Date.now();
     let imageDelivered = false;
     let jobCancelled = false;
 
