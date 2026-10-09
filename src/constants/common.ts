@@ -6,6 +6,7 @@ export const MODE_CONFIG = {
   library: { title: "Asset Library", icon: "fa-images", description: "View all generated assets." },
   "style-library": { title: "Style Library", icon: "fa-palette", description: "Manage your custom art styles." },
   settings: { title: "Project Settings", icon: "fa-gear", description: "Configure game context and API." },
+  quota: { title: "Quota Inspector", icon: "fa-gauge-high", description: "Monitor API quotas, rates, limits and costs." },
   tutorials: { title: "Tutorials", icon: "fa-circle-question", description: "Learn how to use MythicFrame." },
   downloads: { title: "Downloads", icon: "fa-file-zipper", description: "View and download your exported files." },
   illustration: { title: "Illustration Mode", icon: "fa-paintbrush", description: "Generate character and scene art." },

@@ -98,7 +98,7 @@ function rgbToHsv(r: number, g: number, b: number) {
   let h=0, s=0, v = max, d = max - min;
   s = max === 0 ? 0 : d / max;
   if (max !== min) {
-    switch (max) { case r: h = (g - b) / d + (g < b ? 6 : 0); break; case g: h = (b - r) / d + 2; break; case b: h = (b - r) / d + 2; break; case b: h = (r - g) / d + 4; break; }
+    switch (max) { case r: h = (g - b) / d + (g < b ? 6 : 0); break; case g: h = (b - r) / d + 2; break; case b: h = (r - g) / d + 4; break; }
     h /= 6;
   }
   return { h, s, v };
@@ -314,73 +314,71 @@ const RightPanel: React.FC<RightPanelProps> = (props) => {
                       </button>
                    )}
                 </div>
-                <div className="flex bg-[#161f32] rounded border border-slate-800 p-1">
-                   <button 
-                      onClick={() => {
-                         setUseProModel(false);
-                         if (handleSelectModel) handleSelectModel('gemini-2.5-flash');
-                      }} 
-                      className={`flex-1 py-1.5 text-[11px] font-bold rounded transition-all ${!useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                <div className="relative group">
+                   <select
+                      value={activeModel || (useProModel ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image')}
+                      onChange={(e) => {
+                         if (handleSelectModel) {
+                            handleSelectModel(e.target.value);
+                         }
+                      }}
+                      className="w-full bg-[#161f32] border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium appearance-none"
                    >
-                      {t('std_model')}
-                   </button>
-                   <button 
-                      onClick={() => {
-                         setUseProModel(true);
-                         if (handleSelectModel) handleSelectModel('gemini-2.5-pro');
-                      }} 
-                      className={`flex-1 py-1.5 text-[11px] font-bold rounded transition-all ${useProModel ? 'bg-[#2a3754] text-white' : 'text-slate-400 hover:text-slate-200'}`}
-                   >
-                      {t('pro_model')}
-                   </button>
+                      {availableModels && availableModels.length > 0 ? (
+                         <>
+                            {availableModels.filter(m => m.isImageModel).length > 0 && (
+                               <optgroup label="🎨 Image Generation Models" className="bg-[#161f32]">
+                                  {availableModels.filter(m => m.isImageModel).map(m => (
+                                     <option key={m.id} value={m.id} className="bg-[#161f32] text-purple-300 font-semibold">
+                                        {m.displayName || m.id}
+                                     </option>
+                                  ))}
+                               </optgroup>
+                            )}
+                            {availableModels.filter(m => !m.isImageModel).length > 0 && (
+                               <optgroup label="⚡ Multimodal / Chat Models" className="bg-[#161f32]">
+                                  {availableModels.filter(m => !m.isImageModel).map(m => (
+                                     <option key={m.id} value={m.id} className="bg-[#161f32] text-slate-300">
+                                        {m.displayName || m.id}
+                                     </option>
+                                  ))}
+                               </optgroup>
+                            )}
+                         </>
+                      ) : (
+                         <>
+                            <option value="gemini-3.1-flash-image" className="bg-[#161f32]">Gemini 3.1 Flash Image (Fast)</option>
+                            <option value="gemini-3-pro-image" className="bg-[#161f32]">Gemini 3 Pro Image (High Quality)</option>
+                            <option value="gemini-2.5-flash" className="bg-[#161f32]">Gemini 2.5 Flash</option>
+                         </>
+                      )}
+                   </select>
+                   <Icon name="fa-caret-down" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-hover:text-white transition-colors" />
                 </div>
-                {availableModels && availableModels.length > 0 && (
-                   <div className="relative group">
-                      <select
-                         value={activeModel || (useProModel ? 'gemini-2.5-pro' : 'gemini-2.5-flash')}
-                         onChange={(e) => {
-                            if (handleSelectModel) {
-                               handleSelectModel(e.target.value);
-                            }
-                         }}
-                         className="w-full bg-[#161f32] border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium appearance-none"
-                      >
-                         {availableModels.filter(m => m.isImageModel).length > 0 && (
-                            <optgroup label="🎨 Image Generation Models" className="bg-[#161f32]">
-                               {availableModels.filter(m => m.isImageModel).map(m => (
-                                  <option key={m.id} value={m.id} className="bg-[#161f32] text-purple-300 font-semibold">
-                                     {m.displayName || m.id}
-                                  </option>
-                               ))}
-                            </optgroup>
-                         )}
-                         {availableModels.filter(m => !m.isImageModel).length > 0 && (
-                            <optgroup label="⚡ Multimodal / Chat Models" className="bg-[#161f32]">
-                               {availableModels.filter(m => !m.isImageModel).map(m => (
-                                  <option key={m.id} value={m.id} className="bg-[#161f32] text-slate-300">
-                                     {m.displayName || m.id}
-                                  </option>
-                               ))}
-                            </optgroup>
-                         )}
-                      </select>
-                      <Icon name="fa-caret-down" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-hover:text-white transition-colors" />
-                   </div>
-                )}
                 <div className="flex items-center justify-between text-[10px] text-slate-500 px-1 pt-0.5">
                    <span className="flex items-center gap-1.5 truncate">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse shrink-0"></span>
-                      <span className="truncate">Active: <code className="text-purple-300 font-mono">{activeModel || (useProModel ? 'gemini-2.5-pro' : 'gemini-2.5-flash')}</code></span>
+                      <span className="truncate">Active: <code className="text-purple-300 font-mono">{activeModel || (useProModel ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image')}</code></span>
                    </span>
-                   {(!availableModels || availableModels.length === 0) && (
+                   <div className="flex items-center gap-2 shrink-0 ml-1">
+                      {(!availableModels || availableModels.length === 0) && (
+                         <button 
+                            type="button"
+                            onClick={() => handleFetchModels && handleFetchModels()}
+                            className="text-purple-400 hover:text-purple-300 underline underline-offset-2"
+                         >
+                            Fetch list
+                         </button>
+                      )}
                       <button 
                          type="button"
-                         onClick={() => handleFetchModels && handleFetchModels()}
-                         className="text-purple-400 hover:text-purple-300 underline underline-offset-2 shrink-0 ml-1"
+                         onClick={() => setMode && setMode('quota')}
+                         className="text-slate-400 hover:text-purple-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer"
+                         title="Inspect API Quotas & Remaining Requests"
                       >
-                         Fetch list
+                         <i className="fa-solid fa-gauge-high text-[9px]" /> Quota
                       </button>
-                   )}
+                   </div>
                 </div>
              </div>
              <div className="space-y-2">

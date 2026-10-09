@@ -23,6 +23,9 @@ interface PromptPanelProps {
   onRefinePrompt: () => void;
   onUndoPrompt?: () => void;
   mode?: UIMode;
+  isPromptOnlyMode?: boolean;
+  setIsPromptOnlyMode?: (val: boolean) => void;
+  onInspectPrompt?: () => void;
 }
 
 const Icon = ({ name, className = "" }: { name: string, className?: string }) => <i className={`fa-solid ${name} ${className}`} />;
@@ -31,7 +34,7 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
   prompt, setPrompt, isGenerating, onGenerate, onCancel,
   gameContext, showInspiration, setShowInspiration, isSuggesting,
   referenceAssets, setReferenceAssets, onMatchReferenceSize, isAnalyzing, onAnalyzeStyle, onRefinePrompt,
-  onUndoPrompt, mode
+  onUndoPrompt, mode, isPromptOnlyMode = false, setIsPromptOnlyMode, onInspectPrompt
 }) => {
   const { t } = useLanguage();
   const [height, setHeight] = useState(() => {
@@ -136,6 +139,17 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
                 <button onClick={() => setShowInspiration(!showInspiration)} className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 transition-colors ${showInspiration ? 'text-blue-400' : 'text-slate-400 hover:text-slate-200'}`}><Icon name="fa-lightbulb" /> {t('inspire_me')}</button>
                 <button onClick={onRefinePrompt} disabled={!prompt} className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 text-slate-400 hover:text-slate-200 disabled:opacity-30"><Icon name="fa-sparkles" /> {t('refine')}</button>
                 {onUndoPrompt && <button onClick={onUndoPrompt} className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 text-slate-400 hover:text-slate-200"><Icon name="fa-rotate-left" /> {t('undo')}</button>}
+                {onInspectPrompt && (
+                  <button 
+                    onClick={onInspectPrompt} 
+                    disabled={!prompt} 
+                    className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 text-slate-400 hover:text-blue-300 disabled:opacity-30 transition-colors"
+                    title="Inspect fully assembled prompt and copy for Midjourney, ChatGPT, SD, Pollinations"
+                  >
+                    <Icon name="fa-clipboard-list" />
+                    <span>Inspect Prompt</span>
+                  </button>
+                )}
              </div>
           </div>
           <div className="flex items-center gap-4">
@@ -232,17 +246,61 @@ const PromptPanel: React.FC<PromptPanelProps> = ({
                 className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-[13px] text-slate-100 outline-none focus:border-purple-600/50 transition-all resize-none font-medium leading-relaxed custom-scrollbar placeholder:text-slate-700"
                 placeholder={mode === 'ui-reimagine' ? t('describe_ui') : mode === 'map-grid' ? t('describe_map_grid') : t('describe_illustration')}
              />
-             <div className="w-52 shrink-0 h-full">
+             <div className="w-52 shrink-0 h-full flex flex-col gap-2">
+               {/* Mode Switcher Pills */}
+               <div className="grid grid-cols-2 gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-[10px] font-bold shrink-0">
+                 <button
+                   type="button"
+                   onClick={() => setIsPromptOnlyMode && setIsPromptOnlyMode(false)}
+                   className={`py-1 rounded-lg flex items-center justify-center gap-1 transition-all ${
+                     !isPromptOnlyMode 
+                       ? 'bg-purple-600 text-white shadow-sm' 
+                       : 'text-slate-400 hover:text-slate-200'
+                   }`}
+                   title="Render with AI image generator"
+                 >
+                   <Icon name="fa-bolt" className="text-[9px]" />
+                   <span>AI Render</span>
+                 </button>
+                 <button
+                   type="button"
+                   onClick={() => setIsPromptOnlyMode && setIsPromptOnlyMode(true)}
+                   className={`py-1 rounded-lg flex items-center justify-center gap-1 transition-all ${
+                     isPromptOnlyMode 
+                       ? 'bg-blue-600 text-white shadow-sm' 
+                       : 'text-slate-400 hover:text-slate-200'
+                   }`}
+                   title="Take prompt & parameters without generating"
+                 >
+                   <Icon name="fa-copy" className="text-[9px]" />
+                   <span>Prompt Only</span>
+                 </button>
+               </div>
+
+               {/* Action Button */}
                {!isGenerating ? (
-                  <button onClick={onGenerate} disabled={!prompt} className="w-full h-full bg-gradient-to-br from-purple-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white rounded-2xl font-black transition-all disabled:opacity-30 disabled:grayscale shadow-xl shadow-purple-900/30 flex flex-col items-center justify-center gap-2 border border-purple-500/20 group">
-                     <Icon name="fa-paintbrush" className="text-2xl group-hover:scale-110 transition-transform" />
+                 isPromptOnlyMode ? (
+                   <button 
+                     onClick={onInspectPrompt || onGenerate} 
+                     disabled={!prompt} 
+                     className="w-full flex-1 bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 text-white rounded-xl font-black transition-all disabled:opacity-30 disabled:grayscale shadow-xl shadow-blue-900/30 flex flex-col items-center justify-center gap-1 border border-blue-500/20 group cursor-pointer"
+                     title="Assemble and copy full prompt with all parameters"
+                   >
+                     <Icon name="fa-clipboard-check" className="text-xl group-hover:scale-110 transition-transform" />
+                     <span className="text-[11px] tracking-widest uppercase">Copy Prompt</span>
+                     <span className="text-[8px] text-blue-200/70 font-medium">Ready for any AI service</span>
+                   </button>
+                 ) : (
+                   <button onClick={onGenerate} disabled={!prompt} className="w-full flex-1 bg-gradient-to-br from-purple-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white rounded-xl font-black transition-all disabled:opacity-30 disabled:grayscale shadow-xl shadow-purple-900/30 flex flex-col items-center justify-center gap-1.5 border border-purple-500/20 group cursor-pointer">
+                     <Icon name="fa-paintbrush" className="text-xl group-hover:scale-110 transition-transform" />
                      <span className="text-[11px] tracking-widest uppercase">{t('generate')}</span>
-                  </button>
+                   </button>
+                 )
                ) : (
-                  <button onClick={onCancel} className="w-full h-full bg-red-900/20 hover:bg-red-900/40 border border-red-500/30 text-red-400 rounded-2xl font-black transition-all flex flex-col items-center justify-center gap-2 animate-pulse">
-                     <Icon name="fa-stop" className="text-2xl" />
-                     <span className="text-[11px] tracking-widest uppercase">{t('cancel')}</span>
-                  </button>
+                 <button onClick={onCancel} className="w-full flex-1 bg-red-900/20 hover:bg-red-900/40 border border-red-500/30 text-red-400 rounded-xl font-black transition-all flex flex-col items-center justify-center gap-1.5 animate-pulse cursor-pointer">
+                   <Icon name="fa-stop" className="text-xl" />
+                   <span className="text-[11px] tracking-widest uppercase">{t('cancel')}</span>
+                 </button>
                )}
              </div>
           </div>

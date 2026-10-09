@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { GameContext, AIConfig, AIProvider, ArtStyle, AvailableModel } from '../../types';
+import { GameContext, AIConfig, AIProvider, ArtStyle, AvailableModel, UIMode } from '../../types';
 import { initDriveSystem, signInToDrive, signOutFromDrive, getDriveConnectionStatus } from '../../services/googleDriveService';
 import { 
   getApiKeySource, setStoredApiKey, clearStoredApiKey, 
   fetchAvailableModels, getSelectedModel, setSelectedModel 
 } from '../../services/geminiService';
+import { getActiveAIProvider, setActiveAIProvider } from '../../services/aiProviderService';
+import { getOpenAIApiKey, setOpenAIApiKey, testOpenAIConnection } from '../../services/openAIService';
+import { getOpenCodeConfig, setOpenCodeConfig, testOpenCodeConnection, OpenCodeConfig } from '../../services/openCodeService';
 import { APP_VERSION } from '../../constants';
 import { useLanguage } from '../../i18n/LanguageContext';
 
@@ -20,14 +23,19 @@ interface SettingsProps {
   setDriveFolderName?: (name: string) => void;
   onOpenFolderPicker?: () => void;
   allArtStyles?: ArtStyle[];
+  onNavigate?: (mode: UIMode) => void;
 }
 
 const Settings: React.FC<SettingsProps> = ({ 
   gameContext, setGameContext, apiKeyReady, onConnect, onRefreshKey,
   driveFolderId, setDriveFolderId, driveFolderName, setDriveFolderName, onOpenFolderPicker,
-  allArtStyles = []
+  allArtStyles = [], onNavigate
 }) => {
   const { language, setLanguage, t } = useLanguage();
+
+  // Active AI Provider State
+  const [activeProvider, setActiveProviderState] = useState<AIProvider>(() => getActiveAIProvider());
+  const [configTab, setConfigTab] = useState<AIProvider>(() => getActiveAIProvider());
 
   // Gemini API Key State
   const [apiKeyInput, setApiKeyInput] = useState(() => {
@@ -37,6 +45,18 @@ const Settings: React.FC<SettingsProps> = ({
   const [keyFeedback, setKeyFeedback] = useState<string | null>(null);
   const [keySource, setKeySource] = useState<'local' | 'env' | 'aistudio' | 'placeholder' | 'none'>('none');
   const [isSavingKey, setIsSavingKey] = useState(false);
+
+  // OpenAI State
+  const [openAIKeyInput, setOpenAIKeyInput] = useState(() => getOpenAIApiKey());
+  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
+  const [openAIFeedback, setOpenAIFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  const [isTestingOpenAI, setIsTestingOpenAI] = useState(false);
+
+  // OpenCode / Local AI State
+  const [openCodeConfigState, setOpenCodeConfigState] = useState<OpenCodeConfig>(() => getOpenCodeConfig());
+  const [openCodeFeedback, setOpenCodeFeedback] = useState<{ success: boolean; message: string; models?: string[] } | null>(null);
+  const [isTestingOpenCode, setIsTestingOpenCode] = useState(false);
+  const [showOpenCodeKey, setShowOpenCodeKey] = useState(false);
 
   // Model Discovery State
   const [discoveredModels, setDiscoveredModels] = useState<AvailableModel[]>(() => {
@@ -195,6 +215,50 @@ const Settings: React.FC<SettingsProps> = ({
     setTimeout(() => setScanCopied(false), 2000);
   };
 
+  const handleSelectActiveProvider = (prov: AIProvider) => {
+    setActiveProviderState(prov);
+    setActiveAIProvider(prov);
+    setConfigTab(prov);
+    if (onRefreshKey) onRefreshKey();
+  };
+
+  const handleSaveOpenAIKey = async () => {
+    const trimmed = openAIKeyInput.trim();
+    setOpenAIApiKey(trimmed);
+    if (trimmed) {
+      setIsTestingOpenAI(true);
+      setOpenAIFeedback(null);
+      try {
+        const res = await testOpenAIConnection(trimmed);
+        setOpenAIFeedback(res);
+      } catch (err: any) {
+        setOpenAIFeedback({ success: false, message: err?.message || 'Connection failed' });
+      } finally {
+        setIsTestingOpenAI(false);
+      }
+    } else {
+      setOpenAIFeedback({ success: true, message: 'OpenAI key cleared.' });
+    }
+    if (onRefreshKey) onRefreshKey();
+    setTimeout(() => setOpenAIFeedback(null), 4000);
+  };
+
+  const handleSaveOpenCodeConfig = async () => {
+    setOpenCodeConfig(openCodeConfigState);
+    setIsTestingOpenCode(true);
+    setOpenCodeFeedback(null);
+    try {
+      const res = await testOpenCodeConnection(openCodeConfigState.baseUrl, openCodeConfigState.apiKey);
+      setOpenCodeFeedback(res);
+    } catch (err: any) {
+      setOpenCodeFeedback({ success: false, message: err?.message || 'Connection failed' });
+    } finally {
+      setIsTestingOpenCode(false);
+      if (onRefreshKey) onRefreshKey();
+      setTimeout(() => setOpenCodeFeedback(null), 4000);
+    }
+  };
+
   return (
     <div className="flex-1 bg-slate-950 p-10 overflow-y-auto">
        <div className="max-w-3xl mx-auto space-y-8">
@@ -286,118 +350,547 @@ const Settings: React.FC<SettingsProps> = ({
              </div>
           </div>
 
-          {/* Gemini API Key Section */}
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-6">
-             <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-full bg-amber-900/30 flex items-center justify-center text-amber-500 shrink-0">
-                   <i className="fa-solid fa-key" />
-                </div>
-                <div className="flex-1 space-y-4">
-                   <div className="flex items-center justify-between">
+          {/* AI GENERATION ENGINE & MULTI-PROVIDER HUB */}
+          <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+             {/* Header */}
+             <div className="p-6 border-b border-slate-800 bg-slate-900/60">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                   <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-purple-900/30 flex items-center justify-center text-purple-400 shrink-0">
+                         <i className="fa-solid fa-brain" />
+                      </div>
                       <div>
-                         <h3 className="text-lg font-bold text-slate-200">{t('api_connection')}</h3>
+                         <h3 className="text-lg font-bold text-slate-200">AI Generation Engines</h3>
                          <p className="text-sm text-slate-400">
-                            Manage your Google Gemini API key. Required for Pro models and high-quality generation.
+                            Select and configure your active AI generation provider or offline prompt copy mode.
                          </p>
                       </div>
-                      <div className={`px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 border shrink-0 ${apiKeyReady ? 'bg-green-900/20 text-green-400 border-green-500/30' : 'bg-red-900/20 text-red-400 border-red-500/30'}`}>
-                         <i className={`fa-solid ${apiKeyReady ? 'fa-check-circle' : 'fa-times-circle'}`} />
-                         {apiKeyReady ? 'Connected' : 'Not Connected'}
-                      </div>
                    </div>
-
-                   {/* Key Source Status */}
-                   {keySource === 'local' && (
-                      <div className="text-xs text-green-400 flex items-center gap-2 bg-green-900/10 p-2.5 rounded border border-green-500/20">
-                         <i className="fa-solid fa-database" /> Using custom API Key saved in browser local storage.
-                      </div>
-                   )}
-                   {keySource === 'env' && (
-                      <div className="text-xs text-blue-400 flex items-center gap-2 bg-blue-900/10 p-2.5 rounded border border-blue-500/20">
-                         <i className="fa-solid fa-code" /> Connected via Environment Variable (.env.local / process.env.API_KEY).
-                      </div>
-                   )}
-                   {keySource === 'placeholder' && (
-                      <div className="text-xs text-amber-400 flex items-center gap-2 bg-amber-900/10 p-2.5 rounded border border-amber-500/20">
-                         <i className="fa-solid fa-triangle-exclamation" /> Placeholder key detected in .env.local. Please enter your real Gemini API key below.
-                      </div>
-                   )}
-                   {keySource === 'none' && !apiKeyReady && (
-                      <div className="text-xs text-red-400 flex items-center gap-2 bg-red-900/10 p-2.5 rounded border border-red-500/20">
-                         <i className="fa-solid fa-circle-exclamation" /> No API key configured. Enter your Gemini API key below or set GEMINI_API_KEY in .env.local.
-                      </div>
-                   )}
-
-                   {/* API Key Input Form */}
-                   <div className="space-y-2">
-                      <label className="block text-xs uppercase font-bold text-slate-500">
-                         Gemini API Key
-                      </label>
-                      <div className="flex gap-2">
-                         <div className="relative flex-1">
-                            <input 
-                              type={showApiKey ? "text" : "password"}
-                              value={apiKeyInput}
-                              onChange={(e) => setApiKeyInput(e.target.value)}
-                              placeholder="Paste your Gemini API key (AIzaSy...)"
-                              className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 pr-10 text-sm text-slate-200 font-mono focus:border-purple-500 outline-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowApiKey(!showApiKey)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                              title={showApiKey ? "Hide Key" : "Show Key"}
-                            >
-                               <i className={`fa-solid ${showApiKey ? 'fa-eye-slash' : 'fa-eye'}`} />
-                            </button>
-                         </div>
+                   <div className="flex items-center gap-2">
+                      {onNavigate && (
                          <button
-                           type="button"
-                           disabled={isSavingKey}
-                           onClick={handleSaveApiKey}
-                           className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium px-4 py-2 rounded text-sm transition-colors flex items-center gap-2 shrink-0"
+                            type="button"
+                            onClick={() => onNavigate('quota')}
+                            className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
                          >
-                            <i className="fa-solid fa-floppy-disk" /> {isSavingKey ? 'Saving...' : 'Save Key'}
+                            <i className="fa-solid fa-gauge-high text-xs text-purple-400" /> Quota Inspector
                          </button>
-                         {keySource === 'local' && (
+                      )}
+                      <span className="text-xs text-slate-400">Active Engine:</span>
+                      <span className="px-2.5 py-1 rounded bg-purple-500/20 text-purple-300 font-bold text-xs uppercase tracking-wider border border-purple-500/30">
+                         {activeProvider}
+                      </span>
+                   </div>
+                </div>
+
+                {/* Engine Selector Tabs */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-6">
+                   <button
+                      type="button"
+                      onClick={() => setConfigTab('google')}
+                      className={`p-3 rounded-lg border text-left transition-all relative flex flex-col justify-between ${
+                         configTab === 'google' 
+                            ? 'bg-purple-950/40 border-purple-500 text-purple-200 shadow-md shadow-purple-950/50' 
+                            : 'bg-slate-950/50 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                      }`}
+                   >
+                      <div className="flex items-center justify-between mb-2">
+                         <i className="fa-brands fa-google text-lg text-amber-400" />
+                         {activeProvider === 'google' && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Active Engine" />
+                         )}
+                      </div>
+                      <div className="font-bold text-xs text-slate-200">Google Gemini</div>
+                      <div className="text-[10px] text-slate-500">Flash & Pro Image</div>
+                   </button>
+
+                   <button
+                      type="button"
+                      onClick={() => setConfigTab('openai')}
+                      className={`p-3 rounded-lg border text-left transition-all relative flex flex-col justify-between ${
+                         configTab === 'openai' 
+                            ? 'bg-purple-950/40 border-purple-500 text-purple-200 shadow-md shadow-purple-950/50' 
+                            : 'bg-slate-950/50 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                      }`}
+                   >
+                      <div className="flex items-center justify-between mb-2">
+                         <i className="fa-solid fa-robot text-lg text-emerald-400" />
+                         {activeProvider === 'openai' && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Active Engine" />
+                         )}
+                      </div>
+                      <div className="font-bold text-xs text-slate-200">OpenAI</div>
+                      <div className="text-[10px] text-slate-500">DALL-E 3 / ChatGPT</div>
+                   </button>
+
+                   <button
+                      type="button"
+                      onClick={() => setConfigTab('opencode')}
+                      className={`p-3 rounded-lg border text-left transition-all relative flex flex-col justify-between ${
+                         configTab === 'opencode' 
+                            ? 'bg-purple-950/40 border-purple-500 text-purple-200 shadow-md shadow-purple-950/50' 
+                            : 'bg-slate-950/50 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                      }`}
+                   >
+                      <div className="flex items-center justify-between mb-2">
+                         <i className="fa-solid fa-server text-lg text-blue-400" />
+                         {activeProvider === 'opencode' && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Active Engine" />
+                         )}
+                      </div>
+                      <div className="font-bold text-xs text-slate-200">OpenCode / Local</div>
+                      <div className="text-[10px] text-slate-500">Ollama, LM Studio</div>
+                   </button>
+
+                   <button
+                      type="button"
+                      onClick={() => setConfigTab('pollinations')}
+                      className={`p-3 rounded-lg border text-left transition-all relative flex flex-col justify-between ${
+                         configTab === 'pollinations' 
+                            ? 'bg-purple-950/40 border-purple-500 text-purple-200 shadow-md shadow-purple-950/50' 
+                            : 'bg-slate-950/50 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                      }`}
+                   >
+                      <div className="flex items-center justify-between mb-2">
+                         <i className="fa-solid fa-seedling text-lg text-pink-400" />
+                         {activeProvider === 'pollinations' && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Active Engine" />
+                         )}
+                      </div>
+                      <div className="font-bold text-xs text-slate-200">Pollinations.ai</div>
+                      <div className="text-[10px] text-emerald-400 font-semibold">100% Free / No Key</div>
+                   </button>
+
+                   <button
+                      type="button"
+                      onClick={() => setConfigTab('offline')}
+                      className={`p-3 rounded-lg border text-left transition-all relative flex flex-col justify-between ${
+                         configTab === 'offline' 
+                            ? 'bg-purple-950/40 border-purple-500 text-purple-200 shadow-md shadow-purple-950/50' 
+                            : 'bg-slate-950/50 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                      }`}
+                   >
+                      <div className="flex items-center justify-between mb-2">
+                         <i className="fa-solid fa-clipboard-list text-lg text-amber-400" />
+                         {activeProvider === 'offline' && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Active Engine" />
+                         )}
+                      </div>
+                      <div className="font-bold text-xs text-slate-200">Prompt Only</div>
+                      <div className="text-[10px] text-amber-400 font-semibold">Copy & Paste Mode</div>
+                   </button>
+                </div>
+             </div>
+
+             {/* Tab Content Panel */}
+             <div className="p-6">
+                {/* Active Provider Switch Banner */}
+                <div className="flex items-center justify-between bg-slate-950/70 p-3 rounded-lg border border-slate-800 mb-6">
+                   <div className="text-xs text-slate-300">
+                      Currently viewing config for: <b className="text-white capitalize">{configTab}</b>
+                   </div>
+                   {activeProvider !== configTab ? (
+                      <button
+                         type="button"
+                         onClick={() => handleSelectActiveProvider(configTab)}
+                         className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors shadow-sm flex items-center gap-1.5"
+                      >
+                         <i className="fa-solid fa-check" /> Set as Active Generation Engine
+                      </button>
+                   ) : (
+                      <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                         <i className="fa-solid fa-circle-check" /> This is your Active Engine
+                      </div>
+                   )}
+                </div>
+
+                {/* TAB 1: GOOGLE GEMINI */}
+                {configTab === 'google' && (
+                   <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                         <div>
+                            <h4 className="font-bold text-slate-200 text-sm">Google Gemini Configuration</h4>
+                            <p className="text-xs text-slate-400">
+                               Powers dual-path Gemini 2.5/3.1 image generation and intelligent prompt expansion.
+                            </p>
+                         </div>
+                         <div className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 border shrink-0 ${apiKeyReady ? 'bg-green-900/20 text-green-400 border-green-500/30' : 'bg-red-900/20 text-red-400 border-red-500/30'}`}>
+                            <i className={`fa-solid ${apiKeyReady ? 'fa-check-circle' : 'fa-times-circle'}`} />
+                            {apiKeyReady ? 'Key Ready' : 'Key Missing'}
+                         </div>
+                      </div>
+
+                      {/* Key Source Status */}
+                      {keySource === 'local' && (
+                         <div className="text-xs text-green-400 flex items-center gap-2 bg-green-900/10 p-2.5 rounded border border-green-500/20">
+                            <i className="fa-solid fa-database" /> Using custom API Key saved in browser local storage.
+                         </div>
+                      )}
+                      {keySource === 'env' && (
+                         <div className="text-xs text-blue-400 flex items-center gap-2 bg-blue-900/10 p-2.5 rounded border border-blue-500/20">
+                            <i className="fa-solid fa-code" /> Connected via Environment Variable (.env.local / process.env.API_KEY).
+                         </div>
+                      )}
+                      {keySource === 'placeholder' && (
+                         <div className="text-xs text-amber-400 flex items-center gap-2 bg-amber-900/10 p-2.5 rounded border border-amber-500/20">
+                            <i className="fa-solid fa-triangle-exclamation" /> Placeholder key detected in .env.local. Please enter your real Gemini API key below.
+                         </div>
+                      )}
+                      {keySource === 'none' && !apiKeyReady && (
+                         <div className="text-xs text-red-400 flex items-center gap-2 bg-red-900/10 p-2.5 rounded border border-red-500/20">
+                            <i className="fa-solid fa-circle-exclamation" /> No API key configured. Enter your Gemini API key below or set GEMINI_API_KEY in .env.local.
+                         </div>
+                      )}
+
+                      {/* API Key Input Form */}
+                      <div className="space-y-2">
+                         <label className="block text-xs uppercase font-bold text-slate-500">
+                            Gemini API Key
+                         </label>
+                         <div className="flex gap-2">
+                            <div className="relative flex-1">
+                               <input 
+                                 type={showApiKey ? "text" : "password"}
+                                 value={apiKeyInput}
+                                 onChange={(e) => setApiKeyInput(e.target.value)}
+                                 placeholder="Paste your Gemini API key (AIzaSy...)"
+                                 className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 pr-10 text-sm text-slate-200 font-mono focus:border-purple-500 outline-none"
+                               />
+                               <button
+                                 type="button"
+                                 onClick={() => setShowApiKey(!showApiKey)}
+                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                                 title={showApiKey ? "Hide Key" : "Show Key"}
+                               >
+                                  <i className={`fa-solid ${showApiKey ? 'fa-eye-slash' : 'fa-eye'}`} />
+                               </button>
+                            </div>
                             <button
                               type="button"
-                              onClick={handleClearApiKey}
-                              className="bg-slate-800 hover:bg-red-900/40 text-slate-300 hover:text-red-300 border border-slate-700 hover:border-red-500/30 px-3 py-2 rounded text-sm transition-colors shrink-0"
-                              title="Remove custom key from browser storage"
+                              disabled={isSavingKey}
+                              onClick={handleSaveApiKey}
+                              className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium px-4 py-2 rounded text-sm transition-colors flex items-center gap-2 shrink-0 cursor-pointer"
                             >
-                               <i className="fa-solid fa-trash" /> Clear
+                               <i className="fa-solid fa-floppy-disk" /> {isSavingKey ? 'Saving...' : 'Save Key'}
+                            </button>
+                            {keySource === 'local' && (
+                               <button
+                                 type="button"
+                                 onClick={handleClearApiKey}
+                                 className="bg-slate-800 hover:bg-red-900/40 text-slate-300 hover:text-red-300 border border-slate-700 hover:border-red-500/30 px-3 py-2 rounded text-sm transition-colors shrink-0 cursor-pointer"
+                                 title="Remove custom key from browser storage"
+                               >
+                                  <i className="fa-solid fa-trash" /> Clear
+                               </button>
+                            )}
+                         </div>
+                         
+                         {keyFeedback && (
+                            <p className="text-xs text-green-400 flex items-center gap-1.5 mt-1">
+                               <i className="fa-solid fa-check" /> {keyFeedback}
+                            </p>
+                         )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60 text-xs">
+                         <a 
+                           href="https://aistudio.google.com/app/apikey" 
+                           target="_blank" 
+                           rel="noopener noreferrer"
+                           className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300"
+                         >
+                            <i className="fa-solid fa-arrow-up-right-from-square" /> Get API key from Google AI Studio
+                         </a>
+
+                         {typeof window !== 'undefined' && (window as any).aistudio && (
+                            <button 
+                               onClick={onConnect}
+                               className="text-slate-400 hover:text-slate-200 underline"
+                            >
+                               Connect via Google AI Studio
                             </button>
                          )}
                       </div>
-                      
-                      {keyFeedback && (
-                         <p className="text-xs text-green-400 flex items-center gap-1.5 mt-1">
-                            <i className="fa-solid fa-check" /> {keyFeedback}
+
+                      {/* Model Scanner & Picker */}
+                      <div className="pt-4 border-t border-slate-800">
+                         <div className="flex items-center justify-between mb-3">
+                            <h5 className="text-xs uppercase font-bold text-slate-400">Gemini Model Diagnostics</h5>
+                            <button
+                               onClick={handleScanModels}
+                               disabled={isScanningModels}
+                               className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-3 py-1.5 rounded transition-colors cursor-pointer"
+                            >
+                               <i className={`fa-solid fa-arrows-rotate ${isScanningModels ? 'animate-spin' : ''}`} />
+                               <span>{isScanningModels ? 'Scanning...' : 'Scan Available Models'}</span>
+                            </button>
+                         </div>
+
+                         {scanError && (
+                            <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-xs space-y-2 mb-3">
+                               <div className="flex items-center justify-between text-red-300 font-bold">
+                                  <span><i className="fa-solid fa-triangle-exclamation" /> API Scan Error</span>
+                                  <button onClick={handleCopyScanError} className="text-xs text-red-300 hover:underline">
+                                     {scanCopied ? 'Copied!' : 'Copy'}
+                                  </button>
+                               </div>
+                               <div className="font-mono text-red-400 text-[11px] whitespace-pre-wrap break-all">
+                                  {scanError}
+                               </div>
+                            </div>
+                         )}
+
+                         {discoveredModels.length > 0 && (
+                            <div className="space-y-2">
+                               <div className="relative">
+                                  <select
+                                     value={selectedActiveModel}
+                                     onChange={(e) => handleSelectModelSetting(e.target.value)}
+                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:border-purple-500 outline-none cursor-pointer"
+                                  >
+                                     <option value="">Default (Auto / Gemini Flash)</option>
+                                     {discoveredModels.filter(m => m.isImageModel).length > 0 && (
+                                        <optgroup label="🎨 Image Generation Models">
+                                           {discoveredModels.filter(m => m.isImageModel).map(m => (
+                                              <option key={m.id} value={m.id}>{m.displayName || m.id}</option>
+                                           ))}
+                                        </optgroup>
+                                     )}
+                                     {discoveredModels.filter(m => !m.isImageModel).length > 0 && (
+                                        <optgroup label="⚡ Multimodal Models">
+                                           {discoveredModels.filter(m => !m.isImageModel).map(m => (
+                                              <option key={m.id} value={m.id}>{m.displayName || m.id}</option>
+                                           ))}
+                                        </optgroup>
+                                     )}
+                                  </select>
+                               </div>
+                            </div>
+                         )}
+                      </div>
+                   </div>
+                )}
+
+                {/* TAB 2: OPENAI */}
+                {configTab === 'openai' && (
+                   <div className="space-y-4">
+                      <div>
+                         <h4 className="font-bold text-slate-200 text-sm">OpenAI / ChatGPT Configuration</h4>
+                         <p className="text-xs text-slate-400">
+                            Generates images using OpenAI DALL-E 3 with standard and HD square, landscape, or portrait dimensions.
                          </p>
-                      )}
-                   </div>
+                      </div>
 
-                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60 text-xs">
-                      <a 
-                        href="https://aistudio.google.com/app/apikey" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300"
-                      >
-                         <i className="fa-solid fa-arrow-up-right-from-square" /> Get API key from Google AI Studio
-                      </a>
+                      <div className="space-y-2">
+                         <label className="block text-xs uppercase font-bold text-slate-500">
+                            OpenAI API Key
+                         </label>
+                         <div className="flex gap-2">
+                            <div className="relative flex-1">
+                               <input 
+                                 type={showOpenAIKey ? "text" : "password"}
+                                 value={openAIKeyInput}
+                                 onChange={(e) => setOpenAIKeyInput(e.target.value)}
+                                 placeholder="Paste OpenAI Key (sk-...)"
+                                 className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 pr-10 text-sm text-slate-200 font-mono focus:border-purple-500 outline-none"
+                               />
+                               <button
+                                 type="button"
+                                 onClick={() => setShowOpenAIKey(!showOpenAIKey)}
+                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                               >
+                                  <i className={`fa-solid ${showOpenAIKey ? 'fa-eye-slash' : 'fa-eye'}`} />
+                               </button>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={isTestingOpenAI}
+                              onClick={handleSaveOpenAIKey}
+                              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium px-4 py-2 rounded text-sm transition-colors flex items-center gap-2 shrink-0 cursor-pointer"
+                            >
+                               <i className={`fa-solid ${isTestingOpenAI ? 'fa-spinner fa-spin' : 'fa-floppy-disk'}`} />
+                               {isTestingOpenAI ? 'Testing...' : 'Save & Test'}
+                            </button>
+                         </div>
 
-                      {typeof window !== 'undefined' && (window as any).aistudio && (
-                         <button 
-                            onClick={onConnect}
-                            className="text-slate-400 hover:text-slate-200 underline"
+                         {openAIFeedback && (
+                            <p className={`text-xs flex items-center gap-1.5 mt-1.5 ${openAIFeedback.success ? 'text-green-400' : 'text-red-400'}`}>
+                               <i className={`fa-solid ${openAIFeedback.success ? 'fa-circle-check' : 'fa-triangle-exclamation'}`} />
+                               {openAIFeedback.message}
+                            </p>
+                         )}
+                      </div>
+
+                      <div className="pt-2 text-xs">
+                         <a 
+                           href="https://platform.openai.com/api-keys" 
+                           target="_blank" 
+                           rel="noopener noreferrer"
+                           className="inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300"
                          >
-                            Connect via Google AI Studio
-                         </button>
-                      )}
+                            <i className="fa-solid fa-arrow-up-right-from-square" /> Get OpenAI API Key from platform.openai.com
+                         </a>
+                      </div>
                    </div>
-                </div>
+                )}
+
+                {/* TAB 3: OPENCODE / LOCAL AI */}
+                {configTab === 'opencode' && (
+                   <div className="space-y-4">
+                      <div>
+                         <h4 className="font-bold text-slate-200 text-sm">OpenCode & Local AI Endpoints</h4>
+                         <p className="text-xs text-slate-400">
+                            Connect to OpenAI-compatible image endpoints such as Ollama, LocalAI, LM Studio, or vLLM.
+                         </p>
+                      </div>
+
+                      <div className="space-y-3">
+                         <div>
+                            <label className="block text-xs uppercase font-bold text-slate-500 mb-1">
+                               Endpoint Base URL
+                            </label>
+                            <input 
+                              type="text"
+                              value={openCodeConfigState.baseUrl}
+                              onChange={(e) => setOpenCodeConfigState(p => ({ ...p, baseUrl: e.target.value }))}
+                              placeholder="http://localhost:11434/v1"
+                              className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-sm text-slate-200 font-mono focus:border-purple-500 outline-none"
+                            />
+                            <p className="text-[11px] text-slate-500 mt-1">Default for Ollama is <code>http://localhost:11434/v1</code>, LocalAI is <code>http://localhost:8080/v1</code>.</p>
+                         </div>
+
+                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                               <label className="block text-xs uppercase font-bold text-slate-500 mb-1">
+                                  Model Identifier
+                               </label>
+                               <input 
+                                 type="text"
+                                 value={openCodeConfigState.model}
+                                 onChange={(e) => setOpenCodeConfigState(p => ({ ...p, model: e.target.value }))}
+                                 placeholder="flux-schnell"
+                                 className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 text-sm text-slate-200 font-mono focus:border-purple-500 outline-none"
+                               />
+                            </div>
+                            <div>
+                               <label className="block text-xs uppercase font-bold text-slate-500 mb-1">
+                                  Bearer API Key (Optional)
+                               </label>
+                               <div className="relative">
+                                  <input 
+                                    type={showOpenCodeKey ? "text" : "password"}
+                                    value={openCodeConfigState.apiKey || ''}
+                                    onChange={(e) => setOpenCodeConfigState(p => ({ ...p, apiKey: e.target.value }))}
+                                    placeholder="Optional for local models"
+                                    className="w-full bg-slate-950 border border-slate-700 rounded p-2.5 pr-10 text-sm text-slate-200 font-mono focus:border-purple-500 outline-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowOpenCodeKey(!showOpenCodeKey)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                                  >
+                                     <i className={`fa-solid ${showOpenCodeKey ? 'fa-eye-slash' : 'fa-eye'}`} />
+                                  </button>
+                               </div>
+                            </div>
+                         </div>
+
+                         <button
+                            type="button"
+                            disabled={isTestingOpenCode}
+                            onClick={handleSaveOpenCodeConfig}
+                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium px-4 py-2 rounded text-sm transition-colors flex items-center gap-2 cursor-pointer"
+                         >
+                            <i className={`fa-solid ${isTestingOpenCode ? 'fa-spinner fa-spin' : 'fa-network-wired'}`} />
+                            {isTestingOpenCode ? 'Testing Connection...' : 'Save & Test Endpoint'}
+                         </button>
+
+                         {openCodeFeedback && (
+                            <div className={`p-3 rounded text-xs space-y-1 ${openCodeFeedback.success ? 'bg-green-950/40 text-green-300 border border-green-500/30' : 'bg-red-950/40 text-red-300 border border-red-500/30'}`}>
+                               <div className="font-bold flex items-center gap-1.5">
+                                  <i className={`fa-solid ${openCodeFeedback.success ? 'fa-circle-check' : 'fa-triangle-exclamation'}`} />
+                                  {openCodeFeedback.message}
+                               </div>
+                               {openCodeFeedback.models && openCodeFeedback.models.length > 0 && (
+                                  <div className="text-[11px] text-slate-300 font-mono">
+                                     Models detected: {openCodeFeedback.models.slice(0, 5).join(', ')} {openCodeFeedback.models.length > 5 ? `(+${openCodeFeedback.models.length - 5} more)` : ''}
+                                  </div>
+                               )}
+                            </div>
+                         )}
+                      </div>
+                   </div>
+                )}
+
+                {/* TAB 4: POLLINATIONS.AI (FREE) */}
+                {configTab === 'pollinations' && (
+                   <div className="space-y-4">
+                      <div>
+                         <h4 className="font-bold text-slate-200 text-sm">Pollinations.ai (Free Cloud Engine)</h4>
+                         <p className="text-xs text-slate-400">
+                            Zero setup required. Powered by the open-source Pollinations cloud network.
+                         </p>
+                      </div>
+
+                      <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-lg p-4 space-y-3">
+                         <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                            <i className="fa-solid fa-circle-check" /> 100% Free - Ready to Generate
+                         </div>
+                         <p className="text-xs text-slate-300">
+                            Pollinations requires no API key, credit card, or account signup. It generates high quality illustrations and concepts instantly.
+                         </p>
+                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 text-xs text-slate-400">
+                            <div className="bg-black/30 p-2 rounded border border-slate-800">
+                               <b className="text-white block">No Quota Limits</b> Generate without worrying about API billing.
+                            </div>
+                            <div className="bg-black/30 p-2 rounded border border-slate-800">
+                               <b className="text-white block">Fast & Simple</b> Perfect for rapid prototyping and game jams.
+                            </div>
+                            <div className="bg-black/30 p-2 rounded border border-slate-800">
+                               <b className="text-white block">Aspect Ratios</b> Fully supports square, wide, and portrait framing.
+                            </div>
+                         </div>
+                      </div>
+                   </div>
+                )}
+
+                {/* TAB 5: OFFLINE / PROMPT ONLY */}
+                {configTab === 'offline' && (
+                   <div className="space-y-4">
+                      <div>
+                         <h4 className="font-bold text-slate-200 text-sm">Offline / Prompt-Only Mode</h4>
+                         <p className="text-xs text-slate-400">
+                            Generate assets anywhere by exporting fully assembled, parameterized prompts tailored for any AI platform.
+                         </p>
+                      </div>
+
+                      <div className="bg-amber-950/30 border border-amber-500/30 rounded-lg p-4 space-y-3">
+                         <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                            <i className="fa-solid fa-copy" /> Direct Copy-Paste Workflow
+                         </div>
+                         <p className="text-xs text-slate-300">
+                            When Prompt-Only mode is enabled, clicking "Generate" never triggers paid API calls. Instead, it instantly opens the <b>Prompt Inspector Modal</b> with ready-to-copy prompts formatted specifically for:
+                         </p>
+                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
+                            <div className="bg-black/40 p-2 rounded border border-slate-800 text-slate-300">
+                               <span className="text-amber-400 font-bold block">Midjourney</span> Includes <code>--ar</code>, <code>--v 6.1</code>, <code>--s 250</code>
+                            </div>
+                            <div className="bg-black/40 p-2 rounded border border-slate-800 text-slate-300">
+                               <span className="text-emerald-400 font-bold block">ChatGPT</span> Natural language instructions + DALL-E 3 parameters
+                            </div>
+                            <div className="bg-black/40 p-2 rounded border border-slate-800 text-slate-300">
+                               <span className="text-purple-400 font-bold block">Stable Diff.</span> Positive prompt, negative prompt, CFG, sampler & steps
+                            </div>
+                            <div className="bg-black/40 p-2 rounded border border-slate-800 text-slate-300">
+                               <span className="text-blue-400 font-bold block">JSON Export</span> Full metadata bundle for batch scripts & workflows
+                            </div>
+                         </div>
+                         <p className="text-[11px] text-slate-400 italic pt-1">
+                            💡 You can also toggle between AI Render and Prompt Only mode at any time using the toggle pill directly above the prompt bar.
+                         </p>
+                      </div>
+                   </div>
+                )}
              </div>
           </div>
 

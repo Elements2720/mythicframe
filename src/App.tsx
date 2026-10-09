@@ -19,6 +19,7 @@ import Settings from './components/views/Settings';
 import Tutorials from './components/views/Tutorials';
 import StyleLibrary from './components/views/StyleLibrary';
 import Downloads from './components/views/Downloads';
+import QuotaInspector from './components/views/QuotaInspector';
 
 export default function App() {
   const engine = useAppEngine();
@@ -135,6 +136,13 @@ export default function App() {
                   setDriveFolderName={engine.setDriveFolderName}
                   onOpenFolderPicker={() => engine.setShowFolderPicker(true)}
                   allArtStyles={engine.allArtStyles}
+                  onNavigate={engine.setMode}
+               />
+             )}
+             {engine.mode === 'quota' && (
+               <QuotaInspector 
+                  apiKeyReady={engine.apiKeyReady} 
+                  onNavigate={engine.setMode} 
                />
              )}
           </>

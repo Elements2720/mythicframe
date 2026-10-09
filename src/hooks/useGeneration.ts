@@ -1,6 +1,7 @@
 
 import { useState, useRef } from "react";
 import { generateIllustration, editImage, enhanceImage } from '../services/geminiService';
+import { generateWithActiveProvider, getActiveAIProvider, isProviderReady } from '../services/aiProviderService';
 import { removeBackground, removeBackgroundNeo, createCompositeImage, blobUrlToBase64, base64ToBlobUrl, optimizeBase64Image } from '../utils/imageUtils';
 import { buildOutpaintPrompt, buildBackgroundRegenPrompt, buildPixelizePrompt, buildIllustrationPrompt, buildExtractClothesPrompt, buildUIReimaginePrompt, buildMapGridPrompt } from '../services/promptTemplates';
 import { GenerationModel, PixelDimensions, GachaAsset, BackgroundConfig, WorkspaceTab } from '../types';
@@ -24,7 +25,8 @@ export const useGeneration = (
   updateTabById: (id: string, updates: Partial<WorkspaceTab> | ((prev: WorkspaceTab) => Partial<WorkspaceTab>)) => void,
   recordStyleUsage?: (styleId: string) => void,
   activeModel?: string,
-  onError?: (title: string, error: any) => void
+  onError?: (title: string, error: any) => void,
+  onOpenPromptModal?: (isNoApi?: boolean) => void
 ) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -294,7 +296,25 @@ export const useGeneration = (
        if (!activeTab.prompt && !activeTab.generatedImage) return; 
     }
 
-    if (!apiKeyReady) { notifyError("API Key Required", new Error("Please connect your API Key in Settings first.")); return; }
+    // 1. Prompt-Only Mode: Immediately open prompt export modal without generating
+    if (activeTab.isPromptOnlyMode || getActiveAIProvider() === 'offline') {
+      if (onOpenPromptModal) {
+        onOpenPromptModal(false);
+        return;
+      }
+    }
+
+    // 2. Check provider readiness. If not configured, gracefully open prompt modal instead of erroring
+    const currentProvider = getActiveAIProvider();
+    const providerReady = await isProviderReady(currentProvider);
+    if (!providerReady) {
+      if (onOpenPromptModal) {
+        onOpenPromptModal(true);
+        return;
+      }
+      notifyError("API Key Required", new Error("Please connect your API Key in Settings first."));
+      return;
+    }
 
     setIsGenerating(true);
     abortControllerRef.current = new AbortController();
@@ -314,7 +334,7 @@ export const useGeneration = (
           }
        }
 
-       const model = activeModel || (useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_2_5);
+       const model = activeModel || (useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_3_1);
        
        const count = (isAppend || ['resize', 'animation', 'fullcard', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine'].includes(activeTab.mode)) ? 1 : batchSize;
 
@@ -342,16 +362,29 @@ export const useGeneration = (
 
               const proportionToUse = asset.chibiProportions || activeTab.chibiProportions;
 
-              const { image, metadata } = await generateIllustration(
-                  `${racePrompt}, ${activeTab.characterTraits}, ${asset.promptSuffix}`,
-                  model, asset.size, asset.aspectRatio,
-                  activeTab.referenceAssets, assetBgConfig, gameContext, abortControllerRef.current.signal,
-                  styleSnippet, 'illustration', [], 'scene', activeTab.safeZone, undefined,
-                  activeTab.continuityFlags, proportionToUse, asset.chibiConfig,
-                  undefined, undefined, undefined, activeTab.noCharacters,
-                  asset.framing || activeTab.framing,
-                  activeTab.seed
-              );
+              const { image, metadata } = await generateWithActiveProvider({
+                  prompt: `${racePrompt}, ${activeTab.characterTraits}, ${asset.promptSuffix}`,
+                  model,
+                  size: asset.size,
+                  aspectRatio: asset.aspectRatio,
+                  referenceAssets: activeTab.referenceAssets,
+                  bgConfig: assetBgConfig,
+                  gameContext,
+                  signal: abortControllerRef.current.signal,
+                  styleSnippet,
+                  mode: 'illustration',
+                  frameElements: [],
+                  bgPatternType: 'scene',
+                  safeZone: activeTab.safeZone,
+                  clothesParams: undefined,
+                  continuityFlags: activeTab.continuityFlags,
+                  chibiProportion: proportionToUse,
+                  chibiConfig: asset.chibiConfig,
+                  viewpoint: undefined,
+                  noCharacters: activeTab.noCharacters,
+                  framing: asset.framing || activeTab.framing,
+                  seed: activeTab.seed
+              });
 
               const resultBase64 = image;
               let resultUrl = base64ToBlobUrl(resultBase64);
@@ -456,21 +489,31 @@ export const useGeneration = (
                   aspectRatio: activeTab.selectedAspectRatio
                });
            } else {
-               const { image, metadata } = await generateIllustration(
-                  activeTab.prompt, model, activeTab.selectedSize, activeTab.selectedAspectRatio,
-                  activeTab.referenceAssets, activeTab.bgConfig, gameContext, abortControllerRef.current.signal,
-                  styleSnippet, activeTab.mode, activeTab.frameElements, activeTab.bgPatternType, activeTab.safeZone,
-                  activeTab.clothesParams,
-                  activeTab.continuityFlags,
-                  activeTab.chibiProportions,
-                  activeTab.chibiConfig,
-                  activeTab.poseData,
-                  activeTab.mapGridConfig,
-                  activeTab.viewpoint,
-                  activeTab.noCharacters,
-                  activeTab.framing,
-                  activeTab.seed
-               );
+               const { image, metadata } = await generateWithActiveProvider({
+                  prompt: activeTab.prompt,
+                  model,
+                  size: activeTab.selectedSize,
+                  aspectRatio: activeTab.selectedAspectRatio,
+                  referenceAssets: activeTab.referenceAssets,
+                  bgConfig: activeTab.bgConfig,
+                  gameContext,
+                  signal: abortControllerRef.current.signal,
+                  styleSnippet,
+                  mode: activeTab.mode,
+                  frameElements: activeTab.frameElements,
+                  bgPatternType: activeTab.bgPatternType,
+                  safeZone: activeTab.safeZone,
+                  clothesParams: activeTab.clothesParams,
+                  continuityFlags: activeTab.continuityFlags,
+                  chibiProportion: activeTab.chibiProportions,
+                  chibiConfig: activeTab.chibiConfig,
+                  poseData: activeTab.poseData,
+                  mapGridConfig: activeTab.mapGridConfig,
+                  viewpoint: activeTab.viewpoint,
+                  noCharacters: activeTab.noCharacters,
+                  framing: activeTab.framing,
+                  seed: activeTab.seed
+               });
                resultUrl = base64ToBlobUrl(image);
                finalPrompt = metadata.fullPrompt;
                logConsole(`Generation Prompt: ${finalPrompt}`);

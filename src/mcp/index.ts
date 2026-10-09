@@ -284,7 +284,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           color: args.backgroundColor 
       } as any;
 
-      const chibiConfig = args.chibiMode ? { headSize: 2.0, bodyPlumpness: 1.5, limbStubbiness: 0.8, enableSparkles: false } : undefined;
+      const chibiConfig = args.chibiMode ? ({ headSize: 2.0, bodyPlumpness: 1.5, limbStubbiness: 0.8, enableSparkles: false } as any) : undefined;
       
       let mappedChibiProportion: any = undefined;
       if (args.chibiMode && args.chibiRatio) {
