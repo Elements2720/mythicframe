@@ -18,6 +18,7 @@ import {
   buildSpriteSheetAnimationPromptsPrompt
 } from "./promptTemplates";
 import { optimizeBase64Image, blobUrlToBase64 } from "../utils/imageUtils";
+import { DEFAULT_BACKGROUND_CONFIG } from "../constants";
 
 // Dynamic API key resolution with priority:
 // 1. Browser localStorage ('mythic_gemini_api_key')
@@ -152,11 +153,54 @@ const getModelName = (defaultModel: string): string => {
   return defaultModel;
 };
 
+export const isFatalQuotaOrBillingError = (err: any): { isFatal: boolean; message: string } => {
+  if (!err) return { isFatal: false, message: '' };
+  const msg = (err.message || String(err)).toLowerCase();
+  const status = err.status || err.statusCode || err.code;
+
+  if (
+    status === 429 ||
+    msg.includes('429') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('quota') ||
+    msg.includes('rate limit') ||
+    msg.includes('rate_limit') ||
+    msg.includes('exceeded your current quota')
+  ) {
+    return {
+      isFatal: true,
+      message: 'Google Gemini API Quota Exhausted / $0 Balance (429 RESOURCE_EXHAUSTED): Your API key has no remaining quota or billing credits. Switch to BEI Mode in Settings to generate unlimited images directly through your browser session with 0 API cost!'
+    };
+  }
+
+  if (
+    status === 403 ||
+    status === 401 ||
+    msg.includes('permission_denied') ||
+    msg.includes('api key not valid') ||
+    msg.includes('api_key_invalid') ||
+    msg.includes('billing not enabled') ||
+    msg.includes('billing is required')
+  ) {
+    return {
+      isFatal: true,
+      message: 'Google Gemini Authorization / Billing Error: The API key is invalid or lacks billing permissions. Switch to BEI Mode in Settings to generate free assets via your active browser session!'
+    };
+  }
+
+  return { isFatal: false, message: '' };
+};
+
 // --- RETRY LOGIC ---
 const callWithRetry = async <T>(fn: () => Promise<T>, retries = 2, delay = 1000): Promise<T> => {
   try {
     return await fn();
   } catch (error: any) {
+    const fatalCheck = isFatalQuotaOrBillingError(error);
+    if (fatalCheck.isFatal) {
+      throw new Error(fatalCheck.message);
+    }
+
     const msg = error.message || '';
     const isRetryable = retries > 0 && (
         msg.includes('500') || 
@@ -248,6 +292,14 @@ export function extractImageFromInteraction(interaction: any): string {
 }
 
 export const analyzeImageStyle = async (base64Image: string): Promise<{ description: string; promptSnippet: string }> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    return {
+      description: "Stylized fantasy concept art with rich dynamic lighting, defined silhouette, and vibrant palette.",
+      promptSnippet: "detailed digital painting, high fantasy game art, atmospheric volumetric lighting, masterwork composition"
+    };
+  }
+
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const prompt = buildStyleAnalysisPrompt();
@@ -282,6 +334,28 @@ export const analyzeImageStyle = async (base64Image: string): Promise<{ descript
 };
 
 export const generateStyleExample = async (snippet: string, subject?: string): Promise<string> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    const defaultSubject = "A majestic high-fantasy knight standing in a heroic pose, holding a glowing sword, detailed armor";
+    const finalPrompt = `${subject || defaultSubject}, ${snippet}`;
+    const { generateWithActiveProvider } = await import('./aiProviderService');
+    const result = await generateWithActiveProvider({
+      prompt: finalPrompt,
+      model: '',
+      size: '1K',
+      aspectRatio: '1:1',
+      referenceAssets: [],
+      bgConfig: { ...DEFAULT_BACKGROUND_CONFIG, mode: 'solid', color: '#000000' },
+      gameContext: { setting: '', tone: '', visualConstraints: '' },
+      signal: new AbortController().signal,
+      styleSnippet: snippet,
+      mode: 'illustration',
+      frameElements: [],
+      bgPatternType: 'scene',
+    });
+    return result.image;
+  }
+
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const defaultSubject = "A majestic high-fantasy knight standing in a heroic pose, holding a glowing sword, detailed armor";
@@ -303,6 +377,10 @@ export const generateStyleExample = async (snippet: string, subject?: string): P
     const base64Image = extractImageFromInteraction(response);
     if (base64Image) return base64Image;
   } catch (err: any) {
+    const fatal = isFatalQuotaOrBillingError(err);
+    if (fatal.isFatal) {
+      throw new Error(fatal.message);
+    }
     console.warn("models.generateContent image attempt in generateStyleExample fell back to interactions:", err?.message || err);
   }
 
@@ -491,6 +569,10 @@ ${isPhotorealistic ? '9. [PHOTOREALISM OVERRIDE]: You MUST produce a lifelike ph
 
     base64Image = extractImageFromInteraction(response);
   } catch (genContentErr: any) {
+    const fatal = isFatalQuotaOrBillingError(genContentErr);
+    if (fatal.isFatal) {
+      throw new Error(fatal.message);
+    }
     console.warn("models.generateContent image attempt in generateIllustration encountered issue, attempting interactions fallback:", genContentErr?.message || genContentErr);
   }
 
@@ -631,6 +713,10 @@ export const editImage = async (
 
     resultImage = extractImageFromInteraction(response);
   } catch (e: any) {
+    const fatal = isFatalQuotaOrBillingError(e);
+    if (fatal.isFatal) {
+      throw new Error(fatal.message);
+    }
     console.warn("models.generateContent in editImage fell back to interactions:", e?.message || e);
   }
 
@@ -657,6 +743,17 @@ export const enhanceImage = async (
   base64Image: string,
   gameContext: GameContext
 ): Promise<string> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    const { editWithActiveProvider } = await import('./aiProviderService');
+    const enhancePrompt = `Masterpiece remaster of this image: enhance sharpness, crystal clear details, immaculate shading, beautiful cinematic lighting, 8k resolution, maintain the original composition and subject exactly. Setting: ${gameContext.setting || 'High Fantasy'}.`;
+    return await editWithActiveProvider({
+      base64Image,
+      prompt: enhancePrompt,
+      gameContext
+    });
+  }
+
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const activeModel = getModelName(GenerationModel.FLASH_3_1);
@@ -692,6 +789,10 @@ export const enhanceImage = async (
     }));
     resultImage = extractImageFromInteraction(response);
   } catch (e: any) {
+    const fatal = isFatalQuotaOrBillingError(e);
+    if (fatal.isFatal) {
+      throw new Error(fatal.message);
+    }
     console.warn("models.generateContent in enhanceImage fell back to interactions:", e?.message || e);
   }
 
@@ -759,6 +860,22 @@ export const generateCardSuggestions = async (
 export const generateCharacterConcept = async (
   context: GameContext
 ): Promise<{ name: string; subtitle: string; gender: string; traits: string }> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    const names = ["Aeloria", "Valerius", "Kaelen", "Lyanna", "Thalor", "Seraphina", "Dravok", "Morrigan"];
+    const titles = ["Blade of the Dawn", "Shadow Weaver", "Storm Warden", "Keeper of the Grove", "Arcane Vanguard", "Sunstrider"];
+    const genders = ["Female", "Male"];
+    const pickName = names[Math.floor(Math.random() * names.length)];
+    const pickTitle = titles[Math.floor(Math.random() * titles.length)];
+    const pickGender = genders[Math.floor(Math.random() * genders.length)];
+    return {
+      name: pickName,
+      subtitle: pickTitle,
+      gender: pickGender,
+      traits: `${pickName} the ${pickTitle}, ${pickGender}. Wielding glowing elemental energy, ornate armor with ancient engravings, intense focused gaze, dramatic cape.`
+    };
+  }
+
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const prompt = `Based on the following game world context, suggest a new unique character concept.
@@ -800,6 +917,18 @@ export const generateCharacterTraits = async (
   gender: string,
   context: GameContext
 ): Promise<string> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    const archetypes = [
+      "resolute gaze, ornate weathered armor, arcane runes etched into gauntlets, glowing aura, flowing cape",
+      "swift and agile stance, twin daggers with mystic engravings, flowing hooded cloak, sharp observant eyes",
+      "ancient staff wrapped in verdant vines, robes of deep azure, whispering elementals hovering nearby",
+      "commanding presence, regal crest, battle-hardened expression, intricate heraldic sash, gleaming blade"
+    ];
+    const pick = archetypes[Math.floor(Math.random() * archetypes.length)];
+    return `${name}, ${subtitle || 'Champion'}, ${gender}. ${pick}, set in ${context.setting || 'Aethelgard'}`;
+  }
+
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
   const prompt = `Based on the character "${name}" (${subtitle}, ${gender}) in a game world with this context:
@@ -820,7 +949,36 @@ Respond with ONLY the description text, under 60 words.`;
 };
 
 export const refinePrompt = async (currentPrompt: string): Promise<string> => {
-  // CRITICAL: Always create instance right before call as per Coding Guidelines
+  const apiKey = getApiKey();
+  const currentProvider = (typeof window !== 'undefined' ? localStorage.getItem('mythic_active_ai_provider') : null) || 'google';
+
+  // If in BEI mode, Pollinations mode, or no Gemini API key configured, use free Zero-Key AI text generation
+  // IMPORTANT: Does NOT consume any image generation quota!
+  if (currentProvider === 'bei' || currentProvider === 'pollinations' || !apiKey) {
+    try {
+      const { generateAIText } = await import('./pollinationsService');
+      const refinementDirective = `You are a professional prompt engineer for game asset AI image generators. Refine and enhance the following prompt with vivid art details, lighting, cinematic atmosphere, and high visual fidelity: "${currentPrompt}". Keep the original core subject intact. Respond with ONLY the refined prompt text, under 60 words. No intro, remarks, or quotes.`;
+      const aiResult = await generateAIText(currentPrompt, refinementDirective);
+      if (aiResult && aiResult.length > 10) {
+        return aiResult;
+      }
+    } catch (err) {
+      console.warn('[Refine Prompt] Zero-key AI text notice, using fallback:', err);
+    }
+
+    // Offline / Network fallback
+    const enhancements = [
+      "volumetric lighting and cinematic composition",
+      "sharp focus, intricate high-detail textures",
+      "masterpiece game art, vibrant atmospheric colors"
+    ];
+    const base = currentPrompt.trim();
+    if (!base) return "high fantasy champion artwork, cinematic lighting, ultra-detailed masterpiece";
+    const missing = enhancements.filter(e => !base.toLowerCase().includes(e.split(' ')[0]));
+    return `${base}, ${missing.slice(0, 2).join(', ')}`;
+  }
+
+  // Official Gemini API path when API key is provided
   const ai = getClient();
   const prompt = buildRefinementPrompt(currentPrompt);
   
@@ -832,11 +990,75 @@ export const refinePrompt = async (currentPrompt: string): Promise<string> => {
   return response.text || currentPrompt;
 };
 
+export const generateInspirationPrompt = async (
+  mode: string = 'illustration',
+  styleName: string = 'Anime / Manga',
+  gameContext?: GameContext
+): Promise<string> => {
+  const apiKey = getApiKey();
+  const currentProvider = (typeof window !== 'undefined' ? localStorage.getItem('mythic_active_ai_provider') : null) || 'google';
+
+  const theme = gameContext?.setting || 'Fantasy';
+  const tone = gameContext?.tone || 'Epic';
+
+  const directive = `Create a single, highly creative, visually stunning AI image generation prompt for a ${theme} game asset in "${styleName}" style (Tone: ${tone}, Mode: ${mode}). 
+Describe the character or scene with vivid colors, distinctive outfit/props, dramatic lighting, and intricate composition. 
+Respond with ONLY the prompt text, under 50 words. No quotes, no intro.`;
+
+  // Zero-key AI for BEI and free modes (Zero image quota used)
+  if (currentProvider === 'bei' || currentProvider === 'pollinations' || !apiKey) {
+    try {
+      const { generateAIText } = await import('./pollinationsService');
+      const aiResult = await generateAIText(directive);
+      if (aiResult && aiResult.length > 15) {
+        return aiResult;
+      }
+    } catch (err) {
+      console.warn('[Inspire Prompt] Zero-key AI notice, using fallback:', err);
+    }
+  } else {
+    try {
+      const ai = getClient();
+      const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+        model: getModelName('gemini-3.8-flash'),
+        contents: { parts: [{ text: directive }] }
+      }));
+      if (response.text) return response.text.trim();
+    } catch (e) {
+      console.warn('[Inspire Prompt] Gemini API error:', e);
+    }
+  }
+
+  // Fallback inspirations
+  const fallbacks = [
+    `A mythical celestial kitsune warrior wielding a glowing starlight katana, cherry blossom petals swirling in storm winds, ${styleName} style, 8k resolution`,
+    `An ancient arcane rune guardian hovering over crystalline ruins at twilight, glowing mystic sigils, dramatic volumetric lighting, ${styleName} style`,
+    `A cyberpunk rogue with neon holographic dual daggers standing on a rain-slicked neo-tokyo rooftop, reflective puddles, ${styleName} style`
+  ];
+  return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+};
+
 export const generateSpriteSheetPrompts = async (
   globalPrompt: string,
   frameCount: number,
   gameContext: GameContext
 ): Promise<{ poses: string[]; refinedGlobalPrompt: string }> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    const defaultPoses = [
+      "Idle stance, front view, ready posture",
+      "Anticipation pose, shifting weight back",
+      "Active forward thrust / dynamic strike motion",
+      "Follow-through recovery, stance settling",
+      "Defensive parry, weapon raised",
+      "Victorious celebration pose"
+    ];
+    const poses = Array.from({ length: frameCount }, (_, i) => 
+      `${globalPrompt}, Frame ${i + 1}: ${defaultPoses[i % defaultPoses.length]}`
+    );
+    return { poses, refinedGlobalPrompt: globalPrompt };
+  }
+
   const ai = getClient();
   const prompt = buildSpriteSheetPromptsPrompt(globalPrompt, frameCount, gameContext);
   
@@ -866,6 +1088,14 @@ export const generateSpriteSheetAnimationPrompts = async (
   frameCount: number,
   gameContext: GameContext
 ): Promise<{ poses: string[]; refinedGlobalPrompt: string }> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    const poses = Array.from({ length: frameCount }, (_, i) => 
+      `${globalPrompt}, ${animationGoal} phase ${i + 1} of ${frameCount}, dynamic keyframe animation`
+    );
+    return { poses, refinedGlobalPrompt: `${globalPrompt}, animated ${animationGoal}` };
+  }
+
   const ai = getClient();
   const prompt = buildSpriteSheetAnimationPromptsPrompt(globalPrompt, animationGoal, frameCount, gameContext);
   

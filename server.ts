@@ -5,6 +5,8 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
+import { beiBridge } from "./src/server/beiBridge";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -23,12 +25,77 @@ db.exec(`
 `);
 
 async function startServer() {
+  // Start BEI Bridge on unique port (58925)
+  try {
+    await beiBridge.start();
+  } catch (err) {
+    console.warn("Could not start BEI Bridge server:", err);
+  }
+
   const app = express();
   const portArgIndex = process.argv.indexOf('--port');
   const portFromArg = portArgIndex !== -1 ? process.argv[portArgIndex + 1] : process.argv[2];
-  const PORT = parseInt(portFromArg || process.env.PORT || "3000", 10);
+  const PORT = parseInt(portFromArg || process.env.PORT || "3488", 10);
 
   app.use(express.json({ limit: '50mb' }));
+
+  // BEI API Proxy Endpoints on main web server (port 3488)
+  app.get("/api/bei/status", (req, res) => {
+    res.json(beiBridge.getStatus());
+  });
+
+  app.get("/api/bei/config", (req, res) => {
+    const status = beiBridge.getStatus();
+    res.json({ projectDir: status.projectDir, port: status.port });
+  });
+
+  app.post("/api/bei/config", (req, res) => {
+    const { projectDir } = req.body;
+    if (projectDir) {
+      (beiBridge as any).projectDir = projectDir;
+    }
+    res.json({ success: true, projectDir: (beiBridge as any).projectDir });
+  });
+
+  app.post("/api/bei/open-tab", (req, res) => {
+    const { target = "gemini", accountSlot = 0, tabMode, bringTabToFront } = req.body;
+    if (beiBridge.isConnected()) {
+      (beiBridge as any).extensionSocket?.send(JSON.stringify({
+        type: "OPEN_TAB",
+        data: { target, accountSlot, tabMode, bringTabToFront }
+      }));
+      res.json({ success: true, opened: true });
+    } else {
+      res.status(503).json({ error: "BEI Extension not connected" });
+    }
+  });
+
+  app.get("/api/bei/events", (req, res) => {
+    beiBridge.handleEventsRequest(req, res);
+  });
+
+  app.get("/api/bei/progress", (req, res) => {
+    const jobId = req.query.jobId as string | undefined;
+    const progress = jobId ? beiBridge.latestProgress[jobId] : beiBridge.globalProgress;
+    res.json({ success: true, progress });
+  });
+
+  app.post("/api/bei/cancel", (req, res) => {
+    const { jobId } = req.body;
+    if (jobId && (beiBridge as any).pendingJobs?.has(jobId)) {
+      const job = (beiBridge as any).pendingJobs.get(jobId);
+      clearTimeout(job.timeoutTimer);
+      (beiBridge as any).pendingJobs.delete(jobId);
+      job.reject(new Error('Generation cancelled by user'));
+    }
+    if (beiBridge.isConnected()) {
+      (beiBridge as any).extensionSocket?.send(JSON.stringify({
+        type: 'CANCEL_GENERATION',
+        data: { jobId }
+      }));
+    }
+    res.json({ success: true, cancelled: jobId });
+  });
 
   // API Routes
   app.get("/api/assets", (req, res) => {

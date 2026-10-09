@@ -1,7 +1,8 @@
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { generateIllustration, editImage, enhanceImage } from '../services/geminiService';
-import { generateWithActiveProvider, getActiveAIProvider, isProviderReady } from '../services/aiProviderService';
+import { generateWithActiveProvider, editWithActiveProvider, getActiveAIProvider, isProviderReady } from '../services/aiProviderService';
+import { getPollinationsModel } from '../services/pollinationsService';
 import { removeBackground, removeBackgroundNeo, createCompositeImage, blobUrlToBase64, base64ToBlobUrl, optimizeBase64Image } from '../utils/imageUtils';
 import { buildOutpaintPrompt, buildBackgroundRegenPrompt, buildPixelizePrompt, buildIllustrationPrompt, buildExtractClothesPrompt, buildUIReimaginePrompt, buildMapGridPrompt } from '../services/promptTemplates';
 import { GenerationModel, PixelDimensions, GachaAsset, BackgroundConfig, WorkspaceTab } from '../types';
@@ -33,6 +34,21 @@ export const useGeneration = (
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Subscribe to granular BEI real-time progress events
+  useEffect(() => {
+    const handleBEIProgress = (e: any) => {
+      const data = e.detail;
+      if (data && data.detail && isGenerating && getActiveAIProvider() === 'bei') {
+        setStatusMessage(data.detail);
+      }
+    };
+
+    window.addEventListener('mythic_bei_progress', handleBEIProgress);
+    return () => {
+      window.removeEventListener('mythic_bei_progress', handleBEIProgress);
+    };
+  }, [isGenerating]);
+
   const notifyError = (title: string, err: any) => {
     if (onError) {
       onError(title, err);
@@ -50,6 +66,13 @@ export const useGeneration = (
 
   const startTimer = (prefix: string = "Generating") => {
     clearTimer();
+    const isBEI = getActiveAIProvider() === 'bei';
+    if (isBEI) {
+      setStatusMessage(`${prefix}... (Routing to Gemini Web via BEI...)`);
+      // Do NOT run fake mock timer in BEI mode — status is driven by authentic real-time progress events!
+      return;
+    }
+
     const startTime = Date.now();
     setStatusMessage(`${prefix}... (Preparing assets...)`);
     
@@ -65,6 +88,11 @@ export const useGeneration = (
 
   const handleCancel = () => {
      if (abortControllerRef.current) { abortControllerRef.current.abort(); abortControllerRef.current = null; }
+     if (getActiveAIProvider() === 'bei') {
+       import('../services/beiService').then(({ cancelBEIGeneration }) => {
+         cancelBEIGeneration().catch(() => {});
+       });
+     }
      clearTimer();
      setIsGenerating(false); 
      setStatusMessage('');
@@ -107,9 +135,12 @@ export const useGeneration = (
       logConsole("Image Enhancement Complete");
 
     } catch (e: any) {
-      if (e.name !== 'AbortError') {
+      const isCancelled = e?.name === 'AbortError' || /cancel|aborted|stopped/i.test(e?.message || '');
+      if (!isCancelled) {
         console.error(e);
         notifyError("Enhancement Failed", e);
+      } else {
+        logConsole("Enhancement cancelled.");
       }
     } finally {
       clearTimer();
@@ -124,7 +155,20 @@ export const useGeneration = (
     const initiatingTabId = activeTab.id;
     const sourceImage = activeTab.generatedImage;
     if (!sourceImage && !(fileInput instanceof Blob)) return;
-    if (!apiKeyReady) { notifyError("API Key Required", new Error("Please connect your API Key in Settings first.")); return; }
+
+    const currentProvider = getActiveAIProvider();
+    const providerReady = await isProviderReady(currentProvider);
+    if (!providerReady) {
+      const errorMsg = currentProvider === 'bei' 
+        ? "BEI Bridge extension is not connected. Please reload the extension in chrome://extensions."
+        : currentProvider === 'openai'
+        ? "OpenAI API Key is missing. Please configure it in Settings."
+        : currentProvider === 'opencode'
+        ? "OpenCode / Local AI endpoint is not configured. Please set it in Settings."
+        : "Gemini API Key is missing. Please connect your API key in Settings.";
+      notifyError(`${currentProvider.toUpperCase()} Setup Required`, new Error(errorMsg));
+      return;
+    }
 
     setIsGenerating(true);
     startTimer("Extracting Clothes");
@@ -146,7 +190,13 @@ export const useGeneration = (
       const extractPrompt = buildExtractClothesPrompt(gameContext, activeTab.bgConfig);
       logConsole(`Extraction Prompt: ${extractPrompt}`);
 
-      const resultBase64 = await editImage(base64Input, extractPrompt, activeTab.bgConfig, gameContext);
+      const resultBase64 = await editWithActiveProvider({
+        base64Image: base64Input,
+        prompt: extractPrompt,
+        bgConfig: activeTab.bgConfig,
+        gameContext,
+        signal: abortControllerRef.current.signal
+      });
       let resultUrl = base64ToBlobUrl(resultBase64);
       const optimizedForHistory = await optimizeBase64Image(resultBase64, 1024, 0.7);
 
@@ -178,9 +228,12 @@ export const useGeneration = (
       });
 
     } catch (e: any) {
-      if (e.name !== 'AbortError') {
+      const isCancelled = e?.name === 'AbortError' || /cancel|aborted|stopped/i.test(e?.message || '');
+      if (!isCancelled) {
         console.error(e);
         notifyError("Extraction Failed", e);
+      } else {
+        logConsole("Extraction cancelled.");
       }
     } finally {
       clearTimer();
@@ -199,7 +252,20 @@ export const useGeneration = (
     const sourceBgConfig = targetAsset ? (targetAsset.bgConfig || activeTab.bgConfig) : activeTab.bgConfig;
 
     if (!sourceImage) return;
-    if (!apiKeyReady) { notifyError("API Key Required", new Error("Please connect your API Key in Settings first.")); return; }
+
+    const currentProvider = getActiveAIProvider();
+    const providerReady = await isProviderReady(currentProvider);
+    if (!providerReady) {
+      const errorMsg = currentProvider === 'bei' 
+        ? "BEI Bridge extension is not connected. Please reload the extension in chrome://extensions."
+        : currentProvider === 'openai'
+        ? "OpenAI API Key is missing. Please configure it in Settings."
+        : currentProvider === 'opencode'
+        ? "OpenCode / Local AI endpoint is not configured. Please set it in Settings."
+        : "Gemini API Key is missing. Please connect your API key in Settings.";
+      notifyError(`${currentProvider.toUpperCase()} Setup Required`, new Error(errorMsg));
+      return;
+    }
 
     setIsGenerating(true);
     if (isGacha && targetId) {
@@ -216,7 +282,13 @@ export const useGeneration = (
       const regenPrompt = buildBackgroundRegenPrompt(gameContext, sourceBgConfig);
       logConsole(`Regen Prompt: ${regenPrompt}`);
 
-      const resultBase64 = await editImage(base64Input, regenPrompt, sourceBgConfig, gameContext);
+      const resultBase64 = await editWithActiveProvider({
+        base64Image: base64Input,
+        prompt: regenPrompt,
+        bgConfig: sourceBgConfig,
+        gameContext,
+        signal: abortControllerRef.current.signal
+      });
       let resultUrl = base64ToBlobUrl(resultBase64);
       const optimizedForHistory = await optimizeBase64Image(resultBase64, 1024, 0.7);
 
@@ -253,7 +325,8 @@ export const useGeneration = (
       });
 
     } catch (e: any) {
-      if (e.name !== 'AbortError') {
+      const isCancelled = e?.name === 'AbortError' || /cancel|aborted|stopped/i.test(e?.message || '');
+      if (!isCancelled) {
         console.error(e);
         notifyError("Background Replacement Failed", e);
         if (isGacha && targetId) {
@@ -261,6 +334,8 @@ export const useGeneration = (
               gachaAssets: prev.gachaAssets.map(a => a.id === targetId ? { ...a, status: 'failed' } : a)
           }));
         }
+      } else {
+        logConsole("Background replacement cancelled.");
       }
     } finally {
       clearTimer();
@@ -312,7 +387,14 @@ export const useGeneration = (
         onOpenPromptModal(true);
         return;
       }
-      notifyError("API Key Required", new Error("Please connect your API Key in Settings first."));
+      const errorMsg = currentProvider === 'bei' 
+        ? "BEI Bridge extension is not connected. Please reload the extension in chrome://extensions."
+        : currentProvider === 'openai'
+        ? "OpenAI API Key is missing. Please configure it in Settings."
+        : currentProvider === 'opencode'
+        ? "OpenCode / Local AI endpoint is not configured. Please set it in Settings."
+        : "Gemini API Key is missing. Please connect your API key in Settings.";
+      notifyError(`${currentProvider.toUpperCase()} Setup Required`, new Error(errorMsg));
       return;
     }
 
@@ -334,7 +416,11 @@ export const useGeneration = (
           }
        }
 
-       const model = activeModel || (useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_3_1);
+       const model = currentProvider === 'pollinations'
+         ? (activeModel || getPollinationsModel())
+         : currentProvider === 'openai'
+         ? (activeModel || 'dall-e-3')
+         : (activeModel || (useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_3_1));
        
        const count = (isAppend || ['resize', 'animation', 'fullcard', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine'].includes(activeTab.mode)) ? 1 : batchSize;
 
@@ -428,7 +514,12 @@ export const useGeneration = (
                const dim = getTargetDimensions();
                const compositeBase64 = await createCompositeImage(item.url, dim.width, dim.height, activeTab.resizeZoom, activeTab.resizePan.x, activeTab.resizePan.y);
                const outpaintPrompt = buildOutpaintPrompt(activeTab.prompt, gameContext, styleSnippet);
-               resultUrl = base64ToBlobUrl(await editImage(compositeBase64, outpaintPrompt, undefined, gameContext));
+               resultUrl = base64ToBlobUrl(await editWithActiveProvider({
+                   base64Image: compositeBase64,
+                   prompt: outpaintPrompt,
+                   gameContext,
+                   signal: abortControllerRef.current?.signal
+               }));
                finalPrompt = outpaintPrompt;
                updateTabById(initiatingTabId, prev => ({
                    resizeQueue: prev.resizeQueue.map(x => x.id === activeTab.selectedResizeId ? { ...x, status: 'done', resultUrl } : x),
@@ -439,7 +530,13 @@ export const useGeneration = (
                if (!item) throw new Error("Item not found");
                const base64Input = await blobUrlToBase64(item.url);
                const prompt = buildBackgroundRegenPrompt(gameContext, activeTab.bgConfig);
-               resultUrl = base64ToBlobUrl(await editImage(base64Input, prompt, activeTab.bgConfig, gameContext));
+               resultUrl = base64ToBlobUrl(await editWithActiveProvider({
+                   base64Image: base64Input,
+                   prompt,
+                   bgConfig: activeTab.bgConfig,
+                   gameContext,
+                   signal: abortControllerRef.current?.signal
+               }));
                finalPrompt = prompt;
                updateTabById(initiatingTabId, prev => ({
                    bgReplaceQueue: prev.bgReplaceQueue.map(x => x.id === activeTab.selectedBgReplaceId ? { ...x, status: 'done', resultUrl } : x),
@@ -450,7 +547,12 @@ export const useGeneration = (
                if (!item) throw new Error("Item not found");
                const base64Input = await blobUrlToBase64(item.url);
                const prompt = buildPixelizePrompt(item.pixelStyle, ""); 
-               resultUrl = base64ToBlobUrl(await editImage(base64Input, prompt, undefined, gameContext));
+               resultUrl = base64ToBlobUrl(await editWithActiveProvider({
+                   base64Image: base64Input,
+                   prompt,
+                   gameContext,
+                   signal: abortControllerRef.current?.signal
+               }));
                finalPrompt = prompt;
                updateTabById(initiatingTabId, prev => ({
                    pixelizeQueue: prev.pixelizeQueue.map(x => x.id === activeTab.selectedPixelizeId ? { ...x, status: 'done', resultUrl } : x),
@@ -470,7 +572,13 @@ export const useGeneration = (
                    activeTab.uiMaterialEnabled ? activeTab.uiMaterial : undefined,
                    activeTab.uiPositionsLocked
                );
-               resultUrl = base64ToBlobUrl(await editImage(base64Input, prompt, undefined, gameContext, activeTab.referenceAssets));
+               resultUrl = base64ToBlobUrl(await editWithActiveProvider({
+                   base64Image: base64Input,
+                   prompt,
+                   gameContext,
+                   referenceAssets: activeTab.referenceAssets,
+                   signal: abortControllerRef.current?.signal
+               }));
                finalPrompt = prompt;
                updateTabById(initiatingTabId, prev => ({
                    sessionImages: [resultUrl, ...prev.sessionImages],
@@ -550,7 +658,8 @@ export const useGeneration = (
            }
        }
     } catch (e: any) {
-       if (e.name !== 'AbortError') {
+       const isCancelled = e?.name === 'AbortError' || /cancel|aborted|stopped/i.test(e?.message || '');
+       if (!isCancelled) {
           console.error(e);
           notifyError("Generation Failed", e);
           logConsole(`ERROR: ${e.message}`);
@@ -559,6 +668,8 @@ export const useGeneration = (
                  gachaAssets: prev.gachaAssets.map(a => a.id === finalAssetId ? { ...a, status: 'failed' } : a)
              }));
           }
+       } else {
+          logConsole("Generation cancelled by user.");
        }
     } finally {
        clearTimer();

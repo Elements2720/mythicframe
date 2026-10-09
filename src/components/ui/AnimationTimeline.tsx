@@ -44,11 +44,21 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
   
   const [showRefs, setShowRefs] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [panelHeight, setPanelHeight] = useState(380);
+  const [panelHeight, setPanelHeight] = useState(() => {
+    const saved = localStorage.getItem('mythic_anim_height');
+    return saved ? parseInt(saved) : 380;
+  });
   const [isResizing, setIsResizing] = useState(false);
   const [generateMode, setGenerateMode] = useState<'single' | 'all'>('single');
   const [globalPrompt, setGlobalPrompt] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const currentHeightRef = useRef(panelHeight);
+
+  useEffect(() => {
+    localStorage.setItem('mythic_anim_height', String(panelHeight));
+    currentHeightRef.current = panelHeight;
+  }, [panelHeight]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -78,13 +88,30 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
   useEffect(() => {
     if (!isResizing) return;
     const handleMouseMove = (e: MouseEvent) => {
-      const newHeight = window.innerHeight - e.clientY;
-      if (newHeight > 150 && newHeight < window.innerHeight * 0.9) setPanelHeight(newHeight);
+      const newHeight = Math.max(160, Math.min(window.innerHeight * 0.9, window.innerHeight - e.clientY));
+      currentHeightRef.current = newHeight;
+      if (panelRef.current) {
+        panelRef.current.style.height = `${newHeight}px`;
+      }
     };
-    const handleMouseUp = () => setIsResizing(false);
-    window.addEventListener('mousemove', handleMouseMove);
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      setPanelHeight(currentHeightRef.current);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mouseup', handleMouseUp);
-    return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
   }, [isResizing]);
 
   const handleGenerateClick = () => {
@@ -94,10 +121,16 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
 
   return (
     <div 
-       className="w-full bg-[#0b1120] border-t border-slate-800 z-40 flex flex-col shadow-[0_-8px_30px_rgba(0,0,0,0.5)] shrink-0 transition-all duration-300 relative"
+       ref={panelRef}
+       className={`w-full bg-[#0b1120] border-t border-slate-800 z-40 flex flex-col shadow-[0_-8px_30px_rgba(0,0,0,0.5)] shrink-0 relative ${
+         isResizing ? '!transition-none select-none' : 'transition-all duration-200'
+       }`}
        style={{ height: isMinimized ? 48 : panelHeight }}
     >
-      <div className="h-1.5 bg-slate-900 hover:bg-purple-600 cursor-ns-resize w-full flex items-center justify-center transition-colors group absolute -top-1.5 z-50" onMouseDown={(e) => { e.preventDefault(); setIsResizing(true); }}>
+      <div 
+        className="h-2 bg-slate-900/80 hover:bg-purple-600 cursor-ns-resize w-full flex items-center justify-center transition-colors group absolute -top-2 z-50 touch-none py-1" 
+        onMouseDown={(e) => { e.preventDefault(); setIsResizing(true); }}
+      >
          <div className="w-20 h-1 bg-slate-700 rounded-full group-hover:bg-purple-300 opacity-50 transition-colors"></div>
       </div>
       

@@ -15,6 +15,7 @@ import {
   UIMode
 } from "../types.js";
 import { CHIBI_STYLE_CONFIG } from "../constants/gacha.js";
+import { DEFAULT_BACKGROUND_CONFIG } from "../constants/backgrounds.js";
 
 /**
  * Helper to detect if a prompt is likely describing a character
@@ -127,19 +128,19 @@ export const buildUIReimaginePrompt = (
 const processReferenceNotes = (referenceAssets: ReferenceAsset[]) => {
   const referenceParts: { text?: string }[] = [];
   referenceAssets.forEach((asset, index) => {
-    if (asset.roleNote) {
-      let guidance = asset.roleNote;
-      if (guidance.toLowerCase().includes('mannequin') || guidance.toLowerCase().includes('pose')) {
-          guidance = `CRITICAL IDENTITY & POSE LOCK. Strictly replicate the facial structure, eye shape, body proportions, and skin color from Reference ${index + 1}. Do NOT change the subject. Treat this reference as an immutable wireframe.`;
-      } else if (guidance.toLowerCase().includes('style')) {
-          guidance = `STRICT AESTHETIC SYNC. Match the rendering technique, line weight, palette, and shading from Reference ${index + 1}. If the style is stylized/illustrative, do NOT use realistic shading or lighting.`;
-      } else if (guidance.toLowerCase().includes('look') || guidance.toLowerCase().includes('appearance') || guidance.toLowerCase().includes('clothes')) {
-          guidance = `IDENTITY ONLY. Use Reference ${index + 1} ONLY for character appearance, clothing, and features. Do NOT copy the pose, stance, or composition. Follow the main prompt for the pose.`;
-      }
-      referenceParts.push({
-        text: `Reference Image ${index + 1} Directives: ${guidance}`,
-      });
+    let guidance = (asset.roleNote || '').trim();
+    if (!guidance) {
+      guidance = `PRIMARY CHARACTER/SUBJECT ANCHOR. Faithfully preserve the facial features, hairstyle, skin tone, clothing, and distinguishing aesthetic characteristics from Reference ${index + 1}.`;
+    } else if (guidance.toLowerCase().includes('mannequin') || guidance.toLowerCase().includes('pose')) {
+      guidance = `CRITICAL IDENTITY & POSE LOCK. Strictly replicate the facial structure, eye shape, body proportions, posture, and skin color from Reference ${index + 1}. Treat this reference as an immutable wireframe skeleton.`;
+    } else if (guidance.toLowerCase().includes('style') || guidance.toLowerCase().includes('aesthetic')) {
+      guidance = `STRICT AESTHETIC & STYLE SYNC. Match the exact rendering technique, line weight, color palette, lighting, and shading style from Reference ${index + 1}.`;
+    } else if (guidance.toLowerCase().includes('look') || guidance.toLowerCase().includes('appearance') || guidance.toLowerCase().includes('clothes') || guidance.toLowerCase().includes('anchor') || guidance.toLowerCase().includes('identity')) {
+      guidance = `IDENTITY & COSTUME ANCHOR. Use Reference ${index + 1} for character appearance, face, clothing, and features. Render the subject in the pose and composition described in the main prompt.`;
     }
+    referenceParts.push({
+      text: `Reference Image ${index + 1} Directives: ${guidance}`,
+    });
   });
   return referenceParts;
 };
@@ -734,4 +735,102 @@ export const buildMapGridPrompt = (
   fullPrompt += `\n[FINAL REMINDER]: ONLY generate environment and decorations. ABSOLUTELY NO CHARACTERS OR UI ELEMENTS.`;
   
   return fullPrompt;
+};
+
+/**
+ * Dynamic Context Assembly: Assembles the full 5-layer MythicFrame prompt:
+ * Final Prompt = User Intent + Game Context (Setting/Tone) + Style Snippet + Spatial Constraints + System Rules
+ */
+export interface AssemblePromptParams {
+  prompt: string;
+  mode?: UIMode;
+  gameContext?: GameContext;
+  styleSnippet?: string;
+  bgConfig?: BackgroundConfig;
+  referenceAssets?: ReferenceAsset[];
+  safeZone?: SafeZoneConfig;
+  continuityFlags?: Record<string, boolean>;
+  chibiProportion?: ChibiProportion;
+  chibiConfig?: ChibiConfig;
+  viewpoint?: string;
+  noCharacters?: boolean;
+  framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only';
+  frameElements?: FrameElement[];
+  bgPatternType?: BackgroundPatternType;
+  clothesParams?: ClothesParams;
+  poseData?: PoseData;
+  mapGridConfig?: MapGridConfig;
+  aspectRatio?: string;
+}
+
+export interface AssembledMythicPromptResult {
+  textPrompt: string;
+  referenceParts: { text?: string }[];
+  fullPrompt: string;
+  sanitizedPrompt: string;
+  imagePromptDirective: string;
+}
+
+export const assembleFullMythicPrompt = (params: AssemblePromptParams): AssembledMythicPromptResult => {
+  const mode = params.mode || 'illustration';
+  const gameContext: GameContext = params.gameContext || { setting: '', tone: '', visualConstraints: '' };
+  const styleSnippet = params.styleSnippet || '';
+  const bgConfig = params.bgConfig || DEFAULT_BACKGROUND_CONFIG;
+  const referenceAssets = params.referenceAssets || [];
+
+  let textPrompt = '';
+  let referenceParts: { text?: string }[] = [];
+
+  if (mode === 'frame') {
+    textPrompt = buildFramePrompt(params.prompt, gameContext, styleSnippet, params.frameElements || []);
+  } else if (mode === 'background') {
+    textPrompt = buildBackgroundAssetPrompt(params.prompt, gameContext, styleSnippet, params.bgPatternType || 'scene');
+  } else if (mode === 'clothes') {
+    const built = buildClothesPrompt(params.prompt, gameContext, styleSnippet, bgConfig, referenceAssets, params.safeZone, params.clothesParams);
+    textPrompt = built.textPrompt;
+    referenceParts = built.referenceParts;
+  } else if (mode === 'pose-studio' && params.poseData) {
+    const built = buildPoseStudioPrompt(params.prompt, gameContext, styleSnippet, bgConfig, referenceAssets, params.poseData, params.safeZone);
+    textPrompt = built.textPrompt;
+    referenceParts = built.referenceParts;
+  } else if (mode === 'map-grid' && params.mapGridConfig) {
+    textPrompt = buildMapGridPrompt(params.prompt, gameContext, styleSnippet, params.mapGridConfig);
+  } else {
+    const built = buildIllustrationPrompt(
+      params.prompt,
+      gameContext,
+      styleSnippet,
+      bgConfig,
+      referenceAssets,
+      params.safeZone,
+      params.continuityFlags,
+      params.chibiProportion,
+      params.chibiConfig,
+      params.viewpoint,
+      params.noCharacters,
+      params.framing
+    );
+    textPrompt = built.textPrompt;
+    referenceParts = built.referenceParts;
+  }
+
+  let fullPrompt = textPrompt;
+  if (referenceParts.length > 0) {
+    const refDirectives = referenceParts.filter(p => Boolean(p && p.text)).map(p => p.text).join('\n');
+    if (refDirectives) {
+      fullPrompt += `\n\n[REFERENCE DIRECTIVES]:\n${refDirectives}`;
+    }
+  }
+
+  const sanitizedPrompt = fullPrompt.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const arTag = params.aspectRatio ? `\n\n[ASPECT RATIO]: ${params.aspectRatio}` : '';
+  const imagePromptDirective = `Create image:\n\n${fullPrompt}${arTag}`;
+
+  return {
+    textPrompt,
+    referenceParts,
+    fullPrompt,
+    sanitizedPrompt,
+    imagePromptDirective
+  };
 };

@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "MythicFrame BEI Bridge",
+  "version": "1.2.4",
+  "description": "Browser Extension Interface (BEI) for MythicFrame. Bridges authenticated Gemini Web and ChatGPT Web directly into MythicFrame without API keys.",
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "scripting",
+    "alarms",
+    "storage",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "https://*.google.com/*",
+    "https://accounts.google.com/*",
+    "https://chatgpt.com/*",
+    "*://*.googleusercontent.com/*",
+    "*://*.gstatic.com/*",
+    "*://*.oaiusercontent.com/*",
+    "*://*.openai.com/*",
+    "http://127.0.0.1:58925/*",
+    "http://localhost:58925/*",
+    "http://localhost:3488/*",
+    "http://127.0.0.1:3488/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "scripts/protocol.js",
+        "scripts/gemini_content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "scripts/protocol.js",
+        "scripts/chatgpt_content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "MythicFrame BEI Bridge",
+    "default_popup": "popup.html"
+  }
+}

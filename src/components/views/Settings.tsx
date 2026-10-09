@@ -8,6 +8,8 @@ import {
 import { getActiveAIProvider, setActiveAIProvider } from '../../services/aiProviderService';
 import { getOpenAIApiKey, setOpenAIApiKey, testOpenAIConnection } from '../../services/openAIService';
 import { getOpenCodeConfig, setOpenCodeConfig, testOpenCodeConnection, OpenCodeConfig } from '../../services/openCodeService';
+import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, BEIStatusResponse, DEFAULT_BEI_PORT } from '../../services/beiService';
+import { getBEIAccountQuota, resetBEISlotCooldown } from '../../services/quotaTrackerService';
 import { APP_VERSION } from '../../constants';
 import { useLanguage } from '../../i18n/LanguageContext';
 
@@ -57,6 +59,15 @@ const Settings: React.FC<SettingsProps> = ({
   const [openCodeFeedback, setOpenCodeFeedback] = useState<{ success: boolean; message: string; models?: string[] } | null>(null);
   const [isTestingOpenCode, setIsTestingOpenCode] = useState(false);
   const [showOpenCodeKey, setShowOpenCodeKey] = useState(false);
+
+  // BEI (Browser Extension Interface) State
+  const [beiConfigState, setBeiConfigState] = useState(() => getBEIConfig());
+  const [beiStatus, setBeiStatus] = useState<BEIStatusResponse | null>(null);
+  const [isCheckingBEI, setIsCheckingBEI] = useState(false);
+  const [beiFeedback, setBeiFeedback] = useState<string | null>(null);
+  const [extensionPathCopied, setExtensionPathCopied] = useState(false);
+  const [isOpeningTab, setIsOpeningTab] = useState(false);
+  const [quotaRefreshKey, setQuotaRefreshKey] = useState(0);
 
   // Model Discovery State
   const [discoveredModels, setDiscoveredModels] = useState<AvailableModel[]>(() => {
@@ -259,6 +270,76 @@ const Settings: React.FC<SettingsProps> = ({
     }
   };
 
+  const handleCheckBEI = async () => {
+    setIsCheckingBEI(true);
+    try {
+      const res = await checkBEIConnection();
+      setBeiStatus(res);
+    } catch (e: any) {
+      setBeiStatus({
+        ready: false,
+        connected: false,
+        port: beiConfigState.port || DEFAULT_BEI_PORT,
+        tabs: [],
+        error: e.message
+      });
+    } finally {
+      setIsCheckingBEI(false);
+    }
+  };
+
+  const handleUpdateBEIConfig = (updates: Partial<typeof beiConfigState>) => {
+    const next = { ...beiConfigState, ...updates };
+    setBeiConfigState(next);
+    setBEIConfig(next);
+    setBeiFeedback('BEI configuration updated');
+    setTimeout(() => setBeiFeedback(null), 3000);
+    if (onRefreshKey) onRefreshKey();
+  };
+
+  const handleCopyExtensionPath = () => {
+    const p = "D:\\GeminiWeb\\mythicframe\\bei-extension";
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(p);
+      setExtensionPathCopied(true);
+      setTimeout(() => setExtensionPathCopied(false), 2500);
+    }
+  };
+
+  const handleResetCooldown = (target: 'gemini' | 'chatgpt', slot: number) => {
+    resetBEISlotCooldown(target, slot);
+    setQuotaRefreshKey(prev => prev + 1);
+    setBeiFeedback(`Reset cooldown timer for slot ${slot + 1}`);
+    setTimeout(() => setBeiFeedback(null), 3000);
+  };
+
+  const handleOpenBEITab = async (target?: 'gemini' | 'chatgpt', slot?: number) => {
+    setIsOpeningTab(true);
+    setBeiFeedback(null);
+    try {
+      const tgt = target || (beiConfigState.target as 'gemini' | 'chatgpt') || 'gemini';
+      const s = slot !== undefined ? slot : (beiConfigState.accountSlot ?? 0);
+      const success = await openBEITab(tgt, s, beiConfigState.tabMode, beiConfigState.bringTabToFront !== false);
+      if (success) {
+        setBeiFeedback(`Opening ${tgt === 'gemini' ? 'Gemini Web' : 'ChatGPT'} in Chrome...`);
+        setTimeout(() => handleCheckBEI(), 2000);
+      } else {
+        setBeiFeedback('Could not trigger tab opening. Please verify BEI bridge and extension connection.');
+      }
+    } catch (err: any) {
+      setBeiFeedback(`Error opening tab: ${err?.message || err}`);
+    } finally {
+      setIsOpeningTab(false);
+      setTimeout(() => setBeiFeedback(null), 4000);
+    }
+  };
+
+  useEffect(() => {
+    if (configTab === 'bei') {
+      handleCheckBEI();
+    }
+  }, [configTab]);
+
   return (
     <div className="flex-1 bg-slate-950 p-10 overflow-y-auto">
        <div className="max-w-3xl mx-auto space-y-8">
@@ -384,7 +465,7 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
 
                 {/* Engine Selector Tabs */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-6">
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 mt-6">
                    <button
                       type="button"
                       onClick={() => setConfigTab('google')}
@@ -478,6 +559,25 @@ const Settings: React.FC<SettingsProps> = ({
                       </div>
                       <div className="font-bold text-xs text-slate-200">Prompt Only</div>
                       <div className="text-[10px] text-amber-400 font-semibold">Copy & Paste Mode</div>
+                   </button>
+
+                   <button
+                      type="button"
+                      onClick={() => setConfigTab('bei')}
+                      className={`p-3 rounded-lg border text-left transition-all relative flex flex-col justify-between ${
+                         configTab === 'bei' 
+                            ? 'bg-purple-950/40 border-purple-500 text-purple-200 shadow-md shadow-purple-950/50' 
+                            : 'bg-slate-950/50 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                      }`}
+                   >
+                      <div className="flex items-center justify-between mb-2">
+                         <i className="fa-solid fa-puzzle-piece text-lg text-purple-400" />
+                         {activeProvider === 'bei' && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Active Engine" />
+                         )}
+                      </div>
+                      <div className="font-bold text-xs text-slate-200">BEI Mode</div>
+                      <div className="text-[10px] text-purple-400 font-semibold">Browser Extension</div>
                    </button>
                 </div>
              </div>
@@ -889,6 +989,505 @@ const Settings: React.FC<SettingsProps> = ({
                             💡 You can also toggle between AI Render and Prompt Only mode at any time using the toggle pill directly above the prompt bar.
                          </p>
                       </div>
+                   </div>
+                )}
+
+                {/* TAB 6: BEI MODE (BROWSER EXTENSION INTERFACE) */}
+                {configTab === 'bei' && (
+                   <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                         <div>
+                            <h4 className="font-bold text-slate-200 text-sm">BEI — Browser Extension Interface</h4>
+                            <p className="text-xs text-slate-400">
+                               Zero API keys, cards, or rate limits. Bridges directly into your logged-in Google Gemini or ChatGPT browser sessions.
+                            </p>
+                         </div>
+                         <div className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 border shrink-0 ${beiStatus?.connected ? 'bg-green-900/20 text-green-400 border-green-500/30' : 'bg-amber-900/20 text-amber-400 border-amber-500/30'}`}>
+                            <i className={`fa-solid ${beiStatus?.connected ? 'fa-check-circle' : 'fa-circle-exclamation'}`} />
+                            {beiStatus?.connected ? 'Extension Connected' : 'Extension Offline'}
+                         </div>
+                      </div>
+
+                      {/* Connection Diagnostic Card */}
+                      <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-4 space-y-3">
+                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                            <div className="flex items-center gap-3">
+                               <div className="w-8 h-8 rounded-lg bg-purple-950/60 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                                  <i className="fa-solid fa-network-wired text-sm" />
+                               </div>
+                               <div>
+                                  <span className="text-xs font-bold text-slate-200">BEI Bridge Status</span>
+                                  <div className="text-[11px] text-slate-400 font-mono">
+                                     Bridge Port: <span className="text-purple-300 font-bold">{beiConfigState.port || DEFAULT_BEI_PORT}</span> | Studio Port: <span className="text-blue-300 font-bold">3488</span>
+                                  </div>
+                               </div>
+                            </div>
+                            <button
+                               type="button"
+                               onClick={handleCheckBEI}
+                               disabled={isCheckingBEI}
+                               className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
+                            >
+                               <i className={`fa-solid ${isCheckingBEI ? 'animate-spin' : ''}`} />
+                               {isCheckingBEI ? 'Probing...' : 'Probe Bridge'}
+                            </button>
+                         </div>
+
+                         {/* Active Tabs Detected */}
+                         <div className="space-y-2 pt-1">
+                            <div className="flex items-center justify-between">
+                               <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">Detected Browser Sessions & Accounts</span>
+                               {beiStatus?.tabs && beiStatus.tabs.length > 0 && (
+                                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                     {beiStatus.tabs.length} tab{beiStatus.tabs.length > 1 ? 's' : ''} connected
+                                  </span>
+                               )}
+                            </div>
+
+                            {beiStatus?.tabs && beiStatus.tabs.length > 0 ? (
+                               <div className="space-y-1.5">
+                                  {beiStatus.tabs.map((tab, idx) => (
+                                     <div key={idx} className="flex flex-wrap items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs gap-2">
+                                        <div className="flex items-center gap-2.5">
+                                           <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                                           <span className="font-semibold text-slate-200 capitalize">{tab.target} Web</span>
+                                           {tab.email ? (
+                                              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 font-mono font-medium flex items-center gap-1">
+                                                 <i className="fa-solid fa-envelope text-[10px]" />
+                                                 {tab.email}
+                                              </span>
+                                           ) : (
+                                              <span className="text-[10px] text-cyan-400 font-mono italic">Account scanning...</span>
+                                           )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                           <span className="text-[11px] text-slate-500 font-mono truncate max-w-[180px]" title={tab.url}>{tab.url}</span>
+                                           <button
+                                              type="button"
+                                              onClick={() => handleOpenBEITab(tab.target as any, tab.accountSlot)}
+                                              disabled={isOpeningTab}
+                                              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
+                                              title="Focus or re-open this tab"
+                                           >
+                                              <i className="fa-solid fa-arrow-up-right-from-square text-[10px]" />
+                                           </button>
+                                        </div>
+                                     </div>
+                                  ))}
+                               </div>
+                            ) : (
+                               <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-500/30 text-xs text-amber-300/90 flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2">
+                                     <i className="fa-solid fa-triangle-exclamation text-amber-400 text-sm" />
+                                     <span>No Gemini or ChatGPT tabs open yet. Tabs will open automatically on generation!</span>
+                                  </div>
+                                  <button
+                                     type="button"
+                                     onClick={() => handleOpenBEITab(beiConfigState.target, beiConfigState.accountSlot ?? 0)}
+                                     disabled={isOpeningTab}
+                                     className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-semibold shrink-0 transition-colors cursor-pointer"
+                                  >
+                                     Open Tab Now
+                                  </button>
+                               </div>
+                            )}
+                         </div>
+                      </div>
+
+                      {/* Active Account Summary Card */}
+                      <div className="bg-slate-900/90 border border-purple-500/30 rounded-lg p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-inner">
+                         <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-purple-950/80 border border-purple-500/40 flex items-center justify-center text-purple-300 text-sm shrink-0">
+                               <i className="fa-solid fa-user-check" />
+                            </div>
+                            <div>
+                               <div className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                                  <span>Active Session:</span>
+                                  {beiConfigState.target === 'gemini' ? (
+                                     <span className="text-purple-300 font-mono bg-purple-950/50 px-1.5 py-0.5 rounded border border-purple-500/30">
+                                        Google Gemini Web
+                                     </span>
+                                  ) : (
+                                     <span className="text-emerald-300 font-mono bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                                        ChatGPT Web
+                                     </span>
+                                  )}
+                               </div>
+                               <div className="text-[11px] text-slate-300 font-mono mt-1 flex items-center gap-1.5">
+                                  <i className="fa-solid fa-envelope text-slate-400" />
+                                  {(() => {
+                                     const activeTab = beiStatus?.tabs?.find(t => 
+                                        t.target === beiConfigState.target && 
+                                        (beiConfigState.target !== 'gemini' || (t.accountSlot ?? 0) === (beiConfigState.accountSlot ?? 0))
+                                     );
+                                     return activeTab?.email ? (
+                                        <span className="text-emerald-400 font-semibold">{activeTab.email}</span>
+                                     ) : (
+                                        <span className="text-amber-400/90 italic">
+                                           Tab not open yet (Will auto-open in Chrome on generation)
+                                        </span>
+                                     );
+                                  })()}
+                               </div>
+                            </div>
+                         </div>
+                         <button
+                            type="button"
+                            onClick={() => handleOpenBEITab(beiConfigState.target, beiConfigState.accountSlot ?? 0)}
+                            disabled={isOpeningTab}
+                            className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                         >
+                            <i className={`fa-solid ${isOpeningTab ? 'fa-spinner fa-spin' : 'fa-arrow-up-right-from-square'}`} />
+                            {isOpeningTab ? 'Opening...' : 'Open Tab in Chrome'}
+                         </button>
+                      </div>
+
+                      {/* Target Engine Selector */}
+                      <div className="space-y-3">
+                         <label className="block text-xs uppercase font-bold text-slate-400">
+                            Active BEI Target Web App
+                         </label>
+                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                               type="button"
+                               onClick={() => handleUpdateBEIConfig({ target: 'gemini' })}
+                               className={`p-3 rounded-lg border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                                  beiConfigState.target === 'gemini'
+                                     ? 'bg-purple-950/40 border-purple-500 text-purple-200 shadow-md shadow-purple-950/30'
+                                     : 'bg-slate-950/50 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                               }`}
+                            >
+                               <i className="fa-brands fa-google text-2xl text-amber-400 shrink-0 mt-0.5" />
+                               <div className="flex-1">
+                                  <div className="font-bold text-xs text-slate-200 flex items-center justify-between">
+                                     <span>Google Gemini Web</span>
+                                     {beiConfigState.target === 'gemini' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 mt-1">
+                                     Uses <code>gemini.google.com</code>. Supports multi-account slots and fast high-res generation.
+                                  </div>
+                               </div>
+                            </button>
+
+                            <button
+                               type="button"
+                               onClick={() => handleUpdateBEIConfig({ target: 'chatgpt' })}
+                               className={`p-3 rounded-lg border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                                  beiConfigState.target === 'chatgpt'
+                                     ? 'bg-purple-950/40 border-purple-500 text-purple-200 shadow-md shadow-purple-950/30'
+                                     : 'bg-slate-950/50 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                               }`}
+                            >
+                               <i className="fa-solid fa-robot text-2xl text-emerald-400 shrink-0 mt-0.5" />
+                               <div className="flex-1">
+                                  <div className="font-bold text-xs text-slate-200 flex items-center justify-between">
+                                     <span>ChatGPT Web (DALL-E)</span>
+                                     {beiConfigState.target === 'chatgpt' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 mt-1">
+                                     Uses <code>chatgpt.com</code>. Generates high-fidelity artwork via your ChatGPT session.
+                                  </div>
+                               </div>
+                            </button>
+                         </div>
+                      </div>
+
+                      {/* Gemini Account Slot Selector */}
+                      {beiConfigState.target === 'gemini' && (
+                         <div className="space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                               <div>
+                                  <label className="block text-xs uppercase font-bold text-slate-300">
+                                     Select Active Google Account (Email Dropdown)
+                                  </label>
+                                  <span className="text-[11px] text-slate-500">Pick your logged-in Google Account by email address</span>
+                               </div>
+                               {(() => {
+                                  const geminiTabs = beiStatus?.tabs?.filter(t => t.target === 'gemini') || [];
+                                  const activeTab = geminiTabs.find(t => (t.accountSlot ?? 0) === (beiConfigState.accountSlot ?? 0));
+                                  return activeTab?.email ? (
+                                     <span className="text-xs px-2.5 py-1 rounded bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 font-mono font-medium flex items-center gap-1.5">
+                                        <i className="fa-solid fa-envelope text-emerald-400" />
+                                        Active: <b>{activeTab.email}</b>
+                                     </span>
+                                  ) : null;
+                               })()}
+                            </div>
+
+                            {/* Dropdown with Email Names */}
+                            <div className="relative">
+                               <select
+                                  value={String(beiConfigState.accountSlot ?? 0)}
+                                  onChange={(e) => handleUpdateBEIConfig({ accountSlot: parseInt(e.target.value, 10) })}
+                                  className="w-full bg-slate-950 border border-purple-500/50 rounded-lg p-2.5 pr-10 text-sm text-slate-200 font-mono focus:border-purple-400 outline-none appearance-none cursor-pointer"
+                               >
+                                  {(() => {
+                                     const geminiTabs = beiStatus?.tabs?.filter(t => t.target === 'gemini') || [];
+                                     const accountsList = beiStatus?.accounts || [];
+
+                                     if (accountsList.length > 0) {
+                                        return accountsList.map(acc => {
+                                           const hasTab = geminiTabs.some(t => (t.accountSlot ?? 0) === acc.slot);
+                                           return (
+                                              <option key={`acc-${acc.slot}`} value={String(acc.slot)} className="bg-[#121927] text-emerald-300 py-1">
+                                                 📧 {acc.email} {acc.name ? `(${acc.name})` : ''} {hasTab ? '• [Tab Open]' : ''}
+                                              </option>
+                                           );
+                                        });
+                                     }
+
+                                     const slots = [0, 1, 2, 3];
+                                     return slots.map(slot => {
+                                        const tab = geminiTabs.find(t => (t.accountSlot ?? 0) === slot);
+                                        const email = tab?.email;
+                                        return (
+                                           <option key={`slot-${slot}`} value={String(slot)} className="bg-[#121927] text-slate-200 py-1">
+                                              {email ? `📧 ${email} ${tab ? '• [Tab Open]' : ''}` : `📧 Account ${slot + 1} (Fetching email...)`}
+                                           </option>
+                                        );
+                                     });
+                                  })()}
+                               </select>
+                               <i className="fa-solid fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none text-xs" />
+                            </div>
+
+                            {/* Account Slot Cards with Real-Time Quota Metrics */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
+                               {[0, 1, 2, 3].map(slot => {
+                                  const slotTab = beiStatus?.tabs?.find(t => t.target === 'gemini' && (t.accountSlot ?? 0) === slot);
+                                  const accountFromList = beiStatus?.accounts?.find(a => a.slot === slot);
+                                  const email = slotTab?.email || accountFromList?.email;
+                                  const isSelected = (beiConfigState.accountSlot ?? 0) === slot;
+                                  const slotQuota = getBEIAccountQuota('gemini', slot);
+                                  const isRateLimited = slotQuota.status === 'rate_limited';
+
+                                  return (
+                                     <div
+                                        key={`${slot}-${quotaRefreshKey}`}
+                                        className={`p-3 rounded-lg border text-left transition-all flex flex-col justify-between ${
+                                           isSelected
+                                              ? 'bg-purple-950/60 text-white border-purple-500 shadow-sm shadow-purple-950/40 ring-1 ring-purple-500/50'
+                                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                                        }`}
+                                     >
+                                        <button
+                                           type="button"
+                                           onClick={() => handleUpdateBEIConfig({ accountSlot: slot as number })}
+                                           className="w-full text-left cursor-pointer"
+                                        >
+                                           <div className="flex items-center justify-between w-full font-mono font-bold text-xs mb-1">
+                                              <span className="truncate max-w-[120px]">
+                                                 {accountFromList?.name || (email ? email.split('@')[0] : `Account ${slot + 1}`)}
+                                              </span>
+                                              {slotTab ? (
+                                                 <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" title="Tab Open in Chrome" />
+                                              ) : (
+                                                 <span className="text-[9px] text-slate-600 font-sans shrink-0">Ready</span>
+                                              )}
+                                           </div>
+                                           <div className="text-[11px] font-mono truncate text-slate-400 mb-2">
+                                              {email || 'Auto-opens on generate'}
+                                           </div>
+                                        </button>
+
+                                        {/* Real-time Quota & Rate Limit Indicator */}
+                                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono">
+                                           <span className="text-slate-400">
+                                              {slotQuota.callsToday}/{slotQuota.dailyLimit} reqs
+                                           </span>
+                                           {isRateLimited ? (
+                                              <div className="flex items-center gap-1.5">
+                                                 <span className="text-rose-400 font-bold flex items-center gap-0.5">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                                    {slotQuota.cooldownRemainingMinutes}m
+                                                 </span>
+                                                 <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                       e.stopPropagation();
+                                                       handleResetCooldown('gemini', slot);
+                                                    }}
+                                                    className="px-1.5 py-0.5 bg-rose-950 hover:bg-rose-900 border border-rose-600/50 rounded text-rose-300 text-[9px] cursor-pointer"
+                                                    title="Clear rate-limit cooldown"
+                                                 >
+                                                    Reset
+                                                 </button>
+                                              </div>
+                                           ) : slotQuota.status === 'high_usage' ? (
+                                              <span className="text-amber-400 font-medium">🟡 High</span>
+                                           ) : (
+                                              <span className="text-emerald-400 font-medium">🟢 Ready</span>
+                                           )}
+                                        </div>
+                                     </div>
+                                  );
+                               })}
+                            </div>
+                            <div className="flex items-center justify-between pt-1">
+                               <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                                  <i className="fa-solid fa-link text-purple-400 text-[10px]" />
+                                  <span>Bridges to active Google account in Chrome</span>
+                               </p>
+                               <button
+                                  type="button"
+                                  onClick={() => handleOpenBEITab('gemini', beiConfigState.accountSlot ?? 0)}
+                                  disabled={isOpeningTab}
+                                  className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer font-medium"
+                               >
+                                  <i className="fa-solid fa-plus text-[10px]" /> Open selected account in Chrome
+                               </button>
+                            </div>
+                         </div>
+                      )}
+
+                      {/* Browser Tab & Window Placement Settings */}
+                      <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-4 space-y-4">
+                         <div className="flex items-center gap-2">
+                            <i className="fa-solid fa-window-restore text-purple-400 text-sm" />
+                            <div>
+                               <span className="text-xs font-bold text-slate-200">Chrome Tab & Window Placement</span>
+                               <p className="text-[11px] text-slate-400">Control where and how generation tabs open in Google Chrome.</p>
+                            </div>
+                         </div>
+
+                         {/* Tab Mode Radio Options */}
+                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            <button
+                               type="button"
+                               onClick={() => handleUpdateBEIConfig({ tabMode: 'same_window_group' })}
+                               className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                                  (beiConfigState.tabMode || 'same_window_group') === 'same_window_group'
+                                     ? 'bg-purple-950/50 border-purple-500 text-purple-200 ring-1 ring-purple-500/50 shadow-sm'
+                                     : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-400'
+                               }`}
+                            >
+                               <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                  <span>Group in Same Window</span>
+                                  {(beiConfigState.tabMode || 'same_window_group') === 'same_window_group' && (
+                                     <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                  )}
+                               </div>
+                               <p className="text-[10px] text-slate-400 leading-relaxed">
+                                  Keeps all generation tabs inside 1 single purple Chrome tab group named <b>"MythicFrame BEI"</b> in your current window.
+                               </p>
+                            </button>
+
+                            <button
+                               type="button"
+                               onClick={() => handleUpdateBEIConfig({ tabMode: 'new_window_group' })}
+                               className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                                  beiConfigState.tabMode === 'new_window_group'
+                                     ? 'bg-purple-950/50 border-purple-500 text-purple-200 ring-1 ring-purple-500/50 shadow-sm'
+                                     : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-400'
+                               }`}
+                            >
+                               <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                  <span>Dedicated New Window</span>
+                                  {beiConfigState.tabMode === 'new_window_group' && (
+                                     <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                  )}
+                               </div>
+                               <p className="text-[10px] text-slate-400 leading-relaxed">
+                                  Creates a separate dedicated Chrome window grouping all generation sessions together.
+                               </p>
+                            </button>
+
+                            <button
+                               type="button"
+                               onClick={() => handleUpdateBEIConfig({ tabMode: 'background_tab' })}
+                               className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                                  beiConfigState.tabMode === 'background_tab'
+                                     ? 'bg-purple-950/50 border-purple-500 text-purple-200 ring-1 ring-purple-500/50 shadow-sm'
+                                     : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-400'
+                               }`}
+                            >
+                               <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                  <span>Background Tab (Ungrouped)</span>
+                                  {beiConfigState.tabMode === 'background_tab' && (
+                                     <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                  )}
+                               </div>
+                               <p className="text-[10px] text-slate-400 leading-relaxed">
+                                  Standard tabs without automatic grouping.
+                               </p>
+                            </button>
+                         </div>
+
+                         {/* Bring Tab to Front Toggle */}
+                         <label className="flex items-center gap-2.5 p-2.5 rounded bg-slate-900 border border-slate-800 cursor-pointer hover:border-slate-700 transition-colors">
+                            <input
+                               type="checkbox"
+                               checked={Boolean(beiConfigState.bringTabToFront)}
+                               onChange={(e) => handleUpdateBEIConfig({ bringTabToFront: e.target.checked })}
+                               className="w-4 h-4 rounded text-purple-600 bg-slate-950 border-slate-700 focus:ring-purple-500 cursor-pointer"
+                            />
+                            <div className="text-xs">
+                               <span className="font-bold text-slate-200">Focus tab on generation (Bring window to front)</span>
+                               <p className="text-[10px] text-slate-400">
+                                  When enabled, Chrome activates the generation tab and focuses the window so you can watch prompts and image generation live. When disabled, tabs run in the background.
+                               </p>
+                            </div>
+                         </label>
+                      </div>
+
+                      {/* Quick-Launch & Auto-Open Notice */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/60">
+                         <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                            <i className="fa-solid fa-bolt text-purple-400" />
+                            <span>Auto-open is active: If no tab is open when you generate, MythicFrame will open it automatically.</span>
+                         </div>
+                         <div className="flex items-center gap-2">
+                            <button
+                               type="button"
+                               onClick={() => handleOpenBEITab('gemini', beiConfigState.accountSlot ?? 0)}
+                               disabled={isOpeningTab}
+                               className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                               <i className="fa-brands fa-google text-amber-400" /> Open Gemini
+                            </button>
+                            <button
+                               type="button"
+                               onClick={() => handleOpenBEITab('chatgpt')}
+                               disabled={isOpeningTab}
+                               className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                               <i className="fa-solid fa-robot text-emerald-400" /> Open ChatGPT
+                            </button>
+                         </div>
+                      </div>
+
+                      {/* Setup Guide */}
+                      <div className="bg-purple-950/20 border border-purple-500/20 rounded-lg p-4 space-y-3">
+                         <div className="text-xs font-bold text-purple-300 flex items-center gap-2">
+                            <i className="fa-solid fa-puzzle-piece" /> How to Load the MythicFrame BEI Extension in Chrome
+                         </div>
+                         <ol className="text-xs text-slate-300 space-y-1.5 list-decimal list-inside">
+                            <li>Open Google Chrome and navigate to <code className="text-purple-300 font-mono">chrome://extensions/</code></li>
+                            <li>Enable <b>Developer mode</b> toggle in the top-right corner.</li>
+                            <li>Click <b>Load unpacked</b> and select the MythicFrame extension directory:</li>
+                         </ol>
+                         <div className="flex items-center gap-2 bg-slate-950 p-2 rounded border border-slate-800 text-xs font-mono text-slate-300">
+                            <span className="flex-1 truncate">D:\GeminiWeb\mythicframe\bei-extension</span>
+                            <button
+                               type="button"
+                               onClick={handleCopyExtensionPath}
+                               className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[11px] font-sans font-semibold shrink-0 transition-colors cursor-pointer"
+                            >
+                               {extensionPathCopied ? 'Copied!' : 'Copy Path'}
+                            </button>
+                         </div>
+                      </div>
+
+                      {beiFeedback && (
+                         <p className="text-xs text-green-400 flex items-center gap-1.5">
+                            <i className="fa-solid fa-check" /> {beiFeedback}
+                         </p>
+                      )}
                    </div>
                 )}
              </div>

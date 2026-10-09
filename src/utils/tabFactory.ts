@@ -119,7 +119,7 @@ export const getHashMode = (): UIMode => {
     if (typeof window === 'undefined') return 'dashboard';
     try {
       const hash = window.location.hash.replace(/^#\/?/, '');
-      const validModes: UIMode[] = ['dashboard', 'library', 'settings', 'frame', 'illustration', 'background', 'fullcard', 'animation', 'resize', 'tutorials', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'style-library', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch', 'downloads'];
+      const validModes: UIMode[] = ['dashboard', 'library', 'settings', 'frame', 'illustration', 'background', 'fullcard', 'animation', 'resize', 'tutorials', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'style-library', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch', 'downloads', 'quota'];
       return validModes.includes(hash as UIMode) ? (hash as UIMode) : 'dashboard';
     } catch (e) {
       return 'dashboard';

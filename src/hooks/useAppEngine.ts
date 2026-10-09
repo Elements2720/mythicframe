@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   checkApiKey, requestApiKey, generateIllustration, analyzeImageStyle,
-  editImage, refinePrompt, generateCharacterTraits, generateCharacterConcept,
+  editImage, refinePrompt, generateInspirationPrompt, generateCharacterTraits, generateCharacterConcept,
   generateStyleExample, generateSpriteSheetPrompts, generateSpriteSheetAnimationPrompts,
   fetchAvailableModels, getSelectedModel, setSelectedModel
 } from '../services/geminiService';
@@ -15,8 +15,9 @@ import {
   PixelDimensions, ReferenceAsset, GameContext,
   BackgroundPatternType, SafeZoneConfig, ResizeItem,
   WorkspaceTab, ClothesParams, BgReplaceItem, BackgroundConfig, PixelStyle, PixelizeItem, GachaAsset, Rarity, ArtStyle, StyleCollection,
-  AppError, AvailableModel
+  AppError, AvailableModel, AIProvider
 } from '../types';
+import { getActiveAIProvider, setActiveAIProvider, generateWithActiveProvider, isProviderReady } from '../services/aiProviderService';
 import { ART_STYLES, DEFAULT_BACKGROUND_CONFIG } from '../constants';
 import { useTabs } from './useTabs';
 import { useHistory } from './useHistory';
@@ -52,6 +53,35 @@ export const useAppEngine = () => {
   } = useHistory(setMode, updateActiveTab);
 
   const [apiKeyReady, setApiKeyReady] = useState(false);
+  const [activeProvider, setActiveProviderState] = useState<AIProvider>(() => getActiveAIProvider());
+  const [providerReady, setProviderReady] = useState(false);
+
+  const refreshProviderStatus = useCallback(async () => {
+    const prov = getActiveAIProvider();
+    setActiveProviderState(prov);
+    const pReady = await isProviderReady(prov);
+    setProviderReady(pReady);
+    const keyReady = await checkApiKey();
+    setApiKeyReady(keyReady);
+  }, []);
+
+  const handleSelectProvider = (prov: AIProvider) => {
+    setActiveAIProvider(prov);
+    setActiveProviderState(prov);
+    refreshProviderStatus();
+    setConsoleLogs(p => [`Active AI Engine changed to: ${prov.toUpperCase()}`, ...p]);
+  };
+
+  useEffect(() => {
+    refreshProviderStatus();
+    const onProviderChange = () => refreshProviderStatus();
+    window.addEventListener('storage', onProviderChange);
+    window.addEventListener('mythic_ai_provider_changed', onProviderChange);
+    return () => {
+      window.removeEventListener('storage', onProviderChange);
+      window.removeEventListener('mythic_ai_provider_changed', onProviderChange);
+    };
+  }, [refreshProviderStatus]);
   const [driveConnected, setDriveConnected] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState(localStorage.getItem('mythic_drive_folder_id') || '');
   const [driveFolderName, setDriveFolderName] = useState(localStorage.getItem('mythic_drive_folder_name') || '');
@@ -365,31 +395,22 @@ export const useAppEngine = () => {
         spriteSheetLogic.updateFrame(frame.id, { status: 'processing' });
         
         const fullPrompt = `${activeTab.spriteSheet.globalPrompt}. ${frame.prompt}`;
-        let result = await generateIllustration(
-          fullPrompt,
+        let result = await generateWithActiveProvider({
+          prompt: fullPrompt,
           model,
           size,
-          activeTab.spriteSheet.aspectRatio,
-          activeTab.referenceAssets,
-          frame.bgConfig || activeTab.spriteSheet.globalBackground,
+          aspectRatio: activeTab.spriteSheet.aspectRatio,
+          referenceAssets: activeTab.referenceAssets,
+          bgConfig: frame.bgConfig || activeTab.spriteSheet.globalBackground,
           gameContext,
-          abortController.signal,
+          signal: abortController.signal,
           styleSnippet,
-          'sprite-sheet',
-          [],
-          'scene',
-          undefined,
-          undefined,
-          activeTab.continuityFlags,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          activeTab.seed
-        );
+          mode: 'sprite-sheet',
+          frameElements: [],
+          bgPatternType: 'scene',
+          continuityFlags: activeTab.continuityFlags,
+          seed: activeTab.seed
+        });
 
         let resultUrl = result.image;
         const currentBgConfig = frame.bgConfig || activeTab.spriteSheet.globalBackground;
@@ -694,31 +715,26 @@ export const useAppEngine = () => {
             }
 
             try {
-              const result = await generateIllustration(
-                currentPrompt,
+              const result = await generateWithActiveProvider({
+                prompt: currentPrompt,
                 model,
                 size,
-                item.aspectRatio,
-                effectiveReferences,
-                activeTab.bgConfig,
+                aspectRatio: item.aspectRatio,
+                referenceAssets: effectiveReferences,
+                bgConfig: activeTab.bgConfig,
                 gameContext,
-                abortController.signal,
+                signal: abortController.signal,
                 styleSnippet,
-                'batch',
-                [],
-                'scene',
-                undefined,
-                undefined,
-                activeTab.continuityFlags,
-                undefined,
-                item.name.includes('[CHIBI]') ? { ...activeTab.chibiConfig, enabled: true } : undefined,
-                undefined,
-                undefined,
-                activeTab.viewpoint,
-                activeTab.noCharacters,
-                activeTab.framing,
-                activeTab.seed
-              );
+                mode: 'batch',
+                frameElements: [],
+                bgPatternType: 'scene',
+                continuityFlags: activeTab.continuityFlags,
+                chibiConfig: item.name.includes('[CHIBI]') ? { ...activeTab.chibiConfig, enabled: true } : undefined,
+                viewpoint: activeTab.viewpoint,
+                noCharacters: activeTab.noCharacters,
+                framing: activeTab.framing,
+                seed: activeTab.seed
+              });
 
               let resultUrl = result.image;
               const optimizedForHistory = await optimizeBase64Image(resultUrl, 1024, 0.7);
@@ -939,6 +955,24 @@ export const useAppEngine = () => {
      try { const refined = await refinePrompt(prompt); setPrompt(refined); } catch(e) { console.error(e); } finally { setIsSuggesting(false); }
   };
 
+  const handleInspirePrompt = async () => {
+    setIsSuggesting(true);
+    try {
+      const styleObj = ART_STYLES.find(s => s.id === activeTab.selectedStyleId);
+      const styleName = styleObj?.name || 'Anime / Manga';
+      const inspired = await generateInspirationPrompt(activeTab.mode, styleName, gameContext);
+      if (inspired) {
+        setLastPrompt(prompt);
+        setPrompt(inspired);
+        logConsole(`AI Inspired Prompt: ${inspired.slice(0, 50)}...`);
+      }
+    } catch (e) {
+      console.error('Inspire prompt failed:', e);
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
+
   const handleSuggestTraits = async () => {
      if (!activeTab.characterName) { alert("Please enter a character name first."); return; }
      setIsSuggesting(true);
@@ -979,6 +1013,7 @@ export const useAppEngine = () => {
     handleRenameTab, history, showHistory, setShowHistory, currentHistoryEntry,
     handleRestore, handleClearHistory, handleDeleteHistoryItem, handleRenameHistoryItem,
     apiKeyReady, handleConnect, handleRefreshKey,
+    activeProvider, setActiveProvider: handleSelectProvider, providerReady, refreshProviderStatus,
     gameContext, setGameContext, driveConnected, driveFolderId, setDriveFolderId, driveFolderName, setDriveFolderName, handleSaveToDrive,
     showExport, setShowExport, showConsole, setShowConsole, consoleLogs,
     showAssetPicker, setShowAssetPicker, handleAssetSelect,
@@ -1046,7 +1081,7 @@ export const useAppEngine = () => {
     appError, setAppError, showError,
     availableModels, isLoadingModels, handleFetchModels, activeModel, handleSelectModel,
     showInspiration, setShowInspiration, isAnalyzing, isSuggesting,
-    handleMatchReferenceSize, handleAnalyzeStyle, handleRefinePrompt, handleUndoPrompt,
+    handleMatchReferenceSize, handleAnalyzeStyle, handleRefinePrompt, handleInspirePrompt, handleUndoPrompt,
     showOnionSkin, setShowOnionSkin, isPlayingAnimation, setIsPlayingAnimation, animFrameIndex,
     handleImageUpload: (file: File) => {
         if (!(file instanceof Blob)) return; const reader = new FileReader();

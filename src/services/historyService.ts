@@ -1,9 +1,11 @@
-import { HistoryEntry } from "../types";
+import { HistoryEntry, WorkspaceTab } from "../types";
+import { optimizeBase64Image } from "../utils/imageUtils";
 
 const DB_NAME = 'MythicFrameDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'history';
 const EXPORT_STORE_NAME = 'exports';
+const WORKSPACE_STORE_NAME = 'workspace';
 
 // Helper to open DB
 const openDB = (): Promise<IDBDatabase> => {
@@ -18,6 +20,9 @@ const openDB = (): Promise<IDBDatabase> => {
       }
       if (!db.objectStoreNames.contains(EXPORT_STORE_NAME)) {
         db.createObjectStore(EXPORT_STORE_NAME, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(WORKSPACE_STORE_NAME)) {
+        db.createObjectStore(WORKSPACE_STORE_NAME, { keyPath: 'id' });
       }
     };
 
@@ -60,6 +65,29 @@ const openDB = (): Promise<IDBDatabase> => {
 
 export const saveToHistory = async (entry: HistoryEntry): Promise<void> => {
   try {
+    // Compress thumbnail if needed to save IDB space
+    if (entry.thumbnailUrl && entry.thumbnailUrl.startsWith('data:image')) {
+      try {
+        entry.thumbnailUrl = await optimizeBase64Image(entry.thumbnailUrl, 1024, 0.7);
+      } catch (e) {}
+    }
+    // Compress reference assets if needed
+    if (entry.referenceAssets && entry.referenceAssets.length > 0) {
+      try {
+        entry.referenceAssets = await Promise.all(entry.referenceAssets.map(async (ref) => {
+          if (ref.url && ref.url.startsWith('data:image')) {
+            try {
+              const opt = await optimizeBase64Image(ref.url, 1024, 0.7);
+              return { ...ref, url: opt };
+            } catch {
+              return ref;
+            }
+          }
+          return ref;
+        }));
+      } catch (e) {}
+    }
+
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -207,4 +235,103 @@ export const createHistoryEntry = (data: Omit<HistoryEntry, 'id' | 'timestamp'>)
     timestamp: Date.now(),
     ...data
   };
+};
+
+// --- Workspace Tab Session Persistence ---
+
+export interface SavedWorkspaceSession {
+  id: string;
+  tabs: WorkspaceTab[];
+  activeTabId: string;
+  savedAt: number;
+}
+
+export const saveWorkspaceSession = async (tabs: WorkspaceTab[], activeTabId: string): Promise<void> => {
+  try {
+    const db = await openDB();
+    // Compress large tab images
+    const optimizedTabs = await Promise.all(tabs.map(async (tab) => {
+      let genImg = tab.generatedImage;
+      if (genImg && genImg.startsWith('data:image')) {
+        try {
+          genImg = await optimizeBase64Image(genImg, 1024, 0.75);
+        } catch {}
+      }
+
+      let refs = tab.referenceAssets;
+      if (refs && refs.length > 0) {
+        refs = await Promise.all(refs.map(async (ref) => {
+          if (ref.url && ref.url.startsWith('data:image')) {
+            try {
+              const opt = await optimizeBase64Image(ref.url, 1024, 0.75);
+              return { ...ref, url: opt };
+            } catch {
+              return ref;
+            }
+          }
+          return ref;
+        }));
+      }
+
+      let sessions = tab.sessionImages || [];
+      if (sessions.length > 6) {
+        sessions = sessions.slice(0, 6);
+      }
+
+      return {
+        ...tab,
+        generatedImage: genImg,
+        referenceAssets: refs,
+        sessionImages: sessions
+      };
+    }));
+
+    const sessionData: SavedWorkspaceSession = {
+      id: 'active_session',
+      tabs: optimizedTabs,
+      activeTabId,
+      savedAt: Date.now()
+    };
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(WORKSPACE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(WORKSPACE_STORE_NAME);
+      store.put(sessionData);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn("Failed to save workspace session to IDB:", e);
+  }
+};
+
+export const getWorkspaceSession = async (): Promise<SavedWorkspaceSession | null> => {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(WORKSPACE_STORE_NAME, 'readonly');
+      const store = tx.objectStore(WORKSPACE_STORE_NAME);
+      const req = store.get('active_session');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.warn("Failed to load workspace session from IDB:", e);
+    return null;
+  }
+};
+
+export const clearWorkspaceSession = async (): Promise<void> => {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(WORKSPACE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(WORKSPACE_STORE_NAME);
+      store.delete('active_session');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn("Failed to clear workspace session in IDB:", e);
+  }
 };

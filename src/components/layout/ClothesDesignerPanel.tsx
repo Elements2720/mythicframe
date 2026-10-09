@@ -1,3 +1,4 @@
+import { AIEngineSelectorCard } from '../ui/AIEngineSelectorCard';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   UIMode, BackgroundConfig, PixelDimensions,
@@ -233,52 +234,14 @@ const ClothesDesignerPanel: React.FC<ClothesDesignerPanelProps> = (props) => {
 
           {/* AI MODEL & STYLE */}
           <div className="space-y-6">
-             <div className="space-y-2">
-                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Synthesis Model</label>
-                <div className="relative group">
-                   <select
-                      value={activeModel || (useProModel ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image')}
-                      onChange={(e) => {
-                         if (handleSelectModel) {
-                            handleSelectModel(e.target.value);
-                         } else {
-                            setUseProModel(e.target.value.includes('pro'));
-                         }
-                      }}
-                      className="w-full bg-[#161f32] border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 outline-none hover:border-slate-700 transition-colors cursor-pointer font-medium appearance-none"
-                   >
-                      {availableModels && availableModels.length > 0 ? (
-                         <>
-                            {availableModels.filter(m => m.isImageModel).length > 0 && (
-                               <optgroup label="🎨 Image Generation Models" className="bg-[#161f32]">
-                                  {availableModels.filter(m => m.isImageModel).map(m => (
-                                     <option key={m.id} value={m.id} className="bg-[#161f32] text-purple-300 font-semibold">
-                                        {m.displayName || m.id}
-                                     </option>
-                                  ))}
-                               </optgroup>
-                            )}
-                            {availableModels.filter(m => !m.isImageModel).length > 0 && (
-                               <optgroup label="⚡ Multimodal / Chat Models" className="bg-[#161f32]">
-                                  {availableModels.filter(m => !m.isImageModel).map(m => (
-                                     <option key={m.id} value={m.id} className="bg-[#161f32] text-slate-300">
-                                        {m.displayName || m.id}
-                                     </option>
-                                  ))}
-                               </optgroup>
-                            )}
-                         </>
-                      ) : (
-                         <>
-                            <option value="gemini-3.1-flash-image" className="bg-[#161f32]">Gemini 3.1 Flash Image (Fast)</option>
-                            <option value="gemini-3-pro-image" className="bg-[#161f32]">Gemini 3 Pro Image (High Quality)</option>
-                            <option value="gemini-2.5-flash" className="bg-[#161f32]">Gemini 2.5 Flash</option>
-                         </>
-                      )}
-                   </select>
-                   <Icon name="fa-caret-down" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-hover:text-white transition-colors" />
-                </div>
-             </div>
+             <AIEngineSelectorCard
+                setMode={(props as any).setMode}
+                availableModels={availableModels}
+                activeModel={activeModel}
+                handleSelectModel={handleSelectModel}
+                useProModel={useProModel}
+                setUseProModel={setUseProModel}
+              />
              <div className="space-y-2">
                 <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Art Direction</label>
                 <div className="relative group">

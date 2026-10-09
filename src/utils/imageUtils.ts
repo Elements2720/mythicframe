@@ -49,7 +49,7 @@ export const optimizeBase64Image = (
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) {
         resolve(base64Str);
         return;
@@ -59,7 +59,39 @@ export const optimizeBase64Image = (
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, width, height);
 
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      // Check if image has transparency to avoid destroying alpha cutouts
+      let hasAlpha = false;
+      const isPotentiallyTransparent = 
+        base64Str.startsWith('data:image/png') || 
+        base64Str.startsWith('data:image/webp') || 
+        !base64Str.startsWith('data:image/');
+
+      if (isPotentiallyTransparent) {
+        try {
+          const imgData = ctx.getImageData(0, 0, width, height).data;
+          // Step by 4 to inspect alpha channel (byte 3, 7, 11...)
+          // Alpha < 250 indicates partial or complete transparency
+          for (let i = 3; i < imgData.length; i += 4) {
+            if (imgData[i] < 250) {
+              hasAlpha = true;
+              break;
+            }
+          }
+        } catch (e) {
+          // If canvas is tainted or getImageData fails, fallback to mime detection
+          if (base64Str.startsWith('data:image/png') || base64Str.startsWith('data:image/webp')) {
+            hasAlpha = true;
+          }
+        }
+      }
+
+      if (hasAlpha) {
+        // Preserve transparent cutouts (PNG for lossless transparency, WebP if original was WebP)
+        const mimeType = base64Str.startsWith('data:image/webp') ? 'image/webp' : 'image/png';
+        resolve(canvas.toDataURL(mimeType, quality));
+      } else {
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      }
     };
     img.onerror = (e) => {
         console.warn("Image optimization failed, using original", e);

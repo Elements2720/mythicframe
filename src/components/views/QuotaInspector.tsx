@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
   getQuotaSummary, getQuotaRecords, clearQuotaRecords, 
-  probeGeminiQuota, probeOpenAIQuota, QuotaProbeResult, 
+  probeGeminiQuota, probeOpenAIQuota, probeBEIQuota, QuotaProbeResult, 
   QuotaSummary, QuotaUsageRecord, setCustomMonthlyBudget 
 } from '../../services/quotaTrackerService';
-import { getActiveAIProvider } from '../../services/aiProviderService';
+import { getActiveAIProvider, setActiveAIProvider } from '../../services/aiProviderService';
 import { getApiKey } from '../../services/geminiService';
 import { getOpenAIApiKey } from '../../services/openAIService';
-import { UIMode } from '../../types';
+import { AIProvider, UIMode } from '../../types';
 
 interface QuotaInspectorProps {
   apiKeyReady: boolean;
@@ -19,27 +19,36 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
   const [records, setRecords] = useState<QuotaUsageRecord[]>(() => getQuotaRecords());
   const [customBudgetInput, setCustomBudgetInput] = useState(() => String(summary.customMonthlyBudget));
   const [isEditingBudget, setIsEditingBudget] = useState(false);
+  const [activeProvider, setActiveProviderState] = useState<AIProvider>(() => getActiveAIProvider());
 
   // Probe states
   const [geminiProbe, setGeminiProbe] = useState<QuotaProbeResult | null>(null);
   const [isProbingGemini, setIsProbingGemini] = useState(false);
   const [openAIProbe, setOpenAIProbe] = useState<QuotaProbeResult | null>(null);
   const [isProbingOpenAI, setIsProbingOpenAI] = useState(false);
+  const [beiProbe, setBeiProbe] = useState<QuotaProbeResult | null>(null);
+  const [isProbingBei, setIsProbingBei] = useState(false);
 
-  const activeProvider = getActiveAIProvider();
   const hasGeminiKey = Boolean(getApiKey());
   const hasOpenAIKey = Boolean(getOpenAIApiKey());
 
   const refreshData = () => {
     setSummary(getQuotaSummary());
     setRecords(getQuotaRecords());
+    setActiveProviderState(getActiveAIProvider());
   };
 
   useEffect(() => {
     refreshData();
-    const interval = setInterval(refreshData, 10000);
+    const interval = setInterval(refreshData, 8000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleSelectProvider = (prov: AIProvider) => {
+    setActiveAIProvider(prov);
+    setActiveProviderState(prov);
+    refreshData();
+  };
 
   const handleProbeGemini = async () => {
     setIsProbingGemini(true);
@@ -65,6 +74,24 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
     }
   };
 
+  const handleProbeBei = async () => {
+    setIsProbingBei(true);
+    setBeiProbe(null);
+    try {
+      const result = await probeBEIQuota();
+      setBeiProbe(result);
+    } finally {
+      setIsProbingBei(false);
+      refreshData();
+    }
+  };
+
+  const handleProbeAll = async () => {
+    handleProbeBei();
+    handleProbeGemini();
+    if (hasOpenAIKey) handleProbeOpenAI();
+  };
+
   const handleSaveBudget = () => {
     const val = parseFloat(customBudgetInput);
     if (!isNaN(val) && val > 0) {
@@ -84,6 +111,8 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
   const freeRemaining = summary.freeTierRemainingDaily;
   const freePct = Math.min(100, Math.round((freeRemaining / summary.freeTierLimitDaily) * 100));
 
+  const isExhaustedAlert = summary.isQuotaExhaustedDetected || geminiProbe?.status === 'exhausted';
+
   return (
     <div className="flex-1 bg-slate-950 p-6 md:p-10 overflow-y-auto">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -98,7 +127,7 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
               <div>
                 <h2 className="text-2xl font-bold text-white">Quota & Usage Inspector</h2>
                 <p className="text-slate-400 text-sm">
-                  Live health check, rate limits, remaining requests, and expense tracking.
+                  Live health check, provider diagnostics, rate limits, and expense tracking.
                 </p>
               </div>
             </div>
@@ -106,12 +135,12 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { handleProbeGemini(); if (hasOpenAIKey) handleProbeOpenAI(); }}
-              disabled={isProbingGemini || isProbingOpenAI}
+              onClick={handleProbeAll}
+              disabled={isProbingGemini || isProbingOpenAI || isProbingBei}
               className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-purple-900/30 flex items-center gap-2 cursor-pointer"
             >
-              <i className={`fa-solid fa-bolt ${isProbingGemini || isProbingOpenAI ? 'animate-spin' : ''}`} />
-              <span>Probe Quota Health</span>
+              <i className={`fa-solid fa-bolt ${isProbingGemini || isProbingOpenAI || isProbingBei ? 'animate-spin' : ''}`} />
+              <span>Probe All Providers</span>
             </button>
             <button
               onClick={() => onNavigate('settings')}
@@ -122,36 +151,137 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
           </div>
         </div>
 
+        {/* Quota Exhaustion / $0 Balance Callout Banner */}
+        {isExhaustedAlert && (
+          <div className="bg-red-950/40 border border-red-500/50 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-red-600/20 text-red-400 border border-red-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                <i className="fa-solid fa-triangle-exclamation text-base" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-red-200 flex items-center gap-2">
+                  <span>Google Gemini API Quota Exhausted / $0 Balance (429)</span>
+                  <span className="text-[10px] bg-red-900/60 text-red-300 px-2 py-0.5 rounded-full border border-red-700/50">RESOURCE_EXHAUSTED</span>
+                </h4>
+                <p className="text-xs text-red-300/80 leading-relaxed">
+                  Your Google API key has $0 balance or has reached rate limits. Failed calls did <b>NOT</b> deduct from your quota count. 
+                  Switch to <b>BEI Mode</b> to bypass API limits and generate unlimited assets via your browser session for free!
+                </p>
+                {summary.lastQuotaErrorMessage && (
+                  <p className="text-[11px] font-mono text-red-400/90 bg-black/50 p-2 rounded max-h-16 overflow-y-auto break-all">
+                    {summary.lastQuotaErrorMessage}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => handleSelectProvider('bei')}
+              className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-lg shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer shrink-0 transition-transform active:scale-95 whitespace-nowrap"
+            >
+              <i className="fa-solid fa-puzzle-piece" />
+              <span>Switch to Free BEI Mode</span>
+            </button>
+          </div>
+        )}
+
         {/* Top KPI Metrics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           
-          {/* Card 1: Gemini Daily Free Tier Requests */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 relative overflow-hidden">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
-              <span>Google Daily Quota</span>
-              <i className="fa-brands fa-google text-amber-400 text-sm" />
-            </div>
-            <div>
-              <div className="text-3xl font-black text-white flex items-baseline gap-1.5">
-                <span>{freeRemaining.toLocaleString()}</span>
-                <span className="text-xs text-slate-500 font-semibold">/ {summary.freeTierLimitDaily} left</span>
+          {/* Card 1: Provider-Aware Active Quota Card */}
+          {activeProvider === 'bei' ? (
+            <div className="bg-slate-900 border border-emerald-500/40 rounded-xl p-5 space-y-3 relative overflow-hidden shadow-lg shadow-emerald-950/20">
+              <div className="flex items-center justify-between text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                <span className="flex items-center gap-1.5">
+                  <i className="fa-solid fa-puzzle-piece text-emerald-400" /> BEI Mode Active
+                </span>
+                <span className="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-700/40 font-mono">Port 58925</span>
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Free Tier: 1,500 Requests Per Day (RPD)
-              </p>
+              <div>
+                <div className="text-3xl font-black text-white flex items-baseline gap-1.5">
+                  <span className="text-emerald-400">Unlimited</span>
+                  <span className="text-xs text-slate-400 font-semibold">/ $0.00</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Browser Extension Bridge • 0 API tokens consumed
+                </p>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-emerald-500 w-full" />
+              </div>
+              <div className="flex justify-between text-[10px] text-emerald-400 font-mono">
+                <span>Direct Web Session</span>
+                <span>Zero Billing</span>
+              </div>
             </div>
-            {/* Progress bar */}
-            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-              <div 
-                className={`h-full transition-all duration-500 ${freePct > 50 ? 'bg-emerald-500' : freePct > 20 ? 'bg-amber-500' : 'bg-red-500'}`} 
-                style={{ width: `${freePct}%` }} 
-              />
+          ) : activeProvider === 'google' ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 relative overflow-hidden">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+                <span>Google API Quota (Est.)</span>
+                <i className="fa-brands fa-google text-amber-400 text-sm" />
+              </div>
+              <div>
+                <div className="text-3xl font-black text-white flex items-baseline gap-1.5">
+                  <span>{freeRemaining.toLocaleString()}</span>
+                  <span className="text-xs text-slate-500 font-semibold">/ {summary.freeTierLimitDaily} est. left</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {summary.todayGoogleSuccessfulRequests} ok, {summary.todayGoogleFailedRequests} failed/limited today
+                </p>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-500 ${freePct > 50 ? 'bg-emerald-500' : freePct > 20 ? 'bg-amber-500' : 'bg-red-500'}`} 
+                  style={{ width: `${freePct}%` }} 
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                <span>* App-side tracker</span>
+                <span>Failures not deducted</span>
+              </div>
             </div>
-            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-              <span>{freePct}% available</span>
-              <span>Resets 00:00 UTC</span>
+          ) : activeProvider === 'pollinations' ? (
+            <div className="bg-slate-900 border border-pink-500/30 rounded-xl p-5 space-y-3 relative overflow-hidden">
+              <div className="flex items-center justify-between text-xs font-bold text-pink-400 uppercase tracking-wider">
+                <span>Pollinations Free Engine</span>
+                <i className="fa-solid fa-wand-magic-sparkles text-pink-400 text-sm" />
+              </div>
+              <div>
+                <div className="text-3xl font-black text-pink-300">Unlimited</div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Open community AI image generator
+                </p>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-pink-500 w-full" />
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                <span>Free Tier</span>
+                <span>$0.00 Cost</span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 relative overflow-hidden">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+                <span>OpenAI DALL-E</span>
+                <i className="fa-solid fa-robot text-emerald-400 text-sm" />
+              </div>
+              <div>
+                <div className="text-3xl font-black text-emerald-400">
+                  ${summary.todayCost.toFixed(3)}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Prepaid API credit consumption today
+                </p>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-emerald-500 w-full" />
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                <span>Pay-As-You-Go</span>
+                <span>Check platform.openai.com</span>
+              </div>
+            </div>
+          )}
 
           {/* Card 2: Rate Limit (RPM) */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
@@ -178,7 +308,7 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
               <span className={summary.recentRpmCount > 12 ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
                 {summary.recentRpmCount > 12 ? 'Near Limit' : 'Optimal'}
               </span>
-              <span>Max 15 RPM (Free)</span>
+              <span>Max 15 RPM (Google Free)</span>
             </div>
           </div>
 
@@ -214,23 +344,45 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
             </div>
           </div>
 
-          {/* Card 4: Total Calls & Active Engine */}
+          {/* Card 4: Total Calls & Active Engine Switcher */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
             <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
               <span>Active Engine</span>
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             </div>
             <div>
-              <div className="text-2xl font-black text-purple-300 uppercase">
-                {activeProvider}
+              <div className="text-xl font-black text-purple-300 uppercase truncate">
+                {activeProvider === 'bei' ? 'BEI Mode' : activeProvider}
               </div>
               <p className="text-[11px] text-slate-400 mt-1">
-                {summary.todayRequests} generations logged today
+                {summary.todaySuccessfulRequests} ok, {summary.todayFailedRequests} failed today
               </p>
             </div>
-            <div className="pt-1 border-t border-slate-800 text-[11px] text-slate-400 flex justify-between">
-              <span>All-time tracked:</span>
-              <b className="text-white">{records.length} calls</b>
+            <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-1 text-[10px]">
+              <span className="text-slate-500">Switch:</span>
+              <div className="flex items-center gap-1 font-semibold">
+                <button
+                  onClick={() => handleSelectProvider('bei')}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer ${activeProvider === 'bei' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                  title="Switch to BEI Mode"
+                >
+                  BEI
+                </button>
+                <button
+                  onClick={() => handleSelectProvider('google')}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer ${activeProvider === 'google' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                  title="Switch to Google Gemini API"
+                >
+                  Google
+                </button>
+                <button
+                  onClick={() => handleSelectProvider('pollinations')}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer ${activeProvider === 'pollinations' ? 'bg-pink-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                  title="Switch to Pollinations"
+                >
+                  Poll
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -276,17 +428,59 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <i className="fa-solid fa-heart-pulse text-pink-400" />
-                Live API Quota Health Probe
+                Live Provider Quota & Bridge Diagnostics
               </h3>
               <p className="text-xs text-slate-400">
-                Pings active API endpoints to test whether your keys have remaining quota or are encountering HTTP 429 rate limits.
+                Test whether your API keys have remaining quota or whether the BEI Browser Extension bridge is connected.
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             
-            {/* Gemini Probe Box */}
+            {/* 1. BEI Bridge Probe Box */}
+            <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <i className="fa-solid fa-puzzle-piece text-emerald-400" />
+                  <span className="font-bold text-xs text-slate-200">BEI Browser Bridge</span>
+                </div>
+                <button
+                  onClick={handleProbeBei}
+                  disabled={isProbingBei}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                >
+                  <i className={`fa-solid fa-arrows-rotate ${isProbingBei ? 'animate-spin' : ''}`} />
+                  <span>{isProbingBei ? 'Testing...' : 'Test BEI'}</span>
+                </button>
+              </div>
+
+              {beiProbe ? (
+                <div className={`p-3 rounded-lg text-xs space-y-1.5 border ${
+                  beiProbe.status === 'healthy' 
+                    ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300' 
+                    : beiProbe.status === 'exhausted'
+                    ? 'bg-amber-950/30 border-amber-500/30 text-amber-300'
+                    : 'bg-red-950/40 border-red-500/30 text-red-300'
+                }`}>
+                  <div className="font-bold flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <i className={`fa-solid ${beiProbe.status === 'healthy' ? 'fa-circle-check text-emerald-400' : 'fa-circle-exclamation'}`} />
+                      {beiProbe.status === 'healthy' ? 'Bridge Connected & Ready' : beiProbe.status === 'exhausted' ? 'Bridge Running (Awaiting Tab)' : 'Bridge Offline'}
+                    </span>
+                    <span className="font-mono text-[11px] opacity-75">{beiProbe.latencyMs}ms</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed opacity-90">{beiProbe.message}</p>
+                </div>
+              ) : (
+                <div className="text-xs text-slate-500 p-3 bg-slate-900/50 rounded border border-slate-800/80 flex items-center justify-between">
+                  <span>Port: 58925 (Click Test BEI)</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500/50" />
+                </div>
+              )}
+            </div>
+
+            {/* 2. Gemini Probe Box */}
             <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -314,7 +508,7 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
                   <div className="font-bold flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <i className={`fa-solid ${geminiProbe.status === 'healthy' ? 'fa-circle-check text-emerald-400' : 'fa-circle-exclamation'}`} />
-                      {geminiProbe.status === 'healthy' ? 'Quota Active & Healthy' : geminiProbe.status === 'exhausted' ? 'Quota Exhausted (429)' : 'Configuration Alert'}
+                      {geminiProbe.status === 'healthy' ? 'Endpoint Reachable' : geminiProbe.status === 'exhausted' ? 'Quota Exhausted (429)' : 'Configuration Alert'}
                     </span>
                     <span className="font-mono text-[11px] opacity-75">{geminiProbe.latencyMs}ms</span>
                   </div>
@@ -333,7 +527,7 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
               )}
             </div>
 
-            {/* OpenAI Probe Box */}
+            {/* 3. OpenAI Probe Box */}
             <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -374,7 +568,7 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
                 </div>
               ) : (
                 <div className="text-xs text-slate-500 p-3 bg-slate-900/50 rounded border border-slate-800/80 flex items-center justify-between">
-                  <span>Status: {hasOpenAIKey ? 'Key Configured (Click Test)' : 'No OpenAI key entered in Settings'}</span>
+                  <span>Status: {hasOpenAIKey ? 'Key Configured (Click Test)' : 'No OpenAI key set in Settings'}</span>
                   {hasOpenAIKey && <span className="w-2 h-2 rounded-full bg-emerald-500/50" />}
                 </div>
               )}
@@ -474,7 +668,7 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
               Model Limits & Cost Reference Guide
             </h3>
             <p className="text-xs text-slate-400">
-              Standard official tier limits across Google Gemini, OpenAI, and free alternatives.
+              Comparison across BEI Chrome Extension bridge, Google Gemini, OpenAI, and free engines.
             </p>
           </div>
 
@@ -483,25 +677,36 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px]">
                   <th className="py-2.5 px-3">Model / Engine</th>
-                  <th className="py-2.5 px-3">Free Tier Quota</th>
+                  <th className="py-2.5 px-3">Tier Quota</th>
                   <th className="py-2.5 px-3">Rate Limit</th>
-                  <th className="py-2.5 px-3">Est. Cost / Image</th>
+                  <th className="py-2.5 px-3">Est. Cost / Asset</th>
                   <th className="py-2.5 px-3">Billing Requirement</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-                <tr className="hover:bg-slate-800/20">
-                  <td className="py-2.5 px-3 font-bold text-white font-sans flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-400" /> Gemini 3.1 Flash Image
+                {/* BEI Mode Row */}
+                <tr className="bg-emerald-950/20 hover:bg-emerald-950/40 border-l-2 border-emerald-500">
+                  <td className="py-2.5 px-3 font-bold text-emerald-300 font-sans flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> 
+                    BEI Mode (Chrome Extension Bridge)
                   </td>
-                  <td className="py-2.5 px-3 text-emerald-400 font-bold">1,500 RPD Free</td>
-                  <td className="py-2.5 px-3 text-slate-300">15 RPM</td>
-                  <td className="py-2.5 px-3 text-slate-300">~$0.002</td>
-                  <td className="py-2.5 px-3 text-slate-400 font-sans">None (Free key works)</td>
+                  <td className="py-2.5 px-3 text-emerald-400 font-bold font-sans">Unlimited (Web Session)</td>
+                  <td className="py-2.5 px-3 text-emerald-300 font-sans">Web UI Limits</td>
+                  <td className="py-2.5 px-3 text-emerald-400 font-bold">$0.000 (Free)</td>
+                  <td className="py-2.5 px-3 text-emerald-400 font-sans">None (Uses Gemini/ChatGPT Web login)</td>
                 </tr>
                 <tr className="hover:bg-slate-800/20">
                   <td className="py-2.5 px-3 font-bold text-white font-sans flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-purple-400" /> Gemini 3 Pro Image
+                    <span className="w-2 h-2 rounded-full bg-amber-400" /> Gemini 3.1 Flash Image API
+                  </td>
+                  <td className="py-2.5 px-3 text-emerald-400 font-bold">1,500 RPD Free (Estimate)</td>
+                  <td className="py-2.5 px-3 text-slate-300">15 RPM</td>
+                  <td className="py-2.5 px-3 text-slate-300">~$0.002</td>
+                  <td className="py-2.5 px-3 text-slate-400 font-sans">Free tier key (Subject to region/limits)</td>
+                </tr>
+                <tr className="hover:bg-slate-800/20">
+                  <td className="py-2.5 px-3 font-bold text-white font-sans flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-purple-400" /> Gemini 3 Pro Image API
                   </td>
                   <td className="py-2.5 px-3 text-slate-400">Requires Pay-As-You-Go</td>
                   <td className="py-2.5 px-3 text-slate-300">360 RPM</td>
@@ -510,12 +715,12 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
                 </tr>
                 <tr className="hover:bg-slate-800/20">
                   <td className="py-2.5 px-3 font-bold text-white font-sans flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" /> OpenAI DALL-E 3
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" /> OpenAI DALL-E 3 API
                   </td>
                   <td className="py-2.5 px-3 text-slate-400">Prepaid balance only</td>
                   <td className="py-2.5 px-3 text-slate-300">5-7 images/min</td>
                   <td className="py-2.5 px-3 text-slate-300">$0.040 - $0.080</td>
-                  <td className="py-2.5 px-3 text-amber-400 font-sans">OpenAI Prepaid Credits</td>
+                  <td className="py-2.5 px-3 text-amber-400 font-sans">OpenAI Prepaid Credits ($5+ minimum)</td>
                 </tr>
                 <tr className="hover:bg-slate-800/20">
                   <td className="py-2.5 px-3 font-bold text-white font-sans flex items-center gap-2">
@@ -549,7 +754,7 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
                 Recent Generation Request History
               </h3>
               <p className="text-xs text-slate-400">
-                Local log of recent AI requests with latency, status, and estimated costs.
+                Local log of recent AI requests with latency, status, error causes, and costs.
               </p>
             </div>
             {records.length > 0 && (
@@ -563,7 +768,7 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
           </div>
 
           {records.length > 0 ? (
-            <div className="overflow-x-auto max-h-72 overflow-y-auto custom-scrollbar border border-slate-800 rounded-lg">
+            <div className="overflow-x-auto max-h-80 overflow-y-auto custom-scrollbar border border-slate-800 rounded-lg">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-950 sticky top-0 z-10 border-b border-slate-800 text-slate-400 text-[10px] uppercase font-semibold">
                   <tr>
@@ -573,21 +778,22 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
                     <th className="py-2.5 px-3">Status</th>
                     <th className="py-2.5 px-3">Latency</th>
                     <th className="py-2.5 px-3">Est. Cost</th>
+                    <th className="py-2.5 px-3">Details / Error</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/40 font-mono text-[11px] bg-slate-900/60">
                   {records.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-800/40">
-                      <td className="py-2 px-3 text-slate-400">
+                      <td className="py-2 px-3 text-slate-400 whitespace-nowrap">
                         {new Date(r.timestamp).toLocaleTimeString()}
                       </td>
                       <td className="py-2 px-3 uppercase text-[10px] font-bold text-slate-300">
                         {r.provider}
                       </td>
-                      <td className="py-2 px-3 text-purple-300 truncate max-w-[150px]">
+                      <td className="py-2 px-3 text-purple-300 truncate max-w-[140px]" title={r.model}>
                         {r.model}
                       </td>
-                      <td className="py-2 px-3">
+                      <td className="py-2 px-3 whitespace-nowrap">
                         {r.status === 'success' && (
                           <span className="text-emerald-400 flex items-center gap-1 font-semibold text-[10px]">
                             <i className="fa-solid fa-circle-check" /> 200 OK
@@ -595,7 +801,7 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
                         )}
                         {r.status === 'rate_limited' && (
                           <span className="text-red-400 flex items-center gap-1 font-semibold text-[10px]">
-                            <i className="fa-solid fa-triangle-exclamation" /> 429 Limit
+                            <i className="fa-solid fa-triangle-exclamation" /> 429 Quota
                           </span>
                         )}
                         {r.status === 'error' && (
@@ -609,6 +815,17 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
                       </td>
                       <td className="py-2 px-3 text-slate-300">
                         ${r.estimatedCost.toFixed(3)}
+                      </td>
+                      <td className="py-2 px-3 text-slate-400 max-w-[240px] truncate" title={r.errorMessage || r.promptSnippet}>
+                        {r.errorMessage ? (
+                          <span className="text-red-400 text-[10px] font-sans">
+                            {r.errorMessage}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 text-[10px] italic">
+                            {r.promptSnippet || 'Success'}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}

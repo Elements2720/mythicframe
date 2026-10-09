@@ -1,3 +1,4 @@
+import { AIEngineSelectorCard } from '../ui/AIEngineSelectorCard';
 
 import React, { useState, useCallback } from 'react';
 import { Wand2, RefreshCw, Trash2, Settings2, LayoutGrid, Image as ImageIcon, Sparkles, Plus, X, Info, Check, ChevronDown, Download } from 'lucide-react';
@@ -85,6 +86,17 @@ export const SpriteSheetControls: React.FC<SpriteSheetControlsProps> = ({ engine
   return (
     <div className="flex flex-col h-full">
       <div className="p-6 space-y-8 overflow-y-auto custom-scrollbar flex-1">
+        <AIEngineSelectorCard
+          setMode={engine.setMode}
+          availableModels={engine.availableModels}
+          activeModel={engine.activeModel}
+          handleSelectModel={engine.handleSelectModel}
+          useProModel={engine.useProModel}
+          setUseProModel={engine.setUseProModel}
+          handleFetchModels={engine.handleFetchModels}
+          isLoadingModels={engine.isLoadingModels}
+        />
+
         {/* Global Settings */}
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-slate-400">

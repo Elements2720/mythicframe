@@ -26,7 +26,30 @@ export type ChibiProportion = 'standard' | 'deformed_4h' | 'chibi_3h' | 'micro_2
 
 export type StyleCategory = 'Game Art' | 'Anime/Manga' | 'Digital Painting' | 'Traditional' | 'Abstract/UI' | 'Retro' | 'Other';
 
-export type AIProvider = 'google' | 'openai' | 'opencode' | 'openrouter' | 'pollinations' | 'offline' | 'custom';
+export type AIProvider = 'google' | 'openai' | 'opencode' | 'openrouter' | 'pollinations' | 'offline' | 'custom' | 'bei';
+
+export type BEITarget = 'gemini' | 'chatgpt';
+export type BEITabMode = 'same_window_group' | 'new_window_group' | 'background_tab';
+
+export interface BEIAccountQuota {
+  slot: number;
+  target: BEITarget;
+  tier?: 'free' | 'pro';
+  callsToday: number;
+  dailyLimit: number;
+  status: 'ready' | 'high_usage' | 'rate_limited';
+  cooldownUntil?: number;
+  lastUsed?: number;
+}
+
+export interface BEIConfig {
+  target: BEITarget;
+  accountSlot: number;
+  port: number;
+  timeoutSeconds: number;
+  tabMode?: BEITabMode;
+  bringTabToFront?: boolean;
+}
 
 export interface AIConfig {
   provider: AIProvider;
@@ -41,6 +64,7 @@ export interface AIConfig {
   openRouterApiKey?: string;
   openRouterModel?: string;
   pollinationsModel?: string;
+  beiConfig?: BEIConfig;
 }
 
 export interface AvailableModel {

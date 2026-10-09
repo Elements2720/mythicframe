@@ -41,34 +41,44 @@ const TabBar = ({ tabs, activeTabId, onSelect, onAdd, onClose }: any) => {
 export default function StudioLayout({ engine }: { engine: any }) {
   const [rightPanelWidth, setRightPanelWidth] = useState(() => parseInt(localStorage.getItem('mythic_right_width') || '320'));
   const [isResizingRight, setIsResizingRight] = useState(false);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const currentWidthRef = useRef(rightPanelWidth);
 
-  useEffect(() => { localStorage.setItem('mythic_right_width', String(rightPanelWidth)); }, [rightPanelWidth]);
+  useEffect(() => {
+    currentWidthRef.current = rightPanelWidth;
+  }, [rightPanelWidth]);
 
   useEffect(() => {
      if (!isResizingRight) return;
 
      const handleMouseMove = (e: MouseEvent) => {
-        const newWidth = window.innerWidth - e.clientX;
-        if (newWidth > 200 && newWidth < 800) {
-           setRightPanelWidth(newWidth);
+        const newWidth = Math.max(200, Math.min(800, window.innerWidth - e.clientX));
+        currentWidthRef.current = newWidth;
+        if (rightPanelRef.current) {
+           rightPanelRef.current.style.width = `${newWidth}px`;
         }
      };
 
      const handleMouseUp = () => {
         setIsResizingRight(false);
         document.body.style.cursor = '';
+        document.body.style.userSelect = '';
         document.body.classList.remove('select-none');
+        setRightPanelWidth(currentWidthRef.current);
+        localStorage.setItem('mythic_right_width', String(currentWidthRef.current));
      };
 
-     window.addEventListener('mousemove', handleMouseMove);
+     window.addEventListener('mousemove', handleMouseMove, { passive: true });
      window.addEventListener('mouseup', handleMouseUp);
      document.body.style.cursor = 'ew-resize';
+     document.body.style.userSelect = 'none';
      document.body.classList.add('select-none');
      
      return () => {
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
         document.body.style.cursor = '';
+        document.body.style.userSelect = '';
         document.body.classList.remove('select-none');
      };
   }, [isResizingRight]);
@@ -113,6 +123,7 @@ export default function StudioLayout({ engine }: { engine: any }) {
         prompt={engine.prompt} 
         setPrompt={engine.setPrompt} 
         isGenerating={engine.isGenerating} 
+        statusMessage={engine.statusMessage}
         onGenerate={engine.handleGenerate} 
         onCancel={engine.handleCancel} 
         gameContext={engine.gameContext} 
@@ -125,6 +136,7 @@ export default function StudioLayout({ engine }: { engine: any }) {
         isAnalyzing={engine.isAnalyzing} 
         onAnalyzeStyle={engine.handleAnalyzeStyle} 
         onRefinePrompt={engine.handleRefinePrompt} 
+        onInspirePrompt={engine.handleInspirePrompt}
         onUndoPrompt={engine.lastPrompt ? engine.handleUndoPrompt : undefined} 
         mode={engine.mode} 
         isPromptOnlyMode={engine.isPromptOnlyMode}
@@ -149,7 +161,7 @@ export default function StudioLayout({ engine }: { engine: any }) {
   return (
     <>
       <div className="flex-1 flex flex-col relative overflow-hidden bg-black">
-         <AppHeader mode={engine.mode} title={engine.mode === 'resize' ? 'Magic Resizer' : engine.mode === 'clothes' ? 'Clothes Designer' : engine.mode === 'bg-replace' ? 'BG Replacer' : engine.mode === 'pixelize' ? 'Pixel Studio' : engine.mode} useProModel={engine.useProModel} apiKeyReady={engine.apiKeyReady} onConnect={engine.handleConnect} generatedImage={engine.generatedImage} onExport={() => engine.setShowExport(true)} onSaveToDrive={engine.handleSaveToDrive} isDriveConnected={engine.driveConnected} showConsole={engine.showConsole} setShowConsole={engine.setShowConsole} isSuggesting={engine.isSuggesting} />
+         <AppHeader {...engine} title={engine.mode === 'resize' ? 'Magic Resizer' : engine.mode === 'clothes' ? 'Clothes Designer' : engine.mode === 'bg-replace' ? 'BG Replacer' : engine.mode === 'pixelize' ? 'Pixel Studio' : engine.mode} onExport={() => engine.setShowExport(true)} />
          <TabBar tabs={engine.tabs} activeTabId={engine.activeTabId} onSelect={engine.handleSwitchTab} onAdd={engine.handleAddTab} onClose={engine.handleCloseTab} />
          <div className="flex-1 flex overflow-hidden relative bg-slate-900">
             {renderCanvas()}
@@ -167,7 +179,10 @@ export default function StudioLayout({ engine }: { engine: any }) {
 
       {!isGachaMode && (
          <div 
-            className="transition-all duration-300 ease-in-out shrink-0 relative z-[500] overflow-visible" 
+            ref={rightPanelRef}
+            className={`shrink-0 relative z-[500] overflow-visible ${
+               isResizingRight ? '!transition-none select-none' : 'transition-all duration-200 ease-in-out'
+            }`} 
             style={{ width: engine.isRightMinimized ? '40px' : `${rightPanelWidth}px` }}
          >
             {renderRightPanel()}

@@ -17,11 +17,17 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
 }) => {
   const { t } = useLanguage();
   const [isMinimized, setIsMinimized] = useState(() => localStorage.getItem('mythic_sidebar_minimized') === 'true');
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    project: true,
-    character: true,
-    world: true,
-    production: true
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('mythic_sidebar_sections');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      project: true,
+      character: true,
+      world: true,
+      production: true
+    };
   });
 
   const toggleSection = (section: string) => {
@@ -31,6 +37,10 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
   useEffect(() => {
     localStorage.setItem('mythic_sidebar_minimized', String(isMinimized));
   }, [isMinimized]);
+
+  useEffect(() => {
+    localStorage.setItem('mythic_sidebar_sections', JSON.stringify(expandedSections));
+  }, [expandedSections]);
   
   const NavButton = ({ targetMode }: { targetMode: UIMode }) => (
     <button
@@ -50,14 +60,14 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
   );
 
   const CategoryHeader = ({ label, section, icon }: { label: string, section: string, icon: string }) => {
-    if (isMinimized) return <div className="h-px bg-slate-800 my-4 mx-2 opacity-30" />;
+    if (isMinimized) return <div className="h-px bg-slate-800/80 my-3 mx-2 opacity-50" />;
     
     const isExpanded = expandedSections[section];
     
     return (
       <button 
         onClick={() => toggleSection(section)}
-        className="w-full flex items-center justify-between px-3 py-2 mb-2 bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/50 rounded-lg transition-all group"
+        className="w-full flex items-center justify-between px-3 py-2 mb-2 bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/50 rounded-lg transition-colors group cursor-pointer"
       >
         <div className="flex items-center gap-2">
           <div className="w-5 h-5 flex items-center justify-center rounded bg-slate-800 text-slate-400 group-hover:text-purple-400 transition-colors">
@@ -66,8 +76,8 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
           <span className="text-[10px] font-black text-slate-200 uppercase tracking-[0.15em]">{label}</span>
         </div>
         <Icon 
-          name={isExpanded ? "fa-chevron-down" : "fa-chevron-right"} 
-          className={`text-[8px] text-slate-500 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} 
+          name="fa-chevron-down" 
+          className={`text-[8px] text-slate-500 transition-transform duration-200 ease-out ${isExpanded ? 'rotate-0' : '-rotate-90'}`} 
         />
       </button>
     );
@@ -76,8 +86,9 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
   const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch'].includes(mode);
 
   return (
-    <div className={`${isMinimized ? 'w-16' : 'w-64'} bg-slate-950 border-r border-slate-900 flex flex-col shrink-0 transition-all duration-300 overflow-y-auto custom-scrollbar z-50`}>
-      <div className={`p-6 ${isMinimized ? 'px-0 flex justify-center' : ''}`}>
+    <div className={`${isMinimized ? 'w-16' : 'w-64'} h-full bg-slate-950 border-r border-slate-900 flex flex-col shrink-0 transition-all duration-300 overflow-hidden z-50 select-none`}>
+      {/* Top Brand Header */}
+      <div className={`p-6 shrink-0 ${isMinimized ? 'px-0 flex justify-center' : ''}`}>
         {!isMinimized ? (
           <>
             <h1 className="text-xl font-black bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent tracking-tight">
@@ -86,79 +97,95 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
             <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-bold">AI Game Asset Studio</p>
           </>
         ) : (
-          <div className="w-8 h-8 rounded bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center font-black text-white text-xs">M</div>
+          <div className="w-8 h-8 rounded bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center font-black text-white text-xs shadow-md shadow-purple-900/30">M</div>
         )}
       </div>
 
-      <div className={`${isMinimized ? 'px-2' : 'px-4'} mb-4`}>
-         <CategoryHeader label="Project" section="project" icon="fa-folder-tree" />
-         {(expandedSections.project || isMinimized) && (
-           <div className="space-y-0.5">
-             <NavButton targetMode="dashboard" />
-             <NavButton targetMode="library" />
-             <NavButton targetMode="style-library" />
-             <NavButton targetMode="downloads" />
-             <NavButton targetMode="quota" />
-             <NavButton targetMode="settings" />
-             <NavButton targetMode="tutorials" />
+      {/* Scrollable Nav Section */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 py-1">
+        {/* Project Section */}
+        <div className={`${isMinimized ? 'px-2' : 'px-4'} mb-3`}>
+           <CategoryHeader label="Project" section="project" icon="fa-folder-tree" />
+           <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+             expandedSections.project || isMinimized ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+           }`}>
+             <div className="overflow-hidden space-y-0.5">
+               <NavButton targetMode="dashboard" />
+               <NavButton targetMode="library" />
+               <NavButton targetMode="style-library" />
+               <NavButton targetMode="downloads" />
+               <NavButton targetMode="quota" />
+               <NavButton targetMode="settings" />
+               <NavButton targetMode="tutorials" />
+             </div>
            </div>
-         )}
+        </div>
+
+        {/* Character Studio Section */}
+        <div className={`${isMinimized ? 'px-2' : 'px-4'} mb-3`}>
+           <CategoryHeader label="Character Studio" section="character" icon="fa-user-gear" />
+           <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+             expandedSections.character || isMinimized ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+           }`}>
+             <div className="overflow-hidden space-y-0.5">
+               <NavButton targetMode="illustration" />
+               <NavButton targetMode="sprite-sheet" />
+               <NavButton targetMode="pose-studio" />
+               <NavButton targetMode="gacha" />
+               <NavButton targetMode="clothes" />
+             </div>
+           </div>
+        </div>
+
+        {/* World & UI Section */}
+        <div className={`${isMinimized ? 'px-2' : 'px-4'} mb-3`}>
+           <CategoryHeader label="World & UI" section="world" icon="fa-earth-americas" />
+           <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+             expandedSections.world || isMinimized ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+           }`}>
+             <div className="overflow-hidden space-y-0.5">
+               <NavButton targetMode="background" />
+               <NavButton targetMode="bg-replace" />
+               <NavButton targetMode="frame" />
+               <NavButton targetMode="ui-reimagine" />
+               <NavButton targetMode="map-grid" />
+             </div>
+           </div>
+        </div>
+
+        {/* Production Section */}
+        <div className={`${isMinimized ? 'px-2' : 'px-4'} mb-3`}>
+           <CategoryHeader label="Production" section="production" icon="fa-wand-magic-sparkles" />
+           <div className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+             expandedSections.production || isMinimized ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+           }`}>
+             <div className="overflow-hidden space-y-0.5">
+               <NavButton targetMode="pixelize" />
+               <NavButton targetMode="resize" />
+               <NavButton targetMode="animation" />
+               <NavButton targetMode="batch" />
+             </div>
+           </div>
+        </div>
       </div>
 
-      <div className={`${isMinimized ? 'px-2' : 'px-4'} mb-4`}>
-         <CategoryHeader label="Character Studio" section="character" icon="fa-user-gear" />
-         {(expandedSections.character || isMinimized) && (
-           <div className="space-y-0.5">
-             <NavButton targetMode="illustration" />
-             <NavButton targetMode="sprite-sheet" />
-             <NavButton targetMode="pose-studio" />
-             <NavButton targetMode="gacha" />
-             <NavButton targetMode="clothes" />
-           </div>
-         )}
-      </div>
-
-      <div className={`${isMinimized ? 'px-2' : 'px-4'} mb-4`}>
-         <CategoryHeader label="World & UI" section="world" icon="fa-earth-americas" />
-         {(expandedSections.world || isMinimized) && (
-           <div className="space-y-0.5">
-             <NavButton targetMode="background" />
-             <NavButton targetMode="bg-replace" />
-             <NavButton targetMode="frame" />
-             <NavButton targetMode="ui-reimagine" />
-             <NavButton targetMode="map-grid" />
-           </div>
-         )}
-      </div>
-
-      <div className={`${isMinimized ? 'px-2' : 'px-4'} mb-6`}>
-         <CategoryHeader label="Production" section="production" icon="fa-wand-magic-sparkles" />
-         {(expandedSections.production || isMinimized) && (
-           <div className="space-y-0.5">
-             <NavButton targetMode="pixelize" />
-             <NavButton targetMode="resize" />
-             <NavButton targetMode="animation" />
-             <NavButton targetMode="batch" />
-           </div>
-         )}
-      </div>
-
-      <div className="mt-auto p-4 border-t border-slate-900 space-y-2 bg-slate-900/30">
+      {/* Permanently Pinned Bottom Dock Controls */}
+      <div className="shrink-0 p-3 border-t border-slate-900 bg-slate-950 space-y-2 z-10">
          {isStudioMode && mode !== 'tutorials' && (
            <button 
              onClick={() => setShowHistory(!showHistory)} 
-             className={`w-full text-slate-300 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 py-2 rounded text-xs flex items-center justify-center gap-2 ${showHistory ? 'bg-slate-800 text-purple-400 border-purple-500/30' : 'bg-transparent'} ${isMinimized ? 'px-0' : ''}`}
+             className={`w-full text-slate-300 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 py-2 rounded-lg text-xs flex items-center justify-center gap-2 transition-colors ${showHistory ? 'bg-slate-800 text-purple-400 border-purple-500/30' : 'bg-transparent'} ${isMinimized ? 'px-0' : ''}`}
              title={t('recent_work')}
            >
-              <Icon name="fa-clock-rotate-left" /> {!isMinimized && t('recent_work')}
+              <Icon name="fa-clock-rotate-left" /> {!isMinimized && <span>{t('recent_work')}</span>}
            </button>
          )}
          <button 
            onClick={() => setIsMinimized(!isMinimized)}
-           className="w-full text-slate-500 hover:text-white py-2 flex items-center justify-center transition-colors"
+           className="w-full h-8 rounded-lg text-slate-500 hover:text-white hover:bg-slate-900 flex items-center justify-center transition-all group cursor-pointer"
            title={isMinimized ? "Expand Sidebar" : "Minimize Sidebar"}
          >
-           <i className={`fa-solid fa-chevron-${isMinimized ? 'right' : 'left'}`} />
+           <i className={`fa-solid fa-chevron-${isMinimized ? 'right' : 'left'} text-xs group-hover:scale-110 transition-transform`} />
          </button>
       </div>
     </div>

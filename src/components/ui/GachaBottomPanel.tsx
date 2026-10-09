@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { ReferenceAsset, Rarity } from '../../types';
 import { AETHELGARD_RACES } from '../../constants';
@@ -53,18 +53,41 @@ const GachaBottomPanel: React.FC<GachaBottomPanelProps> = ({
   const [isResizing, setIsResizing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  useEffect(() => { localStorage.setItem('mythic_gacha_height', String(height)); }, [height]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const currentHeightRef = useRef(height);
+
+  useEffect(() => { 
+    localStorage.setItem('mythic_gacha_height', String(height)); 
+    currentHeightRef.current = height;
+  }, [height]);
 
   useEffect(() => {
     if (!isResizing) return;
     const handleMouseMove = (e: MouseEvent) => {
-      const newHeight = window.innerHeight - e.clientY;
-      if (newHeight > 150 && newHeight < window.innerHeight * 0.95) setHeight(newHeight);
+      const newHeight = Math.max(160, Math.min(window.innerHeight * 0.95, window.innerHeight - e.clientY));
+      currentHeightRef.current = newHeight;
+      if (panelRef.current) {
+        panelRef.current.style.height = `${newHeight}px`;
+      }
     };
-    const handleMouseUp = () => setIsResizing(false);
-    window.addEventListener('mousemove', handleMouseMove);
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      setHeight(currentHeightRef.current);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mouseup', handleMouseUp);
-    return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
+    return () => { 
+      window.removeEventListener('mousemove', handleMouseMove); 
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
   }, [isResizing]);
 
   const handleDrop = (e: React.DragEvent) => {
@@ -89,10 +112,16 @@ const GachaBottomPanel: React.FC<GachaBottomPanelProps> = ({
 
   return (
     <div 
-       className="w-full bg-[#0b1120] border-t border-slate-800 z-40 flex flex-col shadow-[0_-8px_30px_rgba(0,0,0,0.5)] shrink-0 transition-all duration-300 relative"
+       ref={panelRef}
+       className={`w-full bg-[#0b1120] border-t border-slate-800 z-40 flex flex-col shadow-[0_-8px_30px_rgba(0,0,0,0.5)] shrink-0 relative ${
+         isResizing ? '!transition-none select-none' : 'transition-all duration-200'
+       }`}
        style={{ height: isMinimized ? 48 : height }}
     >
-       <div className="h-1.5 bg-slate-900 hover:bg-purple-600 cursor-ns-resize w-full flex items-center justify-center transition-colors group absolute -top-1.5 z-50" onMouseDown={(e) => { e.preventDefault(); setIsResizing(true); }}>
+       <div 
+         className="h-2 bg-slate-900/80 hover:bg-purple-600 cursor-ns-resize w-full flex items-center justify-center transition-colors group absolute -top-2 z-50 touch-none py-1" 
+         onMouseDown={(e) => { e.preventDefault(); setIsResizing(true); }}
+       >
          <div className="w-20 h-1 bg-slate-700 rounded-full group-hover:bg-purple-300 opacity-50 transition-colors"></div>
        </div>
 

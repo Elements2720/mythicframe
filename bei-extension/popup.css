@@ -1,0 +1,330 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: #0b0f19;
+  color: #e2e8f0;
+  width: 350px;
+  padding: 16px;
+  font-size: 13px;
+}
+
+.popup-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 10px;
+}
+
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-icon {
+  font-size: 20px;
+  color: #c084fc;
+}
+
+.title-group h1 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 10px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-connected {
+  background-color: #14532d;
+  color: #4ade80;
+  border: 1px solid #22c55e;
+}
+
+.badge-disconnected {
+  background-color: #450a0a;
+  color: #f87171;
+  border: 1px solid #ef4444;
+}
+
+.icon-btn {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  border-radius: 4px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.card {
+  background-color: #131b2e;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.saved-indicator {
+  font-size: 10px;
+  color: #4ade80;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Launchers */
+.launch-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.btn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.btn-icon {
+  font-size: 13px;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #9333ea, #7e22ce);
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgba(147, 51, 234, 0.25);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #a855f7, #9333ea);
+}
+
+.btn-secondary {
+  background-color: #1e293b;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+}
+
+.btn-secondary:hover {
+  background-color: #334155;
+  color: #ffffff;
+}
+
+/* Input & Project Dir */
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.text-input {
+  width: 100%;
+  background-color: #0b0f19;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: #f1f5f9;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.text-input:focus {
+  border-color: #a855f7;
+}
+
+.button-row {
+  display: flex;
+  gap: 6px;
+}
+
+.setting-hint {
+  font-size: 10px;
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Target Items & Accounts */
+.target-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid #1e293b;
+  gap: 8px;
+}
+
+.target-item:first-of-type {
+  border-top: none;
+}
+
+.target-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.target-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.target-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.target-status {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.status-online {
+  color: #4ade80;
+}
+
+.status-offline {
+  color: #94a3b8;
+}
+
+.account-email {
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.account-detected {
+  color: #38bdf8;
+  font-weight: 500;
+}
+
+.action-btn {
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  color: #cbd5e1;
+  padding: 4px 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.action-btn:hover {
+  background-color: #334155;
+  color: #f8fafc;
+}
+
+.action-btn-accent {
+  background-color: #7e22ce;
+  border-color: #9333ea;
+  color: #ffffff;
+}
+
+.action-btn-accent:hover {
+  background-color: #9333ea;
+}
+
+/* Footer */
+.footer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #1e293b;
+  padding-top: 8px;
+}
+
+.btn-refresh {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.btn-refresh:hover {
+  color: #f8fafc;
+}
+
+.footer-brand {
+  font-size: 10px;
+  color: #64748b;
+}

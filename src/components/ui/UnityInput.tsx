@@ -30,6 +30,8 @@ const UnityInput: React.FC<UnityInputProps> = ({
   
   // Refs to track drag state without closure staleness
   const dragStartRef = useRef<{ x: number, startVal: number } | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+  const pendingValueRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!isEditing) {
@@ -46,7 +48,7 @@ const UnityInput: React.FC<UnityInputProps> = ({
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
     
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mouseup', handleMouseUp);
   };
 
@@ -73,12 +75,28 @@ const UnityInput: React.FC<UnityInputProps> = ({
         newValue = Math.round(newValue);
     }
 
-    onChange(newValue);
+    pendingValueRef.current = newValue;
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        if (pendingValueRef.current !== null) {
+          onChange(pendingValueRef.current);
+        }
+        rafIdRef.current = null;
+      });
+    }
   };
 
   const handleMouseUp = () => {
     setIsDragging(false);
     dragStartRef.current = null;
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    if (pendingValueRef.current !== null) {
+      onChange(pendingValueRef.current);
+      pendingValueRef.current = null;
+    }
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     window.removeEventListener('mousemove', handleMouseMove);

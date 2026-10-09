@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 
-const configPath = "path.join(require("os").homedir(), ".gemini", "config", "mcp_config.json")";
+const configPath = path.join(os.homedir(), ".gemini", "config", "mcp_config.json");
 
 console.log("Reading Antigravity MCP configuration...");
 

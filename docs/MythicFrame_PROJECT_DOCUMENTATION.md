@@ -79,6 +79,12 @@ The platform operates a unified provider interface (`src/services/aiProviderServ
    - **Completely free image generation** with zero API keys required, ideal for testing, hobbyists, or offline development.
 6. **Offline Prompt Mode**:
    - Compiles fully styled, negative-prompted, and context-injected prompt strings without executing an API call. Includes 1-click clipboard copying for external diffusion platforms.
+7. **BEI Mode (Browser Extension Interface)**:
+   - **Zero API Key Operating Mode**: Connects via a dedicated local WebSocket bridge (`ws://127.0.0.1:58925`) to the MythicFrame BEI Chrome Extension, generating directly through your personal, authenticated browser sessions (Google Gemini Web & ChatGPT Web).
+   - **100% Free & Unlimited**: Generates using the newest web-based Google **Imagen 3** engine without paid developer API billing.
+   - **Instant Account Quota Rotation**: Automatically routes requests across Google account slots (`/u/0/app`, `/u/1/app`, `/u/2/app`, etc.) with real-time quota telemetry and seamless switching.
+   - **Reference Asset Pipeline**: Fully supports multi-modal reference uploads with dynamic upload progress watchers and consent auto-dismissal.
+   - *Full Reference:* See [`docs/BEI_MODE.md`](./BEI_MODE.md) and [`bei-extension/INSTALLATION_AND_USAGE_GUIDE.md`](../bei-extension/INSTALLATION_AND_USAGE_GUIDE.md).
 
 ### Backend & Data Persistence Layer
 - **Express Server** (`server.ts`):

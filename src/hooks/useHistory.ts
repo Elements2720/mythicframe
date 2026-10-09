@@ -16,12 +16,28 @@ export const useHistory = (
   }, []);
 
   const addHistoryEntry = async (data: Omit<HistoryEntry, 'id' | 'timestamp'>) => {
-    // Optimize image for history storage to prevent DataCloneError and save space
     if (data.thumbnailUrl && data.thumbnailUrl.startsWith('data:image')) {
        try {
           data.thumbnailUrl = await optimizeBase64Image(data.thumbnailUrl, 1024, 0.7);
        } catch (e) {
           console.warn("Failed to optimize image for history:", e);
+       }
+    }
+    if (data.referenceAssets && data.referenceAssets.length > 0) {
+       try {
+          data.referenceAssets = await Promise.all(data.referenceAssets.map(async (ref) => {
+             if (ref.url && ref.url.startsWith('data:image')) {
+                try {
+                   const opt = await optimizeBase64Image(ref.url, 1024, 0.7);
+                   return { ...ref, url: opt };
+                } catch {
+                   return ref;
+                }
+             }
+             return ref;
+          }));
+       } catch (e) {
+          console.warn("Failed to optimize reference assets for history:", e);
        }
     }
     const entry = createHistoryEntry(data);
