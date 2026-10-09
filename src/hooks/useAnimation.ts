@@ -47,12 +47,30 @@ export const useAnimation = (
       reader.readAsDataURL(file);
   };
 
+  const handleAddMultipleFrames = (prompts: string[]) => {
+    setAnimConfig((prev: AnimationProject) => {
+      const newFrames = prompts.map((prompt, index) => ({
+        id: Date.now().toString() + '-' + index,
+        prompt: prompt.trim(),
+        imageUrl: null
+      }));
+      
+      const isInitialEmptyFrame = prev.frames.length === 1 && prev.frames[0].prompt.trim() === '' && !prev.frames[0].imageUrl;
+      
+      return { 
+        ...prev, 
+        frames: isInitialEmptyFrame ? newFrames : [...prev.frames, ...newFrames] 
+      };
+    });
+  };
+
   return {
     animConfig: activeTab.animConfig,
     selectedFrameId: activeTab.selectedFrameId,
     setAnimConfig,
     setSelectedFrameId,
     handleAddFrame,
+    handleAddMultipleFrames,
     handleUpdateFramePrompt,
     handleDeleteFrame,
     handleDuplicateFrame,

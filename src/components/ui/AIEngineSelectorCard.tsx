@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AIProvider, AvailableModel } from '../../types';
 import { getActiveAIProvider, setActiveAIProvider } from '../../services/aiProviderService';
 import { getPollinationsModel, setPollinationsModel, POLLINATIONS_MODELS } from '../../services/pollinationsService';
-import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, BEIStatusResponse, getSavedBEIAccounts, setBEIAccountTier } from '../../services/beiService';
+import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAccounts, BEIStatusResponse, getSavedBEIAccounts, setBEIAccountTier } from '../../services/beiService';
 import { getBEIAccountQuota } from '../../services/quotaTrackerService';
 import { getIncognitoMode, setIncognitoMode, formatDisplayEmail } from '../../services/privacyService';
 import { useLanguage } from '../../i18n/LanguageContext';
@@ -119,6 +119,34 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
       openBEITab('gemini', slot).then(() => {
         setTimeout(() => checkBEIConnection().then(setBEIStatus), 2000);
       });
+    }
+  };
+
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleScan = async () => {
+    setIsScanning(true);
+    try {
+      const ok = await scanBEIAccounts();
+      if (ok) {
+        setTimeout(() => {
+          checkBEIConnection().then(st => {
+            setBEIStatus(st);
+            setKnownAccounts(getSavedBEIAccounts());
+          });
+        }, 2000);
+        setTimeout(() => {
+          checkBEIConnection().then(st => {
+            setBEIStatus(st);
+            setKnownAccounts(getSavedBEIAccounts());
+            setIsScanning(false);
+          });
+        }, 4000);
+      } else {
+        setIsScanning(false);
+      }
+    } catch (e) {
+      setIsScanning(false);
     }
   };
 
@@ -268,12 +296,24 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
           {/* Account Email Dropdown for Gemini & ChatGPT */}
           {beiConfig.target === 'gemini' ? (
             <div className="space-y-2">
-              {/* Row 1: Clear Label and Quota Badge */}
+              {/* Row 1: Clear Label, Scan Button, and Quota Badge */}
               <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-300 font-semibold flex items-center gap-1.5">
-                  <i className="fa-brands fa-google text-cyan-400 text-xs" />
-                  <span>Account Slot:</span>
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                    <i className="fa-brands fa-google text-cyan-400 text-xs" />
+                    <span>Slot:</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleScan}
+                    disabled={isScanning}
+                    className="text-[10px] text-cyan-400 hover:text-cyan-300 px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/30 font-medium cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                    title="Auto-detect all logged-in Google accounts across Chrome slots /u/0 to /u/3"
+                  >
+                    <i className={`fa-solid ${isScanning ? 'fa-spinner fa-spin' : 'fa-radar'}`} />
+                    <span>{isScanning ? 'Scanning...' : 'Scan'}</span>
+                  </button>
+                </div>
                 {(() => {
                   const currentSlot = beiConfig.accountSlot ?? 0;
                   const quota = getBEIAccountQuota('gemini', currentSlot);
@@ -302,38 +342,33 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
                 })()}
               </div>
 
-              {/* Row 2: Clean Dropdown showing Real Email directly */}
+              {/* Row 2: Clean Dropdown showing Real Email directly - ALWAYS 4 slots */}
               <div className="relative">
                 <select
                   value={String(beiConfig.accountSlot ?? 0)}
                   onChange={(e) => updateBEISlot(parseInt(e.target.value, 10))}
                   className="w-full bg-slate-900 border border-cyan-500/40 rounded-lg px-3 py-2 text-xs text-slate-100 outline-none hover:border-cyan-400 transition-colors cursor-pointer font-medium appearance-none pr-8 focus:ring-1 focus:ring-cyan-500 font-mono"
                 >
-                  {(() => {
+                  {[0, 1, 2, 3].map(slot => {
                     const geminiTabs = beiStatus.tabs?.filter(t => t.target === 'gemini') || [];
-                    const accountsList = (beiStatus.accounts && beiStatus.accounts.length > 0)
-                      ? beiStatus.accounts
-                      : knownAccounts;
+                    const tab = geminiTabs.find(t => (t.accountSlot ?? 0) === slot);
+                    const acc = (beiStatus.accounts || []).find(a => a.slot === slot) || knownAccounts.find(a => a.slot === slot);
+                    const rawEmail = tab?.email || acc?.email;
+                    const displayEmail = rawEmail 
+                      ? (isIncognito ? formatDisplayEmail(rawEmail, true) : rawEmail) 
+                      : `Slot ${slot + 1} (Auto-opens on generate)`;
+                    const hasTab = Boolean(tab);
 
-                    return accountsList.map((acc) => {
-                      const hasTab = geminiTabs.some(t => (t.accountSlot ?? 0) === acc.slot);
-                      const tabWithEmail = geminiTabs.find(t => (t.accountSlot ?? 0) === acc.slot && t.email);
-                      const rawEmail = tabWithEmail?.email || acc.email;
-                      const displayEmail = rawEmail 
-                        ? formatDisplayEmail(rawEmail, isIncognito) 
-                        : `Slot ${acc.slot} (No Active Tab)`;
-
-                      return (
-                        <option 
-                          key={`acc-${acc.slot}`} 
-                          value={String(acc.slot)}
-                          className="bg-[#121927] text-slate-100 font-medium py-1.5"
-                        >
-                          {displayEmail} {hasTab ? '• [Active]' : ''}
-                        </option>
-                      );
-                    });
-                  })()}
+                    return (
+                      <option 
+                        key={`acc-${slot}`} 
+                        value={String(slot)}
+                        className="bg-[#121927] text-slate-100 font-medium py-1.5"
+                      >
+                        📧 {displayEmail} {hasTab ? '• [Tab Open]' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
                 <i className="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-cyan-400 pointer-events-none text-xs" />
               </div>

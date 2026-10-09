@@ -8,7 +8,7 @@ import {
 import { getActiveAIProvider, setActiveAIProvider } from '../../services/aiProviderService';
 import { getOpenAIApiKey, setOpenAIApiKey, testOpenAIConnection } from '../../services/openAIService';
 import { getOpenCodeConfig, setOpenCodeConfig, testOpenCodeConnection, OpenCodeConfig } from '../../services/openCodeService';
-import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, BEIStatusResponse, DEFAULT_BEI_PORT } from '../../services/beiService';
+import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAccounts, updateBEIAccountCustomInfo, BEIStatusResponse, DEFAULT_BEI_PORT } from '../../services/beiService';
 import { getBEIAccountQuota, resetBEISlotCooldown } from '../../services/quotaTrackerService';
 import { getIncognitoMode, setIncognitoMode, formatDisplayEmail } from '../../services/privacyService';
 import { APP_VERSION } from '../../constants';
@@ -341,6 +341,43 @@ const Settings: React.FC<SettingsProps> = ({
     } finally {
       setIsOpeningTab(false);
       setTimeout(() => setBeiFeedback(null), 4000);
+    }
+  };
+
+  const [isScanningAccounts, setIsScanningAccounts] = useState(false);
+
+  const handleScanAccounts = async () => {
+    setIsScanningAccounts(true);
+    setBeiFeedback('Scanning logged-in Google accounts across Chrome slots /u/0 through /u/3...');
+    try {
+      const ok = await scanBEIAccounts();
+      if (ok) {
+        setTimeout(() => handleCheckBEI(), 1500);
+        setTimeout(() => handleCheckBEI(), 3500);
+        setTimeout(() => {
+          setIsScanningAccounts(false);
+          setBeiFeedback('Account scan completed! Logged-in Google accounts auto-detected.');
+          setTimeout(() => setBeiFeedback(null), 4000);
+        }, 4500);
+      } else {
+        setIsScanningAccounts(false);
+        setBeiFeedback('Could not initiate account scan. Please ensure BEI Chrome extension is loaded.');
+        setTimeout(() => setBeiFeedback(null), 4000);
+      }
+    } catch (e: any) {
+      setIsScanningAccounts(false);
+      setBeiFeedback(`Account scan failed: ${e?.message || e}`);
+      setTimeout(() => setBeiFeedback(null), 4000);
+    }
+  };
+
+  const handleEditAccount = (slot: number) => {
+    const acc = beiStatus?.accounts?.find(a => a.slot === slot);
+    const currentVal = acc?.email || '';
+    const newEmail = window.prompt(`Enter Google Account Email or label for Slot ${slot + 1} (/u/${slot}/):`, currentVal);
+    if (newEmail !== null) {
+      updateBEIAccountCustomInfo(slot, { email: newEmail.trim(), name: newEmail.trim().split('@')[0] });
+      handleCheckBEI();
     }
   };
 
@@ -1247,51 +1284,56 @@ const Settings: React.FC<SettingsProps> = ({
                                   </label>
                                   <span className="text-[11px] text-slate-500">Pick your logged-in Google Account by email address</span>
                                </div>
-                               {(() => {
-                                  const geminiTabs = beiStatus?.tabs?.filter(t => t.target === 'gemini') || [];
-                                  const activeTab = geminiTabs.find(t => (t.accountSlot ?? 0) === (beiConfigState.accountSlot ?? 0));
-                                  return activeTab?.email ? (
-                                     <span className="text-xs px-2.5 py-1 rounded bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 font-mono font-medium flex items-center gap-1.5">
-                                        <i className="fa-solid fa-envelope text-emerald-400" />
-                                        Active: <b>{activeTab.email}</b>
-                                     </span>
-                                  ) : null;
-                               })()}
+                               <div className="flex items-center gap-2">
+                                  <button
+                                     type="button"
+                                     onClick={handleScanAccounts}
+                                     disabled={isScanningAccounts}
+                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-semibold border border-purple-500/40 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
+                                     title="Probe slots /u/0 through /u/3 in background and auto-detect your logged-in Google accounts"
+                                  >
+                                     <i className={`fa-solid ${isScanningAccounts ? 'fa-spinner fa-spin' : 'fa-radar'}`} />
+                                     {isScanningAccounts ? 'Scanning Slots...' : 'Auto-Detect All Accounts'}
+                                  </button>
+                                  {(() => {
+                                     const geminiTabs = beiStatus?.tabs?.filter(t => t.target === 'gemini') || [];
+                                     const activeTab = geminiTabs.find(t => (t.accountSlot ?? 0) === (beiConfigState.accountSlot ?? 0));
+                                     return activeTab?.email ? (
+                                        <span className="text-xs px-2.5 py-1 rounded bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 font-mono font-medium flex items-center gap-1.5">
+                                           <i className="fa-solid fa-envelope text-emerald-400" />
+                                           Active: <b>{activeTab.email}</b>
+                                        </span>
+                                     ) : null;
+                                  })()}
+                               </div>
                             </div>
 
-                            {/* Dropdown with Email Names */}
+                            {/* Dropdown with Email Names - ALWAYS includes all 4 slots */}
                             <div className="relative">
                                <select
                                   value={String(beiConfigState.accountSlot ?? 0)}
                                   onChange={(e) => handleUpdateBEIConfig({ accountSlot: parseInt(e.target.value, 10) })}
                                   className="w-full bg-slate-950 border border-purple-500/50 rounded-lg p-2.5 pr-10 text-sm text-slate-200 font-mono focus:border-purple-400 outline-none appearance-none cursor-pointer"
                                >
-                                  {(() => {
+                                  {[0, 1, 2, 3].map(slot => {
                                      const geminiTabs = beiStatus?.tabs?.filter(t => t.target === 'gemini') || [];
-                                     const accountsList = beiStatus?.accounts || [];
+                                     const tab = geminiTabs.find(t => (t.accountSlot ?? 0) === slot);
+                                     const acc = beiStatus?.accounts?.find(a => a.slot === slot);
+                                     const rawEmail = tab?.email || acc?.email;
+                                     const displayEmail = rawEmail 
+                                        ? (isIncognito ? formatDisplayEmail(rawEmail, true) : rawEmail)
+                                        : null;
+                                     const name = acc?.name && acc.name !== rawEmail ? acc.name : null;
+                                     const hasTab = Boolean(tab);
 
-                                     if (accountsList.length > 0) {
-                                        return accountsList.map(acc => {
-                                           const hasTab = geminiTabs.some(t => (t.accountSlot ?? 0) === acc.slot);
-                                           return (
-                                              <option key={`acc-${acc.slot}`} value={String(acc.slot)} className="bg-[#121927] text-emerald-300 py-1">
-                                                 📧 {acc.email} {acc.name ? `(${acc.name})` : ''} {hasTab ? '• [Tab Open]' : ''}
-                                              </option>
-                                           );
-                                        });
-                                     }
-
-                                     const slots = [0, 1, 2, 3];
-                                     return slots.map(slot => {
-                                        const tab = geminiTabs.find(t => (t.accountSlot ?? 0) === slot);
-                                        const email = tab?.email;
-                                        return (
-                                           <option key={`slot-${slot}`} value={String(slot)} className="bg-[#121927] text-slate-200 py-1">
-                                              {email ? `📧 ${email} ${tab ? '• [Tab Open]' : ''}` : `📧 Account ${slot + 1} (Fetching email...)`}
-                                           </option>
-                                        );
-                                     });
-                                  })()}
+                                     return (
+                                        <option key={`slot-${slot}`} value={String(slot)} className="bg-[#121927] text-slate-200 py-1">
+                                           {displayEmail 
+                                              ? `📧 ${displayEmail} ${name ? `(${name})` : ''} • Slot ${slot + 1} ${hasTab ? '[Tab Open]' : ''}`
+                                              : `📧 Slot ${slot + 1} (/u/${slot}/) • [Auto-opens on generate]`}
+                                        </option>
+                                     );
+                                  })}
                                </select>
                                <i className="fa-solid fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none text-xs" />
                             </div>
@@ -1301,7 +1343,8 @@ const Settings: React.FC<SettingsProps> = ({
                                {[0, 1, 2, 3].map(slot => {
                                   const slotTab = beiStatus?.tabs?.find(t => t.target === 'gemini' && (t.accountSlot ?? 0) === slot);
                                   const accountFromList = beiStatus?.accounts?.find(a => a.slot === slot);
-                                  const email = slotTab?.email || accountFromList?.email;
+                                  const rawEmail = slotTab?.email || accountFromList?.email;
+                                  const email = rawEmail ? (isIncognito ? formatDisplayEmail(rawEmail, true) : rawEmail) : null;
                                   const isSelected = (beiConfigState.accountSlot ?? 0) === slot;
                                   const slotQuota = getBEIAccountQuota('gemini', slot);
                                   const isRateLimited = slotQuota.status === 'rate_limited';
@@ -1315,25 +1358,39 @@ const Settings: React.FC<SettingsProps> = ({
                                               : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
                                         }`}
                                      >
-                                        <button
-                                           type="button"
-                                           onClick={() => handleUpdateBEIConfig({ accountSlot: slot as number })}
-                                           className="w-full text-left cursor-pointer"
-                                        >
+                                        <div className="w-full text-left">
                                            <div className="flex items-center justify-between w-full font-mono font-bold text-xs mb-1">
-                                              <span className="truncate max-w-[120px]">
-                                                 {accountFromList?.name || (email ? email.split('@')[0] : `Account ${slot + 1}`)}
-                                              </span>
-                                              {slotTab ? (
-                                                 <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" title="Tab Open in Chrome" />
-                                              ) : (
-                                                 <span className="text-[9px] text-slate-600 font-sans shrink-0">Ready</span>
-                                              )}
+                                              <button
+                                                 type="button"
+                                                 onClick={() => handleUpdateBEIConfig({ accountSlot: slot as number })}
+                                                 className="truncate max-w-[110px] hover:text-white cursor-pointer text-left"
+                                              >
+                                                 {accountFromList?.name || (rawEmail ? rawEmail.split('@')[0] : `Account ${slot + 1}`)}
+                                              </button>
+                                              <div className="flex items-center gap-1">
+                                                 <button
+                                                    type="button"
+                                                    onClick={() => handleEditAccount(slot)}
+                                                    className="text-slate-500 hover:text-purple-300 text-[10px] cursor-pointer p-0.5"
+                                                    title="Set custom email or label"
+                                                 >
+                                                    <i className="fa-solid fa-pen-to-square" />
+                                                 </button>
+                                                 {slotTab ? (
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" title="Tab Open in Chrome" />
+                                                 ) : (
+                                                    <span className="text-[9px] text-slate-600 font-sans shrink-0">Ready</span>
+                                                 )}
+                                              </div>
                                            </div>
-                                           <div className="text-[11px] font-mono truncate text-slate-400 mb-2">
+                                           <button
+                                              type="button"
+                                              onClick={() => handleUpdateBEIConfig({ accountSlot: slot as number })}
+                                              className="text-[11px] font-mono truncate text-slate-400 mb-2 block w-full text-left cursor-pointer"
+                                           >
                                               {email || 'Auto-opens on generate'}
-                                           </div>
-                                        </button>
+                                           </button>
+                                        </div>
 
                                         {/* Real-time Quota & Rate Limit Indicator */}
                                         <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono">

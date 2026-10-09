@@ -225,6 +225,26 @@ export async function openBEITab(target: 'gemini' | 'chatgpt' = 'gemini', accoun
 }
 
 /**
+ * Triggers background scanning of Google account slots /u/0 through /u/3 via BEI.
+ */
+export async function scanBEIAccounts(): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/api/bei/scan-accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      return { success: false, message: `Scan request failed: ${errText}` };
+    }
+    return { success: true, message: `Account auto-detection initiated in Chrome background.` };
+  } catch (err: any) {
+    return { success: false, message: `Could not reach BEI Bridge: ${err.message}` };
+  }
+}
+
+/**
  * Dispatches an image generation request directly to the BEI extension bridge.
  */
 export async function generateWithBEI(options: BEIGenerateOptions): Promise<BEIGenerateResult> {

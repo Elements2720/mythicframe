@@ -693,7 +693,7 @@ export const useAppEngine = () => {
                 id: `ref-${item.id}`,
                 url: refUrl, 
                 role: 'CHARACTER_CONSISTENCY',
-                weight: item.name.includes('[WAIST UP]') ? 0.6 : 1.0 
+                weight: item.referenceWeight ?? (item.name.includes('[WAIST UP]') ? 0.6 : 1.0) 
               } as any);
            }
         }
@@ -731,8 +731,11 @@ export const useAppEngine = () => {
                 continuityFlags: activeTab.continuityFlags,
                 chibiConfig: item.name.includes('[CHIBI]') ? { ...activeTab.chibiConfig, enabled: true } : undefined,
                 viewpoint: activeTab.viewpoint,
-                noCharacters: activeTab.noCharacters,
-                framing: activeTab.framing,
+                noCharacters: item.name.includes('[ITEM]') || item.name.includes('[TEXTURE]') || item.name.includes('[ICON]') || activeTab.noCharacters,
+                framing: item.name.includes('[FULL-BODY]') || item.name.includes('[FULL BODY]') ? 'full-body' :
+                         item.name.includes('[WAIST-UP]') || item.name.includes('[WAIST UP]') ? 'waist-up' :
+                         item.name.includes('[CHIBI]') ? 'full-body' :
+                         activeTab.framing,
                 seed: activeTab.seed
               });
 

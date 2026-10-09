@@ -1019,6 +1019,22 @@ async function openBEITab(target = "gemini", accountSlot = 0) {
     return { success: false, message: `Could not reach BEI Bridge: ${err.message}` };
   }
 }
+async function scanBEIAccounts() {
+  try {
+    const res = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/api/bei/scan-accounts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      return { success: false, message: `Scan request failed: ${errText}` };
+    }
+    return { success: true, message: `Account auto-detection initiated in Chrome background.` };
+  } catch (err) {
+    return { success: false, message: `Could not reach BEI Bridge: ${err.message}` };
+  }
+}
 async function generateWithBEI(options) {
   const {
     prompt,
@@ -1374,6 +1390,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "mythic_scan_accounts",
+        description: "Scans and auto-detects all logged-in Google accounts across Chrome account slots (/u/0/ through /u/3/) in the background via BEI.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      },
+      {
         name: "mythic_bei_generate",
         description: "Generates an image via the Browser Extension Interface (BEI) using active Google Gemini or ChatGPT browser sessions with ZERO API key required.",
         inputSchema: {
@@ -1564,6 +1589,9 @@ Summary: ${status.summary}`;
       const target = args.target || "gemini";
       const slot = args.accountSlot ?? 0;
       const res = await openBEITab(target, slot);
+      return { content: [{ type: "text", text: res.message }] };
+    } else if (name === "mythic_scan_accounts") {
+      const res = await scanBEIAccounts();
       return { content: [{ type: "text", text: res.message }] };
     } else if (name === "mythic_bei_generate") {
       let promptToSend = args.prompt;

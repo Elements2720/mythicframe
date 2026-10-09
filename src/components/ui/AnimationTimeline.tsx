@@ -8,6 +8,7 @@ interface AnimationTimelineProps {
   selectedFrameId: string | null;
   onSelectFrame: (id: string) => void;
   onAddFrame: () => void;
+  onAddMultipleFrames?: (prompts: string[]) => void;
   onUpdateFramePrompt: (id: string, prompt: string) => void;
   onDeleteFrame: (id: string) => void;
   onDuplicateFrame: (id: string) => void;
@@ -30,7 +31,7 @@ const Icon = ({ name, className = "" }: { name: string, className?: string }) =>
 
 const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
   frames, selectedFrameId, onSelectFrame,
-  onAddFrame, onUpdateFramePrompt, onDeleteFrame, onDuplicateFrame,
+  onAddFrame, onAddMultipleFrames, onUpdateFramePrompt, onDeleteFrame, onDuplicateFrame,
   onGenerateFrame, onGenerateAnimation, onClearFrames, isGenerating, onCancel,
   isPlaying, onTogglePlay, onUploadFrameImage,
   referenceAssets, setReferenceAssets, isAnalyzing, onAnalyzeStyle,
@@ -63,22 +64,55 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+    
+    // Check for internal draggable urls first
+    const url = e.dataTransfer.getData('application/mythic-image-url') || e.dataTransfer.getData('text/plain');
+    if (url && (url.startsWith('blob:') || url.startsWith('data:image/') || url.startsWith('http'))) {
+      if (setReferenceAssets) {
+        setReferenceAssets(p => [...p, { id: Date.now().toString() + Math.random(), url: url, roleNote: '' }]);
+        setShowRefs(true);
+      }
+      return;
+    }
+    
     const files = e.dataTransfer.files;
-    if (files && files.length > 0 && setReferenceAssets) {
-      Array.from(files).forEach(file => {
-        if (!(file instanceof Blob) || !file.type.startsWith('image/')) return;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file: File) => {
+      if (file.type.startsWith('image/') && setReferenceAssets) {
         const reader = new FileReader();
         reader.onload = async () => {
           try {
             const { optimizeBase64Image } = await import('../../utils/imageUtils');
             const optimized = await optimizeBase64Image(reader.result as string, 1024, 0.7);
-            setReferenceAssets(p => [...p, { id: Date.now().toString(), url: optimized, roleNote: '' }]);
+            setReferenceAssets(p => [...p, { id: Date.now().toString() + Math.random(), url: optimized, roleNote: '' }]);
             setShowRefs(true);
           } catch(err){}
         };
         reader.readAsDataURL(file);
-      });
-    }
+      } else if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          if (typeof reader.result === 'string') {
+            const { parseBatchFile } = await import('../../utils/batchParser');
+            const items = parseBatchFile(reader.result, file.name);
+            
+            // If parsed successfully as batch items
+            if (items && items.length > 0 && onAddMultipleFrames) {
+              const prompts = items.map(item => `${item.name}: ${item.prompt}`);
+              onAddMultipleFrames(prompts);
+            } else if (onAddMultipleFrames) {
+              // Fallback to simple line-by-line if parser fails or returns empty
+              const prompts = reader.result.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+              if (prompts.length > 0) {
+                 onAddMultipleFrames(prompts);
+              }
+            }
+          }
+        };
+        reader.readAsText(file);
+      }
+    });
   };
 
   useEffect(() => {

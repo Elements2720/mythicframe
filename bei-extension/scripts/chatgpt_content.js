@@ -105,6 +105,42 @@
     return false;
   }
 
+  function clickStopButton() {
+    console.log('[MythicFrame BEI] Attempting to click native Stop button in ChatGPT...');
+    let clicked = false;
+    for (const sel of STOP_BUTTON_SELECTORS) {
+      try {
+        const btn = document.querySelector(sel);
+        if (btn && btn.offsetParent !== null && !btn.disabled) {
+          btn.click();
+          btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          clicked = true;
+          break;
+        }
+      } catch (e) {}
+    }
+    if (!clicked) {
+      const allButtons = document.querySelectorAll('button, [role="button"]');
+      for (const btn of allButtons) {
+        if (isStopButtonElement(btn) && btn.offsetParent !== null && !btn.disabled) {
+          btn.click();
+          btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          clicked = true;
+          break;
+        }
+      }
+    }
+    setTimeout(() => {
+      for (const sel of STOP_BUTTON_SELECTORS) {
+        try {
+          const btn = document.querySelector(sel);
+          if (btn && btn.offsetParent !== null && !btn.disabled) btn.click();
+        } catch (e) {}
+      }
+    }, 250);
+    return clicked;
+  }
+
   let activeRunningJobId = null;
   let activeCancelHandler = null;
 
@@ -340,6 +376,7 @@
       activeCancelHandler = null;
       clearInterval(checkInterval);
       if (keepAlivePort) keepAlivePort.disconnect();
+      clickStopButton();
       clearComposer();
 
       console.log(`[MythicFrame BEI] Generation cancelled for job ${jobId}: ${reason}`);
@@ -598,17 +635,27 @@
     }
 
     if (request.action === 'CANCEL_GENERATION' || request.action === 'CLEAR_COMPOSER') {
+      clickStopButton();
       if (typeof activeCancelHandler === 'function') {
         activeCancelHandler('Cancelled from MythicFrame Studio');
       } else {
         clearComposer();
       }
-      sendResponse({ success: true, cleared: true });
+      sendResponse({ success: true, cleared: true, stopped: true });
       return true;
     }
   };
 
   window.__MYTHIC_BEI_CLEAR_COMPOSER__ = clearComposer;
+  window.__MYTHIC_BEI_CLICK_STOP_BUTTON__ = clickStopButton;
+  window.__MYTHIC_BEI_CANCEL__ = () => {
+    clickStopButton();
+    if (typeof activeCancelHandler === 'function') {
+      activeCancelHandler('Cancelled from MythicFrame Studio');
+    } else {
+      clearComposer();
+    }
+  };
 
   try {
     if (chrome.runtime && chrome.runtime.onMessage) {

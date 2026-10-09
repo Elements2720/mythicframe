@@ -37,6 +37,7 @@ import {
   checkMythicStatus,
   launchMythicServer,
   openBEITab,
+  scanBEIAccounts,
   generateWithBEI
 } from "./beiClient.js";
 
@@ -311,6 +312,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "mythic_scan_accounts",
+        description: "Scans and auto-detects all logged-in Google accounts across Chrome account slots (/u/0/ through /u/3/) in the background via BEI.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      },
+      {
         name: "mythic_bei_generate",
         description: "Generates an image via the Browser Extension Interface (BEI) using active Google Gemini or ChatGPT browser sessions with ZERO API key required.",
         inputSchema: {
@@ -490,6 +500,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const target = args.target || 'gemini';
       const slot = args.accountSlot ?? 0;
       const res = await openBEITab(target, slot);
+      return { content: [{ type: "text", text: res.message }] };
+    }
+    else if (name === "mythic_scan_accounts") {
+      const res = await scanBEIAccounts();
       return { content: [{ type: "text", text: res.message }] };
     }
     else if (name === "mythic_bei_generate") {

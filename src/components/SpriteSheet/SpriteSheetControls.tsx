@@ -27,6 +27,7 @@ export const SpriteSheetControls: React.FC<SpriteSheetControlsProps> = ({ engine
     handleGenerateAnimationFrames,
     handleRefineSpriteSheetGlobalPrompt,
     clearResults,
+    clearAll,
     isGenerating,
     isSuggesting,
     statusMessage
@@ -465,12 +466,24 @@ export const SpriteSheetControls: React.FC<SpriteSheetControlsProps> = ({ engine
             Download Grid
           </button>
         </div>
-        <button
-          onClick={clearResults}
-          className="w-full py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-300 transition-colors"
-        >
-          Clear All
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={clearResults}
+            className="flex-1 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-300 transition-colors bg-slate-800/50 hover:bg-slate-800 rounded-xl border border-slate-800"
+          >
+            Clear Results
+          </button>
+          <button
+            onClick={() => {
+              if (confirm("Are you sure you want to completely reset the Sprite Sheet Studio? This will delete your prompt and all frames.")) {
+                clearAll();
+              }
+            }}
+            className="flex-1 py-2.5 text-[10px] font-bold uppercase tracking-wider text-red-500/70 hover:text-red-400 transition-colors bg-red-500/5 hover:bg-red-500/10 rounded-xl border border-red-500/10"
+          >
+            Reset Studio
+          </button>
+        </div>
       </div>
     </div>
   );

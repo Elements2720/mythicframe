@@ -39,15 +39,32 @@ const activeJobs = new Map(); // jobId -> { tabId, target, prompt, accountSlot }
 const slotQueues = new Map(); // slotKey -> Array<jobData>
 const tabEmailsCache = new Map(); // tabId -> email string
 const knownGoogleAccounts = new Map(); // slot -> { slot, email, name }
+const inFlightTabCreations = new Map(); // target:slot -> Promise<tabId>
 
-// Load saved project folder path
+// Load saved project folder path and cached Google accounts
 let currentProjectDir = DEFAULT_PROJECT_DIR;
 if (chrome.storage && chrome.storage.local) {
-  chrome.storage.local.get(['mythicProjectDir'], (result) => {
+  chrome.storage.local.get(['mythicProjectDir', 'mythicKnownGoogleAccounts'], (result) => {
     if (result && result.mythicProjectDir) {
       currentProjectDir = result.mythicProjectDir;
     }
+    if (result && Array.isArray(result.mythicKnownGoogleAccounts)) {
+      result.mythicKnownGoogleAccounts.forEach(acc => {
+        if (acc && typeof acc.slot === 'number' && acc.email && !isSystemEmail(acc.email)) {
+          knownGoogleAccounts.set(acc.slot, acc);
+        }
+      });
+      console.log(`[MythicFrame BEI] Restored ${knownGoogleAccounts.size} known Google accounts from cache.`);
+    }
   });
+}
+
+function persistKnownAccounts() {
+  if (chrome.storage && chrome.storage.local) {
+    chrome.storage.local.set({
+      mythicKnownGoogleAccounts: Array.from(knownGoogleAccounts.values())
+    });
+  }
 }
 
 // Keep-alive port connection handler to prevent worker sleep during long generations
@@ -85,9 +102,95 @@ function isSystemEmail(email) {
          lower.includes('example.com');
 }
 
+let isScanningAccounts = false;
+
 /**
- * Fetches Google accounts directly from Google session ListAccounts endpoint
- * This identifies accounts in slot order (/u/0/, /u/1/, /u/2/...) with 100% precision!
+ * Silently scans Google Account slots (/u/0/ to /u/3/) in the background
+ * Probes unknown slots, extracts their emails via the DOM, caches them permanently,
+ * and immediately closes the temporary probe tabs.
+ */
+async function scanGoogleAccounts() {
+  if (isScanningAccounts) {
+    console.log("[MythicFrame BEI] Account scan already running...");
+    return Array.from(knownGoogleAccounts.values());
+  }
+  isScanningAccounts = true;
+  console.log("[MythicFrame BEI] Starting silent scan of Google accounts across slots /u/0 through /u/3...");
+
+  try {
+    // 1. Discover already open tabs first
+    await discoverTabs();
+
+    // 2. Probe unknown slots 0, 1, 2, 3
+    const slots = [0, 1, 2, 3];
+    for (const slot of slots) {
+      if (knownGoogleAccounts.has(slot) && knownGoogleAccounts.get(slot).email) {
+        continue; // Already identified!
+      }
+
+      // Check if a tab is already open for this slot
+      const allTabs = await chrome.tabs.query({});
+      const existingTab = allTabs.find(t => {
+        const u = (t.url || t.pendingUrl || '').toLowerCase();
+        if (!u.includes("gemini.google.com")) return false;
+        const slotMatch = u.match(/\/u\/(\d+)/);
+        const s = slotMatch ? parseInt(slotMatch[1], 10) : 0;
+        return s === slot;
+      });
+
+      if (existingTab && existingTab.id) {
+        const em = await extractTabEmail(existingTab.id, "gemini", slot);
+        if (em && !isSystemEmail(em)) {
+          knownGoogleAccounts.set(slot, { slot, email: em, name: em });
+        }
+        continue;
+      }
+
+      // Open a single silent background tab in BEI group
+      try {
+        console.log(`[MythicFrame BEI] Probing slot ${slot} via background tab...`);
+        const probeTab = await chrome.tabs.create({
+          url: `https://gemini.google.com/u/${slot}/app`,
+          active: false
+        });
+        await organizeTabIntoBEIGroup(probeTab.id, 'same_window_group', false);
+        await waitForTabReady(probeTab.id, 7000);
+        const em = await extractTabEmail(probeTab.id, "gemini", slot);
+        if (em && !isSystemEmail(em)) {
+          knownGoogleAccounts.set(slot, { slot, email: em, name: em });
+          console.log(`[MythicFrame BEI] Discovered Google account for slot ${slot}: ${em}`);
+        }
+        // Remove temporary probe tab
+        try {
+          await chrome.tabs.remove(probeTab.id);
+        } catch (e) {}
+      } catch (probeErr) {
+        console.warn(`[MythicFrame BEI] Slot ${slot} probe notice:`, probeErr);
+      }
+    }
+
+    persistKnownAccounts();
+
+    // Broadcast updated accounts to bridge
+    const updatedTabs = await discoverTabs();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ 
+        type: "tabs_list", 
+        data: { 
+          tabs: updatedTabs,
+          accounts: Array.from(knownGoogleAccounts.values())
+        } 
+      }));
+    }
+  } finally {
+    isScanningAccounts = false;
+  }
+
+  return Array.from(knownGoogleAccounts.values());
+}
+
+/**
+ * Fetches Google accounts directly from Google session ListAccounts endpoint if available
  */
 async function refreshGoogleAccountsList() {
   try {
@@ -118,10 +221,11 @@ async function refreshGoogleAccountsList() {
             knownGoogleAccounts.set(idx, { slot: idx, email, name });
           }
         });
+        persistKnownAccounts();
       }
     }
   } catch (err) {
-    console.debug("[MythicFrame BEI] ListAccounts notice:", err);
+    // Expected on modern Google accounts
   }
 }
 
@@ -483,112 +587,253 @@ async function organizeTabIntoBEIGroup(tabId, tabMode = 'same_window_group', bri
 }
 
 /**
- * Finds matching tab or AUTOMATICALLY opens a new tab in the configured group/window.
- * If chatSessionMode === 'same_chat', preserves the active chat conversation thread.
- * If chatSessionMode === 'temporary_chat' or 'new_chat', navigates to clean /app.
+ * Waits for tab navigation to complete and validates page health (not dead/error page).
  */
-async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null) {
-  const targetSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
-  const tabs = await discoverTabs();
-
-  if (target === "gemini") {
-    // 1. Strictly look for a tab matching the requested account slot
-    const matched = tabs.find(t => t.target === "gemini" && t.accountSlot === targetSlot);
-    if (matched) {
-      // In same_chat mode (e.g. while holding generations for a tab session), DO NOT navigate away!
-      if (chatSessionMode !== 'same_chat') {
-        if (matched.url && matched.url.match(/\/app\/[a-zA-Z0-9_-]+/)) {
-          console.log(`[MythicFrame BEI] Resetting tab ${matched.tabId} to clean /u/${targetSlot}/app (mode: ${chatSessionMode})...`);
-          try {
-            await chrome.tabs.update(matched.tabId, { url: `https://gemini.google.com/u/${targetSlot}/app` });
-            await waitForTabComplete(matched.tabId, 15000);
-          } catch (e) {}
-        }
-      } else {
-        console.log(`[MythicFrame BEI] Preserving active chat conversation on tab ${matched.tabId} (mode: same_chat, tab: ${tabSessionId || 'default'})`);
-      }
-      await organizeTabIntoBEIGroup(matched.tabId, tabMode, bringTabToFront);
-      await ensureContentScriptInjected(matched.tabId, "gemini");
-      return matched.tabId;
-    }
-
-    // 2. Automatically create new tab for the requested account slot
-    console.log(`[MythicFrame BEI Worker] Opening tab for Gemini slot ${targetSlot} (Mode: ${tabMode}, Focus: ${bringTabToFront})...`);
-    const newTab = await chrome.tabs.create({
-      url: `https://gemini.google.com/u/${targetSlot}/app`,
-      active: Boolean(bringTabToFront)
-    });
-    await waitForTabComplete(newTab.id, 20000);
-    await organizeTabIntoBEIGroup(newTab.id, tabMode, bringTabToFront);
-    await ensureContentScriptInjected(newTab.id, "gemini");
-    await new Promise(r => setTimeout(r, 1500));
-
-    // Update discovered tabs list back to bridge so UI reflects new tab
-    const updatedTabs = await discoverTabs();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ 
-        type: "tabs_list", 
-        data: { 
-          tabs: updatedTabs,
-          accounts: Array.from(knownGoogleAccounts.values())
-        } 
-      }));
-    }
-
-    return newTab.id;
-  }
-
-  if (target === "chatgpt") {
-    const matched = tabs.find(t => t.target === "chatgpt");
-    if (matched) {
-      await organizeTabIntoBEIGroup(matched.tabId, tabMode, bringTabToFront);
-      await ensureContentScriptInjected(matched.tabId, "chatgpt");
-      return matched.tabId;
-    }
-
-    console.log(`[MythicFrame BEI Worker] Opening tab for ChatGPT (Mode: ${tabMode}, Focus: ${bringTabToFront})...`);
-    const newTab = await chrome.tabs.create({
-      url: "https://chatgpt.com/",
-      active: Boolean(bringTabToFront)
-    });
-    await waitForTabComplete(newTab.id, 20000);
-    await organizeTabIntoBEIGroup(newTab.id, tabMode, bringTabToFront);
-    await ensureContentScriptInjected(newTab.id, "chatgpt");
-    await new Promise(r => setTimeout(r, 1500));
-
-    const updatedTabs = await discoverTabs();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ 
-        type: "tabs_list", 
-        data: { 
-          tabs: updatedTabs,
-          accounts: Array.from(knownGoogleAccounts.values())
-        } 
-      }));
-    }
-
-    return newTab.id;
-  }
-
-  return null;
-}
-
-function waitForTabComplete(tabId, timeoutMs = 15000) {
-  return new Promise((resolve) => {
+async function waitForTabReady(tabId, timeoutMs = 20000) {
+  // 1. Wait for chrome tab status === 'complete'
+  await new Promise((resolve) => {
+    let resolved = false;
     const timeout = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      resolve();
+      if (!resolved) {
+        resolved = true;
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
     }, timeoutMs);
 
     function listener(updatedTabId, changeInfo) {
       if (updatedTabId === tabId && changeInfo.status === "complete") {
-        clearTimeout(timeout);
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
       }
     }
     chrome.tabs.onUpdated.addListener(listener);
   });
+
+  // 2. Validate tab health & recover dead/error pages
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab) return false;
+
+    const currentUrl = (tab.url || tab.pendingUrl || '').toLowerCase();
+    if (currentUrl.startsWith('chrome-error://') || currentUrl.startsWith('chrome-extension://') || currentUrl === 'about:blank') {
+      console.warn(`[MythicFrame BEI] Dead or error page detected on tab ${tabId} (${currentUrl}). Attempting reload recovery...`);
+      try {
+        await chrome.tabs.reload(tabId);
+        await new Promise(r => setTimeout(r, 2000));
+      } catch (e) {}
+    }
+
+    // 3. Probe in-page DOM responsiveness
+    if (chrome.scripting && chrome.scripting.executeScript) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => {
+              const docReady = document.readyState === 'complete' || document.readyState === 'interactive';
+              const title = (document.title || '').toLowerCase();
+              const isDead = title.includes('error') || title.includes('502') || title.includes('503') || title.includes('500');
+              const isSignIn = window.location.href.includes('accounts.google.com/ServiceLogin') || window.location.href.includes('accounts.google.com/signin');
+              return { docReady, isDead, isSignIn, url: window.location.href };
+            }
+          });
+
+          if (res && res[0] && res[0].result) {
+            const { docReady, isDead, isSignIn } = res[0].result;
+            if (isSignIn) {
+              console.warn(`[MythicFrame BEI] Tab requires Google login.`);
+              break;
+            }
+            if (isDead) {
+              console.warn(`[MythicFrame BEI] Tab is dead. Reloading...`);
+              await chrome.tabs.reload(tabId);
+              await new Promise(r => setTimeout(r, 1500));
+              continue;
+            }
+            if (docReady) break;
+          }
+        } catch (e) {
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+    }
+  } catch (e) {}
+
+  return true;
+}
+
+/**
+ * Finds matching tab or AUTOMATICALLY opens a new tab in the configured group/window.
+ * Deduplicates strictly: checks "MythicFrame BEI" tab group first, all open tabs second.
+ * Reuses existing tabs to 100% eliminate duplicate tabs in the browser.
+ */
+async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null) {
+  const targetSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
+  const lockKey = `${target}:${targetSlot}`;
+
+  // In-flight mutex lock to avoid parallel calls opening duplicate tabs
+  if (inFlightTabCreations.has(lockKey)) {
+    console.log(`[MythicFrame BEI] Tab creation for ${lockKey} already in flight. Awaiting existing promise...`);
+    return await inFlightTabCreations.get(lockKey);
+  }
+
+  const creationPromise = (async () => {
+    const allTabs = await chrome.tabs.query({});
+    let beiGroupTabIds = new Set();
+
+    if (chrome.tabGroups) {
+      try {
+        const groups = await chrome.tabGroups.query({ title: "MythicFrame BEI" });
+        if (groups && groups.length > 0) {
+          const groupIds = new Set(groups.map(g => g.id));
+          allTabs.filter(t => groupIds.has(t.groupId)).forEach(t => beiGroupTabIds.add(t.id));
+        }
+      } catch (e) {}
+    }
+
+    if (target === "gemini") {
+      // 1. Check if tab already exists in "MythicFrame BEI" tab group for this slot
+      let matchedTab = allTabs.find(t => {
+        if (!beiGroupTabIds.has(t.id)) return false;
+        const u = (t.url || t.pendingUrl || '').toLowerCase();
+        if (!u.includes("gemini.google.com")) return false;
+        const slotMatch = u.match(/\/u\/(\d+)/);
+        const slot = slotMatch ? parseInt(slotMatch[1], 10) : 0;
+        return slot === targetSlot;
+      });
+
+      // 2. Check if tab matching this slot exists anywhere else in Chrome
+      if (!matchedTab) {
+        matchedTab = allTabs.find(t => {
+          const u = (t.url || t.pendingUrl || '').toLowerCase();
+          if (!u.includes("gemini.google.com")) return false;
+          const slotMatch = u.match(/\/u\/(\d+)/);
+          const slot = slotMatch ? parseInt(slotMatch[1], 10) : 0;
+          return slot === targetSlot;
+        });
+      }
+
+      if (matchedTab && matchedTab.id) {
+        console.log(`[MythicFrame BEI] Reusing existing Gemini tab ${matchedTab.id} for slot ${targetSlot} (In BEI Group: ${beiGroupTabIds.has(matchedTab.id)}). No duplicates created.`);
+
+        // Wake up tab if discarded by Chrome Memory Saver
+        if (matchedTab.discarded) {
+          console.log(`[MythicFrame BEI] Tab ${matchedTab.id} was discarded by Chrome. Waking up...`);
+          try {
+            await chrome.tabs.reload(matchedTab.id);
+            await waitForTabReady(matchedTab.id, 15000);
+          } catch (e) {}
+        }
+
+        // In temporary_chat or new_chat mode, reset URL if needed
+        if (chatSessionMode !== 'same_chat') {
+          const u = matchedTab.url || matchedTab.pendingUrl || '';
+          if (u.match(/\/app\/[a-zA-Z0-9_-]+/)) {
+            console.log(`[MythicFrame BEI] Resetting tab ${matchedTab.id} to clean /u/${targetSlot}/app (mode: ${chatSessionMode})...`);
+            try {
+              await chrome.tabs.update(matchedTab.id, { url: `https://gemini.google.com/u/${targetSlot}/app` });
+              await waitForTabReady(matchedTab.id, 15000);
+            } catch (e) {}
+          }
+        }
+
+        await organizeTabIntoBEIGroup(matchedTab.id, tabMode, bringTabToFront);
+        await waitForTabReady(matchedTab.id, 8000);
+        await ensureContentScriptInjected(matchedTab.id, "gemini");
+        return matchedTab.id;
+      }
+
+      // 3. Open a single new tab only when none exists
+      console.log(`[MythicFrame BEI Worker] Opening single tab for Gemini slot ${targetSlot} (Mode: ${tabMode}, Focus: ${bringTabToFront})...`);
+      const newTab = await chrome.tabs.create({
+        url: `https://gemini.google.com/u/${targetSlot}/app`,
+        active: Boolean(bringTabToFront)
+      });
+      await waitForTabReady(newTab.id, 20000);
+      await organizeTabIntoBEIGroup(newTab.id, tabMode, bringTabToFront);
+      await ensureContentScriptInjected(newTab.id, "gemini");
+      await new Promise(r => setTimeout(r, 1000));
+
+      const updatedTabs = await discoverTabs();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ 
+          type: "tabs_list", 
+          data: { 
+            tabs: updatedTabs,
+            accounts: Array.from(knownGoogleAccounts.values())
+          } 
+        }));
+      }
+
+      return newTab.id;
+    }
+
+    if (target === "chatgpt") {
+      let matchedTab = allTabs.find(t => {
+        if (!beiGroupTabIds.has(t.id)) return false;
+        const u = (t.url || t.pendingUrl || '').toLowerCase();
+        return u.includes("chatgpt.com");
+      });
+
+      if (!matchedTab) {
+        matchedTab = allTabs.find(t => {
+          const u = (t.url || t.pendingUrl || '').toLowerCase();
+          return u.includes("chatgpt.com");
+        });
+      }
+
+      if (matchedTab && matchedTab.id) {
+        console.log(`[MythicFrame BEI] Reusing existing ChatGPT tab ${matchedTab.id}. No duplicates created.`);
+        if (matchedTab.discarded) {
+          try {
+            await chrome.tabs.reload(matchedTab.id);
+            await waitForTabReady(matchedTab.id, 15000);
+          } catch (e) {}
+        }
+        await organizeTabIntoBEIGroup(matchedTab.id, tabMode, bringTabToFront);
+        await waitForTabReady(matchedTab.id, 8000);
+        await ensureContentScriptInjected(matchedTab.id, "chatgpt");
+        return matchedTab.id;
+      }
+
+      console.log(`[MythicFrame BEI Worker] Opening single tab for ChatGPT (Mode: ${tabMode}, Focus: ${bringTabToFront})...`);
+      const newTab = await chrome.tabs.create({
+        url: "https://chatgpt.com/",
+        active: Boolean(bringTabToFront)
+      });
+      await waitForTabReady(newTab.id, 20000);
+      await organizeTabIntoBEIGroup(newTab.id, tabMode, bringTabToFront);
+      await ensureContentScriptInjected(newTab.id, "chatgpt");
+      await new Promise(r => setTimeout(r, 1000));
+
+      const updatedTabs = await discoverTabs();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ 
+          type: "tabs_list", 
+          data: { 
+            tabs: updatedTabs,
+            accounts: Array.from(knownGoogleAccounts.values())
+          } 
+        }));
+      }
+
+      return newTab.id;
+    }
+
+    return null;
+  })();
+
+  inFlightTabCreations.set(lockKey, creationPromise);
+  try {
+    return await creationPromise;
+  } finally {
+    inFlightTabCreations.delete(lockKey);
+  }
 }
 
 /**
@@ -628,7 +873,7 @@ async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds 
   console.log(`[MythicFrame BEI] Tab ${tabId} message endpoint detached. Reloading tab in background to bind fresh listeners...`);
   try {
     await chrome.tabs.reload(tabId);
-    await waitForTabComplete(tabId);
+    await waitForTabReady(tabId);
     await new Promise(r => setTimeout(r, 1500));
     await ensureContentScriptInjected(tabId, target);
     await new Promise(r => setTimeout(r, 600));
@@ -659,7 +904,7 @@ async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds 
       url: target === "gemini" ? `https://gemini.google.com/u/${accountSlot}/app` : "https://chatgpt.com/",
       active: Boolean(bringTabToFront)
     });
-    await waitForTabComplete(newTab.id);
+    await waitForTabReady(newTab.id);
     await organizeTabIntoBEIGroup(newTab.id, tabMode, bringTabToFront);
     await ensureContentScriptInjected(newTab.id, target);
     await new Promise(r => setTimeout(r, 2000));
@@ -895,6 +1140,22 @@ async function handleBridgeCommand(msg) {
     return;
   }
 
+  if (type === "SCAN_ACCOUNTS") {
+    console.log("[MythicFrame BEI Worker] Received command SCAN_ACCOUNTS from bridge.");
+    const accounts = await scanGoogleAccounts();
+    const tabs = await discoverTabs();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ 
+        type: "tabs_list", 
+        data: { 
+          tabs,
+          accounts
+        } 
+      }));
+    }
+    return;
+  }
+
   if (type === "CANCEL_GENERATION") {
     const jobId = data?.jobId;
     if (jobId) {
@@ -912,6 +1173,17 @@ async function handleBridgeCommand(msg) {
         try {
           chrome.tabs.sendMessage(job.tabId, { action: "CANCEL_GENERATION", data: { jobId } });
         } catch (e) {}
+        if (chrome.scripting && chrome.scripting.executeScript && job.tabId) {
+          chrome.scripting.executeScript({
+            target: { tabId: job.tabId },
+            func: () => {
+              if (typeof window.__MYTHIC_BEI_CANCEL__ === 'function') window.__MYTHIC_BEI_CANCEL__();
+              if (typeof window.__MYTHIC_BEI_CLICK_STOP_BUTTON__ === 'function') window.__MYTHIC_BEI_CLICK_STOP_BUTTON__();
+              const btns = document.querySelectorAll("button[aria-label*='Stop' i], button.stop-button, [aria-label*='Stop response' i]");
+              for (const b of btns) { if (b && !b.disabled) b.click(); }
+            }
+          }).catch(() => {});
+        }
         processNextInQueue(job.target, job.accountSlot);
       }
     } else {
@@ -921,16 +1193,38 @@ async function handleBridgeCommand(msg) {
         try {
           chrome.tabs.sendMessage(job.tabId, { action: "CANCEL_GENERATION", data: { jobId: id } });
         } catch (e) {}
+        if (chrome.scripting && chrome.scripting.executeScript && job.tabId) {
+          chrome.scripting.executeScript({
+            target: { tabId: job.tabId },
+            func: () => {
+              if (typeof window.__MYTHIC_BEI_CANCEL__ === 'function') window.__MYTHIC_BEI_CANCEL__();
+              if (typeof window.__MYTHIC_BEI_CLICK_STOP_BUTTON__ === 'function') window.__MYTHIC_BEI_CLICK_STOP_BUTTON__();
+              const btns = document.querySelectorAll("button[aria-label*='Stop' i], button.stop-button, [aria-label*='Stop response' i]");
+              for (const b of btns) { if (b && !b.disabled) b.click(); }
+            }
+          }).catch(() => {});
+        }
       }
       activeJobs.clear();
     }
-    // Broadcast CLEAR_COMPOSER to any open Gemini or ChatGPT tabs so composer is completely wiped
+    // Broadcast CLEAR_COMPOSER and click stop buttons on any open Gemini or ChatGPT tabs
     chrome.tabs.query({}).then(tabs => {
       for (const tab of tabs) {
         if (tab.id && tab.url && (tab.url.includes("gemini.google.com") || tab.url.includes("chatgpt.com"))) {
           try {
             chrome.tabs.sendMessage(tab.id, { action: "CANCEL_GENERATION" });
           } catch (e) {}
+          if (chrome.scripting && chrome.scripting.executeScript) {
+            chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              func: () => {
+                if (typeof window.__MYTHIC_BEI_CANCEL__ === 'function') window.__MYTHIC_BEI_CANCEL__();
+                if (typeof window.__MYTHIC_BEI_CLICK_STOP_BUTTON__ === 'function') window.__MYTHIC_BEI_CLICK_STOP_BUTTON__();
+                const btns = document.querySelectorAll("button[aria-label*='Stop' i], button.stop-button, [aria-label*='Stop response' i]");
+                for (const b of btns) { if (b && !b.disabled) b.click(); }
+              }
+            }).catch(() => {});
+          }
         }
       }
     });

@@ -66,12 +66,15 @@ export interface BEIAccountDetail {
 
 export const DEFAULT_KNOWN_ACCOUNTS: BEIAccountDetail[] = [
   { slot: 0, email: '', name: 'Account 1 (Default)', tier: 'pro' },
-  { slot: 1, email: '', name: 'Account 2', tier: 'free' },
+  { slot: 1, email: '', name: 'Account 2', tier: 'pro' },
+  { slot: 2, email: '', name: 'Account 3', tier: 'pro' },
+  { slot: 3, email: '', name: 'Account 4', tier: 'pro' },
 ];
 
 const BEI_ACCOUNTS_KEY = 'mythic_bei_accounts';
 
 export const getSavedBEIAccounts = (): BEIAccountDetail[] => {
+  let list: BEIAccountDetail[] = [];
   if (typeof window !== 'undefined') {
     try {
       const saved = localStorage.getItem(BEI_ACCOUNTS_KEY);
@@ -79,16 +82,29 @@ export const getSavedBEIAccounts = (): BEIAccountDetail[] => {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           // Purge dummy example.com emails from previous sessions
-          return parsed.map((acc: BEIAccountDetail) => ({
+          list = parsed.map((acc: BEIAccountDetail) => ({
             ...acc,
+            slot: typeof acc.slot === 'number' ? acc.slot : 0,
             email: (acc.email && !acc.email.includes('example.com')) ? acc.email : '',
-            name: (acc.name && !acc.name.includes('example.com')) ? acc.name : `Account ${acc.slot + 1}`
+            name: (acc.name && !acc.name.includes('example.com')) ? acc.name : `Account ${(acc.slot ?? 0) + 1}`,
+            tier: acc.tier || 'pro'
           }));
         }
       }
     } catch (e) {}
   }
-  return DEFAULT_KNOWN_ACCOUNTS;
+
+  // Guarantee that all 4 slots (0..3) always exist
+  const result: BEIAccountDetail[] = [];
+  for (let slot = 0; slot < 4; slot++) {
+    const existing = list.find(a => a.slot === slot);
+    if (existing) {
+      result.push(existing);
+    } else {
+      result.push(DEFAULT_KNOWN_ACCOUNTS[slot] || { slot, email: '', name: `Account ${slot + 1}`, tier: 'pro' });
+    }
+  }
+  return result;
 };
 
 export const setSavedBEIAccounts = (accounts: BEIAccountDetail[]): void => {
@@ -103,6 +119,21 @@ export const setBEIAccountTier = (slot: number, tier: 'free' | 'pro'): void => {
   setSavedBEIAccounts(updated);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('mythic_bei_accounts_changed', { detail: { slot, tier } }));
+    window.dispatchEvent(new Event('storage'));
+  }
+};
+
+export const updateBEIAccountCustomInfo = (slot: number, custom: { email?: string; name?: string; tier?: 'free' | 'pro' }): void => {
+  const accounts = getSavedBEIAccounts();
+  const idx = accounts.findIndex(a => a.slot === slot);
+  if (idx !== -1) {
+    accounts[idx] = { ...accounts[idx], ...custom };
+  } else {
+    accounts.push({ slot, email: custom.email || '', name: custom.name || `Account ${slot + 1}`, tier: custom.tier || 'pro' });
+  }
+  setSavedBEIAccounts(accounts);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('mythic_bei_accounts_changed', { detail: accounts }));
     window.dispatchEvent(new Event('storage'));
   }
 };
@@ -182,19 +213,23 @@ export const checkBEIConnection = async (): Promise<BEIStatusResponse> => {
         let accounts = getSavedBEIAccounts();
         let changed = false;
 
-        // Clean any accounts sent from bridge
+        // Merge accounts sent from bridge slot-by-slot (never wipe the 4 slots!)
         if (Array.isArray(data.accounts) && data.accounts.length > 0) {
-          const validBridgeAccounts = data.accounts
-            .filter((a: any) => a && typeof a === 'object')
-            .map((a: any) => ({
-              slot: typeof a.slot === 'number' ? a.slot : 0,
-              email: (a.email && !a.email.includes('example.com')) ? a.email : '',
-              name: (a.name && !a.name.includes('example.com')) ? a.name : `Account ${(a.slot ?? 0) + 1}`,
-              tier: a.tier || 'pro'
-            }));
-          if (validBridgeAccounts.length > 0) {
-            accounts = validBridgeAccounts;
-            changed = true;
+          for (const a of data.accounts) {
+            if (!a || typeof a !== 'object') continue;
+            const slot = typeof a.slot === 'number' ? a.slot : 0;
+            const email = (a.email && !a.email.includes('example.com')) ? a.email : '';
+            const name = (a.name && !a.name.includes('example.com')) ? a.name : (email ? email.split('@')[0] : `Account ${slot + 1}`);
+            const idx = accounts.findIndex(acc => acc.slot === slot);
+            if (idx !== -1) {
+              if (email && accounts[idx].email !== email) {
+                accounts[idx] = { ...accounts[idx], email, name };
+                changed = true;
+              }
+            } else {
+              accounts.push({ slot, email, name, tier: a.tier || 'pro' });
+              changed = true;
+            }
           }
         }
 
@@ -473,6 +508,27 @@ export const resetBEISession = async (tabSessionId?: string): Promise<boolean> =
           accountSlot: config.accountSlot || 0,
           tabSessionId
         })
+      });
+      if (resp.ok) return true;
+    } catch (e) {}
+  }
+  return false;
+};
+
+export const scanBEIAccounts = async (): Promise<boolean> => {
+  const config = getBEIConfig();
+  const port = config.port || DEFAULT_BEI_PORT;
+  const urls = [
+    `http://127.0.0.1:${port}/api/bei/scan-accounts`,
+    `/api/bei/scan-accounts`
+  ];
+
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
       });
       if (resp.ok) return true;
     } catch (e) {}

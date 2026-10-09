@@ -73,6 +73,21 @@ export const useSpriteSheet = (
     setFrames(prev => prev.map(f => ({ ...f, url: null, status: 'idle' })));
   };
 
+  const clearAll = () => {
+    updateActiveTab((prev: WorkspaceTab) => ({
+      spriteSheet: {
+        ...prev.spriteSheet,
+        globalPrompt: '',
+        animationGoal: '',
+        frames: [
+          { id: '1', prompt: 'Front view, idle', url: null, status: 'idle', bgConfig: { ...prev.spriteSheet.globalBackground }, referenceUrl: null },
+          { id: '2', prompt: 'Side view, walking', url: null, status: 'idle', bgConfig: { ...prev.spriteSheet.globalBackground }, referenceUrl: null },
+          { id: '3', prompt: 'Back view, idle', url: null, status: 'idle', bgConfig: { ...prev.spriteSheet.globalBackground }, referenceUrl: null }
+        ]
+      }
+    }));
+  };
+
   return {
     spriteSheet,
     setGlobalPrompt,
@@ -84,6 +99,7 @@ export const useSpriteSheet = (
     removeFrame,
     updateFrame,
     setFrameCount,
-    clearResults
+    clearResults,
+    clearAll
   };
 };

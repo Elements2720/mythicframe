@@ -260,6 +260,11 @@ export class BEIBridgeServer {
           return;
         }
 
+        if (req.method === 'POST' && url.pathname === '/api/bei/scan-accounts') {
+          this.handleScanAccountsRequest(req, res);
+          return;
+        }
+
         if (res.headersSent) return;
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'NOT_FOUND', path: url.pathname }));
@@ -811,6 +816,21 @@ export class BEIBridgeServer {
         res.end(JSON.stringify({ error: 'INVALID_REQUEST', message: err.message }));
       }
     });
+  }
+
+  public handleScanAccountsRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    if (!this.isConnected()) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'EXTENSION_NOT_CONNECTED', message: 'BEI Chrome Extension is not connected.' }));
+      return;
+    }
+
+    this.extensionSocket!.send(JSON.stringify({
+      type: 'SCAN_ACCOUNTS'
+    }));
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, scanning: true, message: 'Google account scan initiated in Chrome background.' }));
   }
 
   public close(): Promise<void> {

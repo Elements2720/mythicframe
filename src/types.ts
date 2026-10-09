@@ -1,5 +1,5 @@
 
-export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'illustration' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize' | 'frame' | 'background' | 'fullcard' | 'gacha' | 'ui-reimagine' | 'style-library' | 'pose-studio' | 'map-grid' | 'sprite-sheet' | 'batch' | 'downloads' | 'quota';
+export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'illustration' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize' | 'frame' | 'background' | 'fullcard' | 'gacha' | 'ui-reimagine' | 'style-library' | 'pose-studio' | 'map-grid' | 'sprite-sheet' | 'batch' | 'downloads' | 'quota' | 'sprite-strip' | 'ui-scene';
 
 export interface BatchItem {
   id: string;
@@ -13,6 +13,7 @@ export interface BatchItem {
   sourceFile?: string;
   isSeriesTemplate?: boolean;
   usedReferenceUrl?: string;
+  referenceWeight?: number;
   skipReference?: boolean;
 }
 
@@ -228,6 +229,7 @@ export interface ReferenceAsset {
   id: string;
   url: string;
   roleNote: string;
+  filename?: string;
 }
 
 export enum GenerationModel {
@@ -284,7 +286,16 @@ export interface ResizeItem {
 
 export type BatchGenerationMode = 'standard' | 'consistent_series';
 
-export type BatchVariation = 'waist-up' | 'full-body' | 'chibi';
+export type BatchVariation = 'waist-up' | 'full-body' | 'chibi' | 'item' | 'texture' | 'icon';
+
+export interface SpriteStripConfig {
+  prompt: string;
+  action: string;
+  frameCount: 3 | 4 | 5 | 6 | 7 | 8;
+  direction: 'left' | 'right' | 'front' | 'back' | 'isometric';
+  batchCharacters?: boolean;
+  frameMargin?: 'tight' | 'standard' | 'wide' | 'extreme';
+}
 
 export interface BgReplaceItem extends ResizeItem {
   prompt: string;
@@ -492,6 +503,7 @@ export interface WorkspaceTab {
   poseData: PoseData;
   mapGridConfig: MapGridConfig;
   spriteSheet: SpriteSheetState;
+  spriteStripConfig?: SpriteStripConfig;
   batchQueue: BatchItem[];
   selectedBatchId: string | null;
   batchGenerationMode: BatchGenerationMode;
