@@ -209,6 +209,44 @@ function getMimeType(dataUrl: string): string {
   return match ? match[1] : 'image/png';
 }
 
+export function extractImageFromInteraction(interaction: any): string {
+  // 1. Direct output_image accessor on Interaction
+  if (interaction?.output_image?.data) {
+    const mime = interaction.output_image.mime_type || 'image/png';
+    return `data:${mime};base64,${interaction.output_image.data}`;
+  }
+
+  // 2. Interaction steps traversal
+  if (Array.isArray(interaction?.steps)) {
+    for (const step of interaction.steps) {
+      if (Array.isArray(step?.content)) {
+        for (const item of step.content) {
+          if (item?.type === 'image' && item?.data) {
+            const mime = item.mime_type || 'image/png';
+            return `data:${mime};base64,${item.data}`;
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Fallback for legacy candidate parts
+  if (Array.isArray(interaction?.candidates)) {
+    for (const cand of interaction.candidates) {
+      if (Array.isArray(cand?.content?.parts)) {
+        for (const part of cand.content.parts) {
+          if (part?.inlineData?.data) {
+            const mime = part.inlineData.mimeType || 'image/png';
+            return `data:${mime};base64,${part.inlineData.data}`;
+          }
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
 export const analyzeImageStyle = async (base64Image: string): Promise<{ description: string; promptSnippet: string }> => {
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
@@ -219,7 +257,7 @@ export const analyzeImageStyle = async (base64Image: string): Promise<{ descript
   const mimeType = getMimeType(optimizedInput);
 
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: getModelName('gemini-3-pro-preview'),
+    model: getModelName('gemini-3.8-flash'),
     contents: {
       parts: [
         { inlineData: { mimeType: mimeType, data: cleanBase64 } },
@@ -248,29 +286,40 @@ export const generateStyleExample = async (snippet: string, subject?: string): P
   const ai = getClient();
   const defaultSubject = "A majestic high-fantasy knight standing in a heroic pose, holding a glowing sword, detailed armor";
   const finalPrompt = `${subject || defaultSubject}${snippet}`;
-  
-  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: getModelName('gemini-2.5-flash-image'),
-    contents: { parts: [{ text: finalPrompt }] },
-    config: {
-      imageConfig: { aspectRatio: '1:1' },
-      systemInstruction: "You are a style showcase tool. Generate ONLY the image matching the style snippet provided."
+  const activeModel = getModelName(GenerationModel.FLASH_3_1);
+
+  // 1. Try standard models.generateContent with imageConfig first
+  try {
+    const response = await callWithRetry(() => ai.models.generateContent({
+      model: activeModel,
+      contents: [{ text: finalPrompt }],
+      config: {
+        systemInstruction: "You are a style showcase tool. Generate ONLY the image matching the style snippet provided.",
+        imageConfig: {
+          aspectRatio: '1:1'
+        }
+      }
+    }));
+    const base64Image = extractImageFromInteraction(response);
+    if (base64Image) return base64Image;
+  } catch (err: any) {
+    console.warn("models.generateContent image attempt in generateStyleExample fell back to interactions:", err?.message || err);
+  }
+
+  // 2. Fallback to interactions.create
+  const interaction = await callWithRetry(() => ai.interactions.create({
+    model: activeModel,
+    input: [{ type: 'text', text: finalPrompt }],
+    system_instruction: "You are a style showcase tool. Generate ONLY the image matching the style snippet provided.",
+    response_format: {
+      type: 'image',
+      aspect_ratio: '1:1'
     }
   }));
 
-  const candidate = response.candidates[0];
-  let base64Image = "";
-  if (candidate.content?.parts) {
-      for (const part of candidate.content.parts) {
-          if (part.inlineData && part.inlineData.data) {
-              base64Image = part.inlineData.data;
-              break;
-          }
-      }
-  }
-
+  const base64Image = extractImageFromInteraction(interaction);
   if (!base64Image) throw new Error("Style example generation failed.");
-  return `data:image/png;base64,${base64Image}`;
+  return base64Image;
 };
 
 export const generateIllustration = async (
@@ -300,144 +349,180 @@ export const generateIllustration = async (
 ): Promise<{ image: string; metadata: any }> => {
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
-  const activeModel = getModelName(model);
+  const activeModel = getModelName(model || GenerationModel.FLASH_3_1);
   
   let finalPrompt = "";
-  let parts: any[] = [];
   let referenceParts: { text?: string }[] = [];
 
   if (mode === 'frame') {
      finalPrompt = buildFramePrompt(prompt, gameContext, styleSnippet, frameElements);
-     parts.push({ text: finalPrompt });
   } else if (mode === 'background') {
      finalPrompt = buildBackgroundAssetPrompt(prompt, gameContext, styleSnippet, bgPatternType);
-     parts.push({ text: finalPrompt });
   } else if (mode === 'clothes') {
      const built = buildClothesPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone, clothesParams);
      finalPrompt = built.textPrompt;
      referenceParts = built.referenceParts;
-     parts.push({ text: finalPrompt });
   } else if (mode === 'pose-studio' && poseData) {
      const built = buildPoseStudioPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, poseData, safeZone);
      finalPrompt = built.textPrompt;
      referenceParts = built.referenceParts;
-     parts.push({ text: finalPrompt });
   } else if (mode === 'map-grid' && mapGridConfig) {
      finalPrompt = buildMapGridPrompt(prompt, gameContext, styleSnippet, mapGridConfig);
-     parts.push({ text: finalPrompt });
   } else {
      const built = buildIllustrationPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone, continuityFlags, chibiProportion, chibiConfig, viewpoint, noCharacters, framing);
      finalPrompt = built.textPrompt;
      referenceParts = built.referenceParts;
-     parts.push({ text: finalPrompt });
-  }
-
-  if (referenceParts.length > 0) {
-      parts.push(...referenceParts);
-  }
-
-  if (referenceAssets.length > 0) {
-      for (const ref of referenceAssets) {
-         try {
-             const optimizedUrl = await optimizeBase64Image(ref.url, 1024, 0.8);
-             parts.push({ 
-                inlineData: { 
-                  mimeType: getMimeType(optimizedUrl),
-                  data: base64ImageToBase64(optimizedUrl)
-                } 
-             });
-         } catch(e) {
-             parts.push({ 
-                inlineData: { 
-                  mimeType: getMimeType(ref.url),
-                  data: base64ImageToBase64(ref.url)
-                } 
-             });
-         }
-      }
-  }
-
-  let validAspectRatio = aspectRatio;
-  if (aspectRatio === 'custom' || aspectRatio === '21:9') {
-     validAspectRatio = '16:9';
-  }
-
-  const imageConfig: any = {
-     aspectRatio: validAspectRatio
-  };
-
-  if (model === GenerationModel.PRO_3) {
-     imageConfig.imageSize = size;
   }
 
   // Detect if user is requesting photorealism to override cartoon bias
   const isPhotorealistic = finalPrompt.toLowerCase().includes('photorealistic') || finalPrompt.toLowerCase().includes('raw photo') || finalPrompt.toLowerCase().includes('lifelike');
 
   // CRITICAL: Clean up newline characters and multi-spaces from the final prompt
-  // as many image generation APIs fail or exhibit unexpected behavior with multiline strings.
   const sanitizedPrompt = finalPrompt.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-  const configObj: any = {
-    imageConfig,
-    systemInstruction: `You are a specialized game asset generator. 
+  const inputParts: any[] = [];
+  inputParts.push({ type: 'text', text: sanitizedPrompt });
+
+  if (referenceParts.length > 0) {
+    for (const refPart of referenceParts) {
+      if (refPart.text) {
+        inputParts.push({ type: 'text', text: refPart.text });
+      }
+    }
+  }
+
+  if (referenceAssets.length > 0) {
+    for (const ref of referenceAssets) {
+      try {
+        const optimizedUrl = await optimizeBase64Image(ref.url, 1024, 0.8);
+        inputParts.push({ 
+          type: 'image',
+          mime_type: getMimeType(optimizedUrl),
+          data: base64ImageToBase64(optimizedUrl)
+        });
+      } catch (e) {
+        inputParts.push({ 
+          type: 'image',
+          mime_type: getMimeType(ref.url),
+          data: base64ImageToBase64(ref.url)
+        });
+      }
+    }
+  }
+
+  let validAspectRatio = aspectRatio;
+  const supportedRatios = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
+  if (aspectRatio === 'custom' || !supportedRatios.includes(aspectRatio)) {
+     validAspectRatio = '16:9';
+  }
+
+  const responseFormat: any = {
+     type: 'image',
+     aspect_ratio: validAspectRatio
+  };
+
+  if ((activeModel.includes('pro') || activeModel === GenerationModel.PRO_3) && size) {
+     responseFormat.image_size = size;
+  }
+
+  const systemInstruction = `You are a specialized game asset generator. 
 [STRICT RULES]:
 1. NEVER respond with text, conversation, or helpful introductions.
 2. ONLY output image data.
 3. ABSOLUTELY NO TEXT INSIDE THE IMAGE. No labels, no names, no watermarks, no signatures, no UI elements.
 4. If a reference is provided, you MUST PRESERVE character identity, including facial structure and skin color.
-4. If a "Structural Template" or "Mannequin" role is assigned, do NOT change the pose or body proportions.
-5. If a "Style Lock" is assigned, IGNORE default realistic textures. Use only the provided art style.
-6. If in "POSE-DRIVEN" mode, you MUST treat the provided coordinates as absolute spatial anchors. The character's joints MUST be placed at those exact pixels.
-7. If in "MAP-GRID" mode, you MUST NEVER add characters, UI, HUD, or perspective beyond the selected view. Align strictly to the grid and environment directives.
-${isPhotorealistic ? '8. [PHOTOREALISM OVERRIDE]: You MUST produce a lifelike photograph. NO 2D art, NO anime, NO drawing, NO digital painting textures. Use RAW camera characteristics.' : '8. Strictly follow the user\'s SUBJECT. If the subject is an object, monster, or landscape, do NOT add human characters.'}`
-  };
-  
-  // Gemini 2.5 uses top-level seed while imagen 3 might use something else! 
-  // we add it to both places to be safe and compatible with the dynamic AI configurations since typing is 'any'
-  if (seed !== undefined && seed !== null) {
-      configObj.seed = seed;
-  }
+5. If a "Structural Template" or "Mannequin" role is assigned, do NOT change the pose or body proportions.
+6. If a "Style Lock" is assigned, IGNORE default realistic textures. Use only the provided art style.
+7. If in "POSE-DRIVEN" mode, you MUST treat the provided coordinates as absolute spatial anchors. The character's joints MUST be placed at those exact pixels.
+8. If in "MAP-GRID" mode, you MUST NEVER add characters, UI, HUD, or perspective beyond the selected view. Align strictly to the grid and environment directives.
+${isPhotorealistic ? '9. [PHOTOREALISM OVERRIDE]: You MUST produce a lifelike photograph. NO 2D art, NO anime, NO drawing, NO digital painting textures. Use RAW camera characteristics.' : '9. Strictly follow the user\'s SUBJECT. If the subject is an object, monster, or landscape, do NOT add human characters.'}`;
 
-  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: activeModel,
-    contents: { parts: [{ text: sanitizedPrompt }, ...parts.slice(1)] },
-    config: configObj
-  }));
-
-  if (!response.candidates || response.candidates.length === 0) {
-      throw new Error("Generation failed: No candidates returned.");
-  }
-
-  const candidate = response.candidates[0];
   let base64Image = "";
-  let textPart = "";
+  let interactionId: string | undefined = undefined;
 
-  if (candidate.content?.parts) {
-      for (const part of candidate.content.parts) {
-          if (part.inlineData && part.inlineData.data) {
-              base64Image = part.inlineData.data;
-              break;
-          }
-          if (part.text) {
-              textPart += part.text;
-          }
+  // 1. Primary path: models.generateContent with imageConfig (Canonical, resilient to Interactions schema breaking changes)
+  try {
+    const contents: any[] = [];
+    contents.push({ text: sanitizedPrompt });
+    if (referenceParts.length > 0) {
+      for (const refPart of referenceParts) {
+        if (refPart.text) contents.push({ text: refPart.text });
       }
+    }
+    if (referenceAssets.length > 0) {
+      for (const ref of referenceAssets) {
+        try {
+          const optimizedUrl = await optimizeBase64Image(ref.url, 1024, 0.8);
+          contents.push({
+            inlineData: {
+              mimeType: getMimeType(optimizedUrl),
+              data: base64ImageToBase64(optimizedUrl)
+            }
+          });
+        } catch (e) {
+          contents.push({
+            inlineData: {
+              mimeType: getMimeType(ref.url),
+              data: base64ImageToBase64(ref.url)
+            }
+          });
+        }
+      }
+    }
+
+    const config: any = {
+      systemInstruction,
+      imageConfig: {
+        aspectRatio: validAspectRatio,
+        ...(size ? { imageSize: size } : {})
+      }
+    };
+    if (seed !== undefined && seed !== null) {
+      config.seed = seed;
+    }
+
+    const response = await callWithRetry<any>(async () => {
+      return await ai.models.generateContent({
+        model: activeModel,
+        contents,
+        config
+      });
+    });
+
+    base64Image = extractImageFromInteraction(response);
+  } catch (genContentErr: any) {
+    console.warn("models.generateContent image attempt in generateIllustration encountered issue, attempting interactions fallback:", genContentErr?.message || genContentErr);
   }
 
+  // 2. Fallback path: interactions.create
   if (!base64Image) {
-      if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-          // Provide actionable advice for common block reasons
-          if (candidate.finishReason === 'IMAGE_OTHER') {
-              throw new Error("The AI was unable to finalize this image due to internal safety policies or an edge case. Try slightly changing your prompt, subject, or pose description to proceed.");
-          }
-          throw new Error(`Generation blocked. Reason: ${candidate.finishReason}. ${textPart}`);
-      }
-      throw new Error(textPart || "No image generated.");
+    const requestParams: any = {
+      model: activeModel,
+      input: inputParts,
+      system_instruction: systemInstruction,
+      response_format: responseFormat,
+    };
+
+    if (seed !== undefined && seed !== null) {
+      requestParams.generation_config = { seed };
+    }
+
+    const interaction = await callWithRetry<any>(async () => {
+      return await ai.interactions.create(requestParams);
+    });
+
+    base64Image = extractImageFromInteraction(interaction);
+    interactionId = interaction?.id;
+
+    if (!base64Image) {
+      const errorText = interaction?.errors?.[0]?.message || interaction?.output_text || "No image generated.";
+      throw new Error(errorText);
+    }
   }
 
   return {
-    image: `data:image/png;base64,${base64Image}`,
-    metadata: { fullPrompt: finalPrompt }
+    image: base64Image,
+    metadata: { fullPrompt: finalPrompt, interactionId }
   };
 };
 
@@ -450,6 +535,7 @@ export const editImage = async (
 ): Promise<string> => {
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
+  const activeModel = getModelName(GenerationModel.FLASH_3_1);
   const optimizedInput = await optimizeBase64Image(base64Image, 1024, 0.9);
   const cleanBase64 = base64ImageToBase64(optimizedInput);
   const mimeType = getMimeType(optimizedInput);
@@ -465,67 +551,106 @@ export const editImage = async (
 
   // Sanitize prompt for API compatibility
   const sanitizedPrompt = finalPrompt.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const isPhotorealistic = finalPrompt.toLowerCase().includes('photorealistic') || finalPrompt.toLowerCase().includes('raw photo') || finalPrompt.toLowerCase().includes('lifelike');
 
-  const parts: any[] = [
-    { inlineData: { mimeType: mimeType, data: cleanBase64 } }
+  const inputParts: any[] = [
+    {
+      type: 'image',
+      mime_type: mimeType,
+      data: cleanBase64
+    },
+    {
+      type: 'text',
+      text: sanitizedPrompt
+    }
   ];
 
   if (referenceAssets.length > 0) {
     for (const ref of referenceAssets) {
       try {
         const optimizedUrl = await optimizeBase64Image(ref.url, 1024, 0.8);
-        parts.push({
-          inlineData: {
-            mimeType: getMimeType(optimizedUrl),
-            data: base64ImageToBase64(optimizedUrl)
-          }
+        inputParts.push({
+          type: 'image',
+          mime_type: getMimeType(optimizedUrl),
+          data: base64ImageToBase64(optimizedUrl)
         });
       } catch (e) {
-        parts.push({
-          inlineData: {
-            mimeType: getMimeType(ref.url),
-            data: base64ImageToBase64(ref.url)
-          }
+        inputParts.push({
+          type: 'image',
+          mime_type: getMimeType(ref.url),
+          data: base64ImageToBase64(ref.url)
         });
       }
     }
   }
 
-  parts.push({ text: sanitizedPrompt });
-
-  const isPhotorealistic = finalPrompt.toLowerCase().includes('photorealistic') || finalPrompt.toLowerCase().includes('raw photo') || finalPrompt.toLowerCase().includes('lifelike');
-
-  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-     model: getModelName('gemini-2.5-flash-image'), 
-     contents: { parts },
-     config: {
-       systemInstruction: `You are an image editing tool. NEVER respond with text. ONLY return image data. Adhere strictly to the requested style and structure. PRESERVE character skin color and features. ${isPhotorealistic ? '[MANDATORY]: Use extreme photorealism. No drawing/painting artifacts.' : ''}`
-     }
-  }));
-
-  if (!response.candidates || response.candidates.length === 0) throw new Error("No response from edit model.");
-  
   let resultImage = "";
-  let textPart = "";
-  const candidate = response.candidates[0];
-  if (candidate.content?.parts) {
-    for (const part of candidate.content.parts) {
-      if (part.inlineData && part.inlineData.data) {
-        resultImage = part.inlineData.data;
-        break;
+
+  // 1. Try models.generateContent with image input
+  try {
+    const contents: any[] = [];
+    contents.push({
+      inlineData: {
+        mimeType: mimeType,
+        data: cleanBase64
       }
-      if (part.text) textPart += part.text;
+    });
+    contents.push({ text: sanitizedPrompt });
+
+    if (referenceAssets.length > 0) {
+      for (const ref of referenceAssets) {
+        try {
+          const optimizedUrl = await optimizeBase64Image(ref.url, 1024, 0.8);
+          contents.push({
+            inlineData: {
+              mimeType: getMimeType(optimizedUrl),
+              data: base64ImageToBase64(optimizedUrl)
+            }
+          });
+        } catch (e) {
+          contents.push({
+            inlineData: {
+              mimeType: getMimeType(ref.url),
+              data: base64ImageToBase64(ref.url)
+            }
+          });
+        }
+      }
+    }
+
+    const response = await callWithRetry<any>(() => ai.models.generateContent({
+      model: activeModel,
+      contents,
+      config: {
+        systemInstruction: `You are an image editing tool. NEVER respond with text. ONLY return image data. Adhere strictly to the requested style and structure. PRESERVE character skin color and features. ${isPhotorealistic ? '[MANDATORY]: Use extreme photorealism. No drawing/painting artifacts.' : ''}`,
+        imageConfig: {
+          aspectRatio: '1:1'
+        }
+      }
+    }));
+
+    resultImage = extractImageFromInteraction(response);
+  } catch (e: any) {
+    console.warn("models.generateContent in editImage fell back to interactions:", e?.message || e);
+  }
+
+  // 2. Fallback to interactions.create
+  if (!resultImage) {
+    const interaction = await callWithRetry<any>(() => ai.interactions.create({
+      model: activeModel,
+      input: inputParts,
+      system_instruction: `You are an image editing tool. NEVER respond with text. ONLY return image data. Adhere strictly to the requested style and structure. PRESERVE character skin color and features. ${isPhotorealistic ? '[MANDATORY]: Use extreme photorealism. No drawing/painting artifacts.' : ''}`,
+      response_format: { type: 'image' }
+    }));
+
+    resultImage = extractImageFromInteraction(interaction);
+    if (!resultImage) {
+      const errorText = interaction?.errors?.[0]?.message || interaction?.output_text || "Image editing failed.";
+      throw new Error(errorText);
     }
   }
 
-  if (!resultImage) {
-      if (candidate.finishReason === 'IMAGE_OTHER') {
-          throw new Error("The edit was blocked due to an internal safety filter. Try adjusting your description or masking region.");
-      }
-      throw new Error(`Edit failed: ${textPart}`);
-  }
-  
-  return `data:image/png;base64,${resultImage}`;
+  return resultImage;
 };
 
 export const enhanceImage = async (
@@ -534,40 +659,69 @@ export const enhanceImage = async (
 ): Promise<string> => {
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
+  const activeModel = getModelName(GenerationModel.FLASH_3_1);
   const optimizedInput = await optimizeBase64Image(base64Image, 1024, 1.0);
   const cleanBase64 = base64ImageToBase64(optimizedInput);
   const mimeType = getMimeType(optimizedInput);
 
   const prompt = `ENHANCE AND REFINE THIS IMAGE. 1. QUALITY: Sharpen all lines, improve visual fidelity, and add high-end professional textures. 2. DETAILS: Refine small details like jewelry, eyes, fabric folds, and lighting effects. 3. CONSISTENCY (MANDATORY): DO NOT change the subject, pose, composition, hair color, eye color, or overall character design. 4. FINISH: Make this look like a 4K resolution finished game asset. Setting Context: ${gameContext.setting || 'High Fantasy'}. Tone: ${gameContext.tone || 'Epic'}.`;
 
-  const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-     model: getModelName('gemini-2.5-flash-image'), 
-     contents: {
-       parts: [
-         { inlineData: { mimeType: mimeType, data: cleanBase64 } },
-         { text: prompt }
-       ]
-     },
-     config: {
-       systemInstruction: "You are an image enhancement engine. NEVER speak. ONLY return enhanced image data."
-     }
-  }));
-
-  if (!response.candidates || response.candidates.length === 0) throw new Error("No response from enhancement model.");
-  
   let resultImage = "";
-  const candidate = response.candidates[0];
-  if (candidate.content?.parts) {
-    for (const part of candidate.content.parts) {
-      if (part.inlineData && part.inlineData.data) {
-        resultImage = part.inlineData.data;
-        break;
+
+  // 1. Try models.generateContent first
+  try {
+    const response = await callWithRetry<any>(() => ai.models.generateContent({
+      model: activeModel,
+      contents: [
+        {
+          inlineData: {
+            mimeType: mimeType,
+            data: cleanBase64
+          }
+        },
+        {
+          text: prompt
+        }
+      ],
+      config: {
+        systemInstruction: "You are an image enhancement engine. NEVER speak. ONLY return enhanced image data.",
+        imageConfig: {
+          aspectRatio: '1:1'
+        }
       }
+    }));
+    resultImage = extractImageFromInteraction(response);
+  } catch (e: any) {
+    console.warn("models.generateContent in enhanceImage fell back to interactions:", e?.message || e);
+  }
+
+  // 2. Fallback to interactions.create
+  if (!resultImage) {
+    const interaction = await callWithRetry<any>(() => ai.interactions.create({
+      model: activeModel,
+      input: [
+        {
+          type: 'image',
+          mime_type: mimeType,
+          data: cleanBase64
+        },
+        {
+          type: 'text',
+          text: prompt
+        }
+      ],
+      system_instruction: "You are an image enhancement engine. NEVER speak. ONLY return enhanced image data.",
+      response_format: { type: 'image' }
+    }));
+
+    resultImage = extractImageFromInteraction(interaction);
+    if (!resultImage) {
+      const errorText = interaction?.errors?.[0]?.message || interaction?.output_text || "Enhancement failed to produce an image.";
+      throw new Error(errorText);
     }
   }
 
-  if (!resultImage) throw new Error("Enhancement failed to produce an image. This can happen with highly complex scenes.");
-  return `data:image/png;base64,${resultImage}`;
+  return resultImage;
 };
 
 export const generateCardSuggestions = async (
@@ -579,7 +733,7 @@ export const generateCardSuggestions = async (
   const prompt = buildCardSuggestionsPrompt(artPrompt, currentName);
   
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: getModelName('gemini-3-flash-preview'),
+    model: getModelName('gemini-3.8-flash'),
     contents: { parts: [{ text: prompt }] },
     config: {
       responseMimeType: 'application/json',
@@ -619,7 +773,7 @@ Return a JSON object with:
 - "traits": A detailed physical description (under 50 words) for an AI master prompt focusing on clothing, hair, and features.`;
 
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: getModelName('gemini-3-flash-preview'),
+    model: getModelName('gemini-3.8-flash'),
     contents: { parts: [{ text: prompt }] },
     config: {
       responseMimeType: "application/json",
@@ -658,7 +812,7 @@ Focus on: hairstyle/color, eyes, armor/clothing style, signature items, and dist
 Respond with ONLY the description text, under 60 words.`;
 
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: getModelName('gemini-3-flash-preview'),
+    model: getModelName('gemini-3.8-flash'),
     contents: { parts: [{ text: prompt }] }
   }));
 
@@ -671,7 +825,7 @@ export const refinePrompt = async (currentPrompt: string): Promise<string> => {
   const prompt = buildRefinementPrompt(currentPrompt);
   
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: getModelName('gemini-3-flash-preview'),
+    model: getModelName('gemini-3.8-flash'),
     contents: { parts: [{ text: prompt }] }
   }));
 
@@ -687,7 +841,7 @@ export const generateSpriteSheetPrompts = async (
   const prompt = buildSpriteSheetPromptsPrompt(globalPrompt, frameCount, gameContext);
   
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: getModelName('gemini-3-flash-preview'),
+    model: getModelName('gemini-3.8-flash'),
     contents: { parts: [{ text: prompt }] },
     config: {
       responseMimeType: 'application/json',
@@ -716,7 +870,7 @@ export const generateSpriteSheetAnimationPrompts = async (
   const prompt = buildSpriteSheetAnimationPromptsPrompt(globalPrompt, animationGoal, frameCount, gameContext);
   
   const response = await callWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-    model: getModelName('gemini-3-flash-preview'),
+    model: getModelName('gemini-3.8-flash'),
     contents: { parts: [{ text: prompt }] },
     config: {
       responseMimeType: 'application/json',

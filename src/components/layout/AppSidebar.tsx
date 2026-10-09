@@ -98,6 +98,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
              <NavButton targetMode="library" />
              <NavButton targetMode="style-library" />
              <NavButton targetMode="downloads" />
+             <NavButton targetMode="quota" />
              <NavButton targetMode="settings" />
              <NavButton targetMode="tutorials" />
            </div>

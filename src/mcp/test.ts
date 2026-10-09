@@ -12,8 +12,8 @@ import {
 } from "../services/promptTemplates.js";
 import { GameContext, BackgroundConfig, MapGridConfig, PoseData } from "../types.js";
 
-const defaultGameContext: GameContext = { setting: "Cyberpunk", tone: "Gritty" };
-const defaultBgConfig: BackgroundConfig = { mode: "transparent" };
+const defaultGameContext: GameContext = { setting: "Cyberpunk", tone: "Gritty", visualConstraints: "" };
+const defaultBgConfig: BackgroundConfig = { mode: "transparent", color: "#000", allowTransparency: true, promptFragment: "" };
 
 async function runTests() {
   console.log("Starting MythicFrame MCP Readiness Tests...\n");
@@ -48,16 +48,16 @@ async function runTests() {
 
   runTest("buildMapGridPrompt", () => {
     const mapConfig: MapGridConfig = {
-      enabled: true, viewMode: 'isometric', preset: 'custom',
+      viewMode: 'isometric', preset: 'custom',
       gridWidth: 10, gridHeight: 10, cellSize: 64, primaryColor: '#000',
-      accentColor: '#000', shadowIntensity: 50, lightDirection: 'top-left', detailDensity: 'medium', decorationLevel: 'medium', transparentBackground: true
-    };
+      accentColor: '#000', shadowIntensity: 50, lightDirection: 'top-left', detailDensity: 'medium', decorationLevel: 'rich', transparentBackground: true
+    } as any;
     const res = buildMapGridPrompt("Forest level", defaultGameContext, "Voxel", mapConfig);
     if (!res.includes("MAP GRID GENERATION TASK")) throw new Error("Missing content");
   });
 
   runTest("buildPoseStudioPrompt", () => {
-    const mockPose: PoseData = { joints: [{ name: "head", x: 50, y: 20 }] };
+    const mockPose: PoseData = { joints: [{ id: "joint-1", name: "head", x: 50, y: 20 }], showSkeleton: true };
     const res = buildPoseStudioPrompt("A running rogue", defaultGameContext, "Realistic", defaultBgConfig, [], mockPose);
     if (!res.textPrompt.includes("POSE-DRIVEN CHARACTER GENERATION") || !res.textPrompt.includes("head")) throw new Error("Missing content");
   });
@@ -68,17 +68,17 @@ async function runTests() {
   });
 
   runTest("buildFramePrompt", () => {
-    const res = buildFramePrompt("Metal frame", defaultGameContext, "Rusty", ["Gears", "Pipes"]);
-    if (!res.includes("Gears") || !res.includes("Pipes")) throw new Error("Missing content");
+    const res = buildFramePrompt("Metal frame", defaultGameContext, "Rusty", ["name_banner" as any, "mana_cost" as any]);
+    if (!res.includes("name_banner") || !res.includes("mana_cost")) throw new Error("Missing content");
   });
 
   runTest("buildBackgroundAssetPrompt", () => {
-    const res = buildBackgroundAssetPrompt("Starry sky", defaultGameContext, "Watercolor", "seamless" as any);
-    if (!res.includes("Starry sky") || !res.includes("seamless")) throw new Error("Missing content");
+    const res = buildBackgroundAssetPrompt("Starry sky", defaultGameContext, "Watercolor", "texture");
+    if (!res.includes("Starry sky") || !res.includes("texture")) throw new Error("Missing content");
   });
 
   runTest("buildExtractClothesPrompt", () => {
-    const bg: BackgroundConfig = { mode: "solid", color: "#FF0000" };
+    const bg: BackgroundConfig = { mode: "solid", color: "#FF0000", allowTransparency: false, promptFragment: "" };
     const res = buildExtractClothesPrompt(defaultGameContext, bg);
     if (!res.includes("EXTRACTION TASK") || !res.includes("#FF0000")) throw new Error("Missing content");
   });

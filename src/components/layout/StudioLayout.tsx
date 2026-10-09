@@ -20,6 +20,7 @@ import { SpriteSheetGrid } from '../SpriteSheet/SpriteSheetGrid';
 import { SpriteSheetControls } from '../SpriteSheet/SpriteSheetControls';
 import { BatchStudio } from '../views/BatchStudio';
 import HistoryPanel from '../ui/HistoryPanel';
+import { PromptExportModal } from '../ui/PromptExportModal';
 import { WorkspaceTab, ReferenceAsset } from '../../types';
 
 const TabBar = ({ tabs, activeTabId, onSelect, onAdd, onClose }: any) => {
@@ -107,7 +108,30 @@ export default function StudioLayout({ engine }: { engine: any }) {
     if (engine.mode === 'bg-replace') return <BgReplaceBottomPanel queue={engine.bgReplaceQueue} selectedId={engine.selectedBgReplaceId} onSelect={engine.onSelectBgReplaceItem} onRemove={engine.onRemoveBgReplaceItem} onAddFiles={engine.onAddBgReplaceFiles} onClearResult={engine.handleClearBgReplaceResult} onRename={engine.handleBgReplaceRename} prompt={engine.prompt} setPrompt={engine.setPrompt} isGenerating={engine.isGenerating} onGenerate={engine.handleGenerate} onGenerateAll={engine.handleGenerateAllBgReplace} onExportAll={engine.handleExportAllResize} onCancel={engine.handleCancel} />;
     if (engine.mode === 'pixelize') return <PixelizeBottomPanel queue={engine.pixelizeQueue} selectedId={engine.selectedPixelizeId} onSelect={engine.onSelectPixelizeItem} onRemove={engine.onRemovePixelizeItem} onAddFiles={engine.onAddPixelizeFiles} onClearResult={engine.handleClearPixelizeResult} onRename={engine.handlePixelizeRename} selectedStyle={engine.selectedPixelStyle} onSelectStyle={engine.setSelectedPixelStyle} isGenerating={engine.isGenerating} onGenerate={engine.handleGenerate} onGenerateAll={engine.handleGenerateAllPixelize} onExportAll={engine.handleExportAllResize} onCancel={engine.handleCancel} />;
     
-    return <PromptPanel prompt={engine.prompt} setPrompt={engine.setPrompt} isGenerating={engine.isGenerating} onGenerate={engine.handleGenerate} onCancel={engine.handleCancel} gameContext={engine.gameContext} showInspiration={engine.showInspiration} setShowInspiration={engine.setShowInspiration} isSuggesting={engine.isSuggesting} referenceAssets={engine.referenceAssets} setReferenceAssets={engine.setReferenceAssets} onMatchReferenceSize={engine.handleMatchReferenceSize} isAnalyzing={engine.isAnalyzing} onAnalyzeStyle={engine.handleAnalyzeStyle} onRefinePrompt={engine.handleRefinePrompt} onUndoPrompt={engine.lastPrompt ? engine.handleUndoPrompt : undefined} mode={engine.mode} />;
+    return (
+      <PromptPanel 
+        prompt={engine.prompt} 
+        setPrompt={engine.setPrompt} 
+        isGenerating={engine.isGenerating} 
+        onGenerate={engine.handleGenerate} 
+        onCancel={engine.handleCancel} 
+        gameContext={engine.gameContext} 
+        showInspiration={engine.showInspiration} 
+        setShowInspiration={engine.setShowInspiration} 
+        isSuggesting={engine.isSuggesting} 
+        referenceAssets={engine.referenceAssets} 
+        setReferenceAssets={engine.setReferenceAssets} 
+        onMatchReferenceSize={engine.handleMatchReferenceSize} 
+        isAnalyzing={engine.isAnalyzing} 
+        onAnalyzeStyle={engine.handleAnalyzeStyle} 
+        onRefinePrompt={engine.handleRefinePrompt} 
+        onUndoPrompt={engine.lastPrompt ? engine.handleUndoPrompt : undefined} 
+        mode={engine.mode} 
+        isPromptOnlyMode={engine.isPromptOnlyMode}
+        setIsPromptOnlyMode={engine.setIsPromptOnlyMode}
+        onInspectPrompt={() => engine.handleOpenPromptExport(false)}
+      />
+    );
   };
 
   const isGachaMode = engine.mode === 'gacha';
@@ -149,6 +173,13 @@ export default function StudioLayout({ engine }: { engine: any }) {
             {renderRightPanel()}
          </div>
       )}
+
+      <PromptExportModal
+        isOpen={engine.showPromptExportModal}
+        onClose={engine.handleClosePromptExport}
+        bundle={engine.promptExportBundle}
+        isNoApiKeyNotice={engine.isNoApiKeyNotice}
+      />
     </>
   );
 }

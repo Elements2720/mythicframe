@@ -30,6 +30,7 @@ import { useGeneration } from './useGeneration';
 import { useExportHistory } from './useExportHistory';
 import { useLanguage } from '../i18n/LanguageContext';
 import { useStyleUsage } from './useStyleUsage';
+import { buildFullPromptBundle, PromptExportBundle } from '../utils/promptExporter';
 
 export const useAppEngine = () => {
   const { t } = useLanguage();
@@ -94,7 +95,7 @@ export const useAppEngine = () => {
   });
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [activeModel, setActiveModel] = useState<string>(() => {
-    return getSelectedModel() || (useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_2_5);
+    return getSelectedModel() || (useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_3_1);
   });
 
   const handleFetchModels = async () => {
@@ -116,7 +117,7 @@ export const useAppEngine = () => {
     setSelectedModel(modelId);
     if (modelId === GenerationModel.PRO_3) {
       setUseProModel(true);
-    } else if (modelId === GenerationModel.FLASH_2_5) {
+    } else if (modelId === GenerationModel.FLASH_3_1 || modelId === GenerationModel.FLASH_2_5 || modelId === GenerationModel.FLASH_LITE_3_1) {
       setUseProModel(false);
     }
     setConsoleLogs(p => [`Active model set to: ${modelId}`, ...p]);
@@ -301,6 +302,23 @@ export const useAppEngine = () => {
   const uiArchetype = activeTab.uiArchetype; const setUiArchetype = (v:string) => setTabProp('uiArchetype', v);
   const uiMaterial = activeTab.uiMaterial; const setUiMaterial = (v:string) => setTabProp('uiMaterial', v);
   const pixelBitSize = activeTab.pixelBitSize; const setPixelBitSize = (v: '8-bit' | '16-bit' | '32-bit' | '64-bit') => setTabProp('pixelBitSize', v);
+  const isPromptOnlyMode = activeTab.isPromptOnlyMode ?? false;
+  const setIsPromptOnlyMode = (v: boolean) => setTabProp('isPromptOnlyMode', v);
+
+  // --- Prompt Export Modal State ---
+  const [showPromptExportModal, setShowPromptExportModal] = useState(false);
+  const [promptExportBundle, setPromptExportBundle] = useState<PromptExportBundle | null>(null);
+  const [isNoApiKeyNotice, setIsNoApiKeyNotice] = useState(false);
+
+  const handleOpenPromptExport = (isNoApi = false) => {
+    const bundle = buildFullPromptBundle(activeTab, gameContext, customArtStyles);
+    setPromptExportBundle(bundle);
+    setIsNoApiKeyNotice(isNoApi);
+    setShowPromptExportModal(true);
+  };
+  const handleClosePromptExport = () => {
+    setShowPromptExportModal(false);
+  };
 
   const poseData = activeTab.poseData; const setPoseData = (v: any) => setTabPropFunc('poseData', v);
   const mapGridConfig = activeTab.mapGridConfig; const setMapGridConfig = (v: any) => setTabPropFunc('mapGridConfig', v);
@@ -327,7 +345,7 @@ export const useAppEngine = () => {
     generation.abortControllerRef.current = abortController;
 
     try {
-      const model = useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_2_5;
+      const model = useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_3_1;
       const size = activeTab.selectedSize;
       let styleSnippet = activeTab.selectedStyleId !== 'none' ? ART_STYLES.find(s => s.id === activeTab.selectedStyleId)?.promptSnippet || '' : '';
 
@@ -545,7 +563,8 @@ export const useAppEngine = () => {
     updateTabById,
     recordStyleUsage,
     activeModel,
-    showError
+    showError,
+    handleOpenPromptExport
   );
 
   const handleGenerateAllResize = async () => {
@@ -625,7 +644,7 @@ export const useAppEngine = () => {
     generation.abortControllerRef.current = abortController;
 
     try {
-      const model = useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_2_5;
+      const model = useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_3_1;
       const size = activeTab.selectedSize;
       const styleSnippet = activeTab.selectedStyleId !== 'none' ? ART_STYLES.find(s => s.id === activeTab.selectedStyleId)?.promptSnippet || '' : '';
 
@@ -1057,6 +1076,10 @@ export const useAppEngine = () => {
     pixelBitSize, setPixelBitSize,
     poseData, setPoseData, mapGridConfig, setMapGridConfig,
     viewpoint, setViewpoint, seed, setSeed,
-    exports
+    exports,
+    showPromptExportModal, setShowPromptExportModal,
+    promptExportBundle, isNoApiKeyNotice,
+    handleOpenPromptExport, handleClosePromptExport,
+    isPromptOnlyMode, setIsPromptOnlyMode
   };
 };

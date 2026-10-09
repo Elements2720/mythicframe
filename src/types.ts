@@ -1,5 +1,5 @@
 
-export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'illustration' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize' | 'frame' | 'background' | 'fullcard' | 'gacha' | 'ui-reimagine' | 'style-library' | 'pose-studio' | 'map-grid' | 'sprite-sheet' | 'batch' | 'downloads';
+export type UIMode = 'dashboard' | 'library' | 'settings' | 'tutorials' | 'illustration' | 'animation' | 'resize' | 'clothes' | 'bg-replace' | 'pixelize' | 'frame' | 'background' | 'fullcard' | 'gacha' | 'ui-reimagine' | 'style-library' | 'pose-studio' | 'map-grid' | 'sprite-sheet' | 'batch' | 'downloads' | 'quota';
 
 export interface BatchItem {
   id: string;
@@ -26,12 +26,21 @@ export type ChibiProportion = 'standard' | 'deformed_4h' | 'chibi_3h' | 'micro_2
 
 export type StyleCategory = 'Game Art' | 'Anime/Manga' | 'Digital Painting' | 'Traditional' | 'Abstract/UI' | 'Retro' | 'Other';
 
-export type AIProvider = 'google' | 'custom';
+export type AIProvider = 'google' | 'openai' | 'opencode' | 'openrouter' | 'pollinations' | 'offline' | 'custom';
 
 export interface AIConfig {
   provider: AIProvider;
-  baseUrl: string;
-  customModelName: string;
+  baseUrl?: string;
+  customModelName?: string;
+  openaiApiKey?: string;
+  openaiModel?: string;
+  openaiQuality?: 'standard' | 'hd';
+  openCodeApiKey?: string;
+  openCodeBaseUrl?: string;
+  openCodeModel?: string;
+  openRouterApiKey?: string;
+  openRouterModel?: string;
+  pollinationsModel?: string;
 }
 
 export interface AvailableModel {
@@ -197,8 +206,11 @@ export interface ReferenceAsset {
 }
 
 export enum GenerationModel {
-  FLASH_2_5 = 'gemini-2.5-flash-image',
-  PRO_3 = 'gemini-3-pro-image-preview',
+  FLASH_3_1 = 'gemini-3.1-flash-image',
+  PRO_3 = 'gemini-3-pro-image',
+  FLASH_LITE_3_1 = 'gemini-3.1-flash-lite-image',
+  // Backward compatibility alias
+  FLASH_2_5 = 'gemini-3.1-flash-image',
 }
 
 export const IMAGE_SIZES = {
@@ -395,6 +407,7 @@ export interface WorkspaceTab {
   viewpoint: Viewpoint;
   seed?: number | null;
   pixelBitSize: '8-bit' | '16-bit' | '32-bit' | '64-bit';
+  isPromptOnlyMode?: boolean;
   
   animConfig: AnimationProject;
   selectedFrameId: string | null;
