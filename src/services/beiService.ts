@@ -526,6 +526,7 @@ export const generateWithBEI = async (
       chatSessionMode,
       tabSessionId: params.tabSessionId,
       images: processedImages,
+      quality: config.downloadQuality || 'ultra_original',
     };
 
     if (params.signal) {
