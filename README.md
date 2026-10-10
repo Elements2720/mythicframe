@@ -42,9 +42,24 @@ Because MythicFrame runs entirely on your local machine with zero external middl
 * **🖼️ Magic Resizer & Outpainting:** Pan, zoom, and expand canvases seamlessly to any game resolution or aspect ratio.
 * **✂️ Background Replacer & Neo Matting:** Dual decontamination pipeline for clean edge extraction and green/white keying.
 * **🎞️ Sprite Sheet & Animation Timeline:** Generate directional keyframe animation sequences (idle, run, attack, cast) with onion skinning and GIF preview.
+* **📦 Batch Studio & CSV Automation:** Ingest structured CSV tables for high-volume automated card and asset production.
+* **🔄 Account Priority Reordering & Auto-Failover:** Rank connected Google/ChatGPT accounts (`#1 Primary`, `#2 Fallback`), with automatic rotation when daily quotas or rate-limit cooldowns are reached.
+* **🛡️ Fake Active Anti-Throttling:** Spoofs `document.hidden`/`visibilityState` and streams inaudible audio buffers to prevent Chromium from throttling background generation tabs.
 * **✨ Zero-Quota Prompt Refinement & Inspiration:** Built-in AI prompt engineering assistant that refines prompts and synthesizes tailored game inspirations with zero image quota consumption.
 * **📋 Prompt Inspector & Universal Exporter:** Package fully assembled prompts and image references for Midjourney, ChatGPT, Stable Diffusion, or Pollinations with 1-click clipboard bundle export.
+* **🤖 Model Context Protocol (MCP) Server:** Native MCP integration exposing automated asset generation tools directly to AI coding agents (Antigravity, Claude Code, Cursor).
 * **🔌 Browser Extension Interface (BEI):** Native Chrome extension bridge to authenticated Gemini Web and ChatGPT Web sessions for zero-key local operation.
+
+---
+
+## 📚 Complete Documentation Index
+
+| Guide | Description |
+| :--- | :--- |
+| **[Master Project Reference](docs/MythicFrame_PROJECT_DOCUMENTATION.md)** | Full specification covering all 15+ studios, persistence, and specialized algorithms. |
+| **[BEI Mode Architecture](docs/BEI_MODE.md)** | Deep-dive on Zero-API-Key BYOA bridge, account slots, anti-throttling, and quota rotation. |
+| **[BEI Installation & Automation Guide](bei-extension/INSTALLATION_AND_USAGE_GUIDE.md)** | Step-by-step setup guide for humans + programmatic REST & WebSocket API reference for AI agents. |
+| **[BEI Extension Readme](bei-extension/README.md)** | Fast 30-second Chrome load-unpacked guide and port specifications. |
 
 ---
 
@@ -73,7 +88,7 @@ Open your browser at **`http://localhost:3488`**.
 
 ## 🔌 Browser Extension Interface (BEI)
 
-The BEI Chrome Extension is a client-side assistive helper connecting your open browser tab to the local studio canvas:
+The BEI Chrome Extension is a client-side assistive helper connecting your open browser tab to the local studio canvas with **Zero API Keys**:
 
 1. Open Chrome and navigate to `chrome://extensions/`.
 2. Toggle on **Developer mode** (top right).
@@ -82,7 +97,15 @@ The BEI Chrome Extension is a client-side assistive helper connecting your open 
 5. In MythicFrame Studio, select **Browser Bridge (BEI)** in the AI Engine Selector.
 6. Generate artwork directly onto your canvas with automatic high-res capture.
 
-> For full technical details and automation instructions, see [`bei-extension/INSTALLATION_AND_USAGE_GUIDE.md`](./bei-extension/INSTALLATION_AND_USAGE_GUIDE.md).
+### 🌟 Advanced BEI Mechanics
+* **Account Priority & Reordering:** In **Settings → BEI Mode**, use `▲` and `▼` to reorder accounts by priority (`#1 Primary`, `#2 Fallback`).
+* **Automatic Quota Failover:** With `Auto-Failover on Quota Limit` enabled, if your active account reaches a daily limit or rate-limit cooldown, MythicFrame automatically rotates to the next priority account without interrupting your workflow.
+* **Auto-Sort by Available Quota:** 1-click button to rank accounts with ready quota at the top and push cooldown accounts to the bottom.
+* **Fake Active Anti-Throttling Mode:** Prevents Chrome from throttling background generation tabs during long prompt executions.
+* **Dedicated Window Grouping:** Isolates generation tabs into a designated Chrome window with a purple `"MythicFrame BEI"` tab group to eliminate workspace clutter.
+* **High-Res CDN Harvester:** Automatically rewrites Google CDN parameters (`=s1024` $\rightarrow$ `=s0` / `=s2048`) to extract uncompressed full-fidelity assets.
+
+> For full technical details and automation instructions, see [`bei-extension/INSTALLATION_AND_USAGE_GUIDE.md`](./bei-extension/INSTALLATION_AND_USAGE_GUIDE.md) and [`docs/BEI_MODE.md`](./docs/BEI_MODE.md).
 
 ---
 
