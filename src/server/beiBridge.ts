@@ -98,7 +98,7 @@ export class BEIBridgeServer {
   }
   private pendingJobs = new Map<string, PendingJob>();
   private lastHeartbeat = Date.now();
-  private extensionVersion = '1.3.1';
+  private extensionVersion = '1.3.2';
   private projectDir = process.cwd();
   public latestProgress: Record<string, { step: string; detail: string; timestamp: number }> = {};
   public globalProgress: { step: string; detail: string; timestamp: number } | null = null;
