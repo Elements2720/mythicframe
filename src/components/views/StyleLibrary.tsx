@@ -4,6 +4,7 @@ import { useLanguage } from '../../i18n/LanguageContext';
 import { ART_STYLES, STYLE_CATEGORIES } from '../../constants';
 import { generateStyleExample, analyzeImageStyle } from '../../services/geminiService';
 import FullScreenPreview from '../ui/FullScreenPreview';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 
 interface StyleLibraryProps {
   customStyles: ArtStyle[];
@@ -44,6 +45,9 @@ const StyleLibrary: React.FC<StyleLibraryProps> = ({
   const [showLogicId, setShowLogicId] = useState<string | null>(null);
   const [showInfoId, setShowInfoId] = useState<string | null>(null);
   const [fullscreenPreviewUrl, setFullscreenPreviewUrl] = useState<string | null>(null);
+
+  const { handleBackdropClick: handleAddStyleBackdropClick } = useModalDismiss(isAddingStyle, () => setIsAddingStyle(false));
+  const { handleBackdropClick: handleAddCollectionBackdropClick } = useModalDismiss(isAddingCollection, () => setIsAddingCollection(false));
   
   // Vision Architect State
   const [isArchitecting, setIsArchitecting] = useState(false);
@@ -455,8 +459,14 @@ const StyleLibrary: React.FC<StyleLibraryProps> = ({
 
       {/* --- ADD / EDIT STYLE DIALOG --- */}
       {isAddingStyle && (
-         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-slate-900 border border-slate-700 rounded-3xl w-[900px] max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+         <div 
+           className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-300"
+           onClick={handleAddStyleBackdropClick}
+         >
+            <div 
+              className="bg-slate-900 border border-slate-700 rounded-3xl w-[900px] max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
                <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950">
                   <div className="flex items-center gap-4">
                      <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-white shadow-xl shadow-purple-900/30">
@@ -588,8 +598,14 @@ const StyleLibrary: React.FC<StyleLibraryProps> = ({
 
       {/* --- ADD COLLECTION DIALOG --- */}
       {isAddingCollection && (
-         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 w-[400px] shadow-2xl">
+         <div 
+           className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-300"
+           onClick={handleAddCollectionBackdropClick}
+         >
+            <div 
+              className="bg-slate-900 border border-slate-700 rounded-3xl p-8 w-[400px] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
                <h2 className="text-lg font-black text-white uppercase tracking-widest mb-6">Create Style List</h2>
                <form onSubmit={handleCollectionSubmit} className="space-y-6">
                   <div className="space-y-2">

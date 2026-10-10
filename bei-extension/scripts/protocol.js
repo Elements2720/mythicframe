@@ -46,6 +46,21 @@
       const src = imgElement.currentSrc || imgElement.src || '';
       if (!src) return false;
 
+      const lower = src.toLowerCase();
+      // STRICT INVALIDATION: Reject blank, javascript, page location, or relative page routes
+      if (
+        lower.startsWith('javascript:') ||
+        lower === window.location.href.toLowerCase() ||
+        lower === (window.location.origin + '/').toLowerCase() ||
+        lower.endsWith('/u/0') ||
+        lower.endsWith('/u/0/') ||
+        lower.includes('gemini.google.com/app') ||
+        lower.includes('gemini.google.com/u/') ||
+        lower.includes('chatgpt.com/c/')
+      ) {
+        return false;
+      }
+
       // Always accept image retrieval endpoints
       if (src.includes('image_retrieval') || src.includes('image_collection')) {
         return true;
@@ -81,7 +96,9 @@
 
       // Fallback: check if parent container is a model response
       if (imgElement.closest && imgElement.closest('model-response, message-content, div.response-container, conversation-turn, [data-test-id*="response"]')) {
-        return true;
+        if (/\.(png|jpe?g|webp|gif)($|\?)/i.test(src) || (imgElement.naturalWidth >= 256 && imgElement.naturalHeight >= 256)) {
+          return true;
+        }
       }
 
       return false;

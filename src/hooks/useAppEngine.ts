@@ -303,6 +303,20 @@ export const useAppEngine = () => {
   const prompt = activeTab.prompt; const setPrompt = (v: any) => setTabPropFunc('prompt', v);
   const generatedImage = activeTab.generatedImage; const setGeneratedImage = (v: string | null) => setTabProp('generatedImage', v);
   const sessionImages = activeTab.sessionImages; const setSessionImages = (v: any) => setTabPropFunc('sessionImages', v);
+
+  // Listen for rescued images from ErrorModal or Diagnostics
+  useEffect(() => {
+    const handleRescued = (e: any) => {
+      const detail = e.detail;
+      if (detail && detail.image) {
+        setGeneratedImage(detail.image);
+        setSessionImages((prev: string[]) => [detail.image, ...(prev || [])]);
+        setAppError(null);
+      }
+    };
+    window.addEventListener('mythic_image_generated', handleRescued);
+    return () => window.removeEventListener('mythic_image_generated', handleRescued);
+  }, []);
   const referenceAssets = activeTab.referenceAssets; const setReferenceAssets = (v: any) => setTabPropFunc('referenceAssets', v);
   const selectedStyleId = activeTab.selectedStyleId; const setSelectedStyleId = (v: string) => setTabProp('selectedStyleId', v);
   const bgConfig = activeTab.bgConfig; const setBgConfig = (v: any) => setTabPropFunc('bgConfig', v);

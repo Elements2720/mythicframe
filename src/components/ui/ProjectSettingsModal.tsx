@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { GameContext, ArtStyle } from '../../types';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 
 interface ProjectSettingsModalProps {
   isOpen: boolean;
@@ -11,11 +12,19 @@ interface ProjectSettingsModalProps {
 }
 
 const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ isOpen, onClose, gameContext, setGameContext, allArtStyles }) => {
+  const { handleBackdropClick } = useModalDismiss(isOpen, onClose);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-       <div className="bg-slate-900 border border-slate-700 rounded-lg p-6 w-[500px] shadow-2xl overflow-y-auto max-h-[90vh]">
+    <div 
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={handleBackdropClick}
+    >
+       <div 
+         className="bg-slate-900 border border-slate-700 rounded-lg p-6 w-[500px] shadow-2xl overflow-y-auto max-h-[90vh]"
+         onClick={(e) => e.stopPropagation()}
+       >
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-100">
              <i className="fa-solid fa-book-open" /> Game Context (Narrative)
           </h2>

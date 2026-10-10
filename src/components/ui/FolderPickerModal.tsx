@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { listDriveFolders, createDriveFolder, DriveFolder } from '../../services/googleDriveService';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 
 interface FolderPickerModalProps {
   isOpen: boolean;
@@ -20,6 +21,8 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({ isOpen, onClose, 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  const { handleBackdropClick } = useModalDismiss(isOpen, onClose);
 
   const currentFolder = path[path.length - 1];
 
@@ -79,8 +82,14 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({ isOpen, onClose, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95">
-      <div className="bg-slate-900 border border-slate-700 rounded-xl w-[500px] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+    <div 
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95"
+      onClick={handleBackdropClick}
+    >
+      <div 
+        className="bg-slate-900 border border-slate-700 rounded-xl w-[500px] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Header */}
         <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">

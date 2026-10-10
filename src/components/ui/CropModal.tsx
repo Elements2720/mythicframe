@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PixelDimensions } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 
 interface CropModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ interface CropState {
 
 const CropModal: React.FC<CropModalProps> = ({ isOpen, onClose, imageUrl, targetSize, onApply, initialCrop }) => {
   const { t } = useLanguage();
+  const { handleBackdropClick } = useModalDismiss(isOpen, onClose);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [state, setState] = useState<CropState>({ x: 0, y: 0, scale: 1 });
@@ -284,8 +286,14 @@ const CropModal: React.FC<CropModalProps> = ({ isOpen, onClose, imageUrl, target
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-       <div className="bg-slate-950 border border-slate-700 rounded-xl shadow-2xl flex flex-col max-w-[90vw] max-h-[90vh] overflow-hidden w-[850px]">
+    <div 
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={handleBackdropClick}
+    >
+       <div 
+         className="bg-slate-950 border border-slate-700 rounded-xl shadow-2xl flex flex-col max-w-[90vw] max-h-[90vh] overflow-hidden w-[850px]"
+         onClick={(e) => e.stopPropagation()}
+       >
           
           {/* Header */}
           <div className="flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800">

@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { HistoryEntry, UIMode } from '../../types';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 
 interface AssetPickerProps {
   isOpen: boolean;
@@ -11,14 +12,21 @@ interface AssetPickerProps {
 
 const AssetPicker: React.FC<AssetPickerProps> = ({ isOpen, onClose, history, onSelect }) => {
   const [filterMode, setFilterMode] = useState<UIMode | 'all'>('all');
+  const { handleBackdropClick } = useModalDismiss(isOpen, onClose);
 
   if (!isOpen) return null;
 
   const filtered = history.filter(h => filterMode === 'all' || h.mode === filterMode);
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-xl w-[800px] h-[600px] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div 
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={handleBackdropClick}
+    >
+      <div 
+        className="bg-slate-900 border border-slate-700 rounded-xl w-[800px] h-[600px] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Header */}
         <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center shrink-0">

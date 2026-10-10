@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { requestServerShutdown } from '../../services/systemService';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 
 interface ShutdownModalProps {
   isOpen: boolean;
@@ -10,6 +11,8 @@ export const ShutdownModal: React.FC<ShutdownModalProps> = ({ isOpen, onClose })
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isTerminated, setIsTerminated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const { handleBackdropClick } = useModalDismiss(isOpen && !isShuttingDown && !isTerminated, onClose);
 
   if (!isOpen) return null;
 
@@ -40,8 +43,14 @@ export const ShutdownModal: React.FC<ShutdownModalProps> = ({ isOpen, onClose })
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden relative border-t-2 border-t-red-500/80">
+    <div 
+      className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={handleBackdropClick}
+    >
+      <div 
+        className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden relative border-t-2 border-t-red-500/80"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Glow backdrop */}
         <div className="absolute top-0 right-1/2 translate-x-1/2 w-64 h-32 bg-red-600/10 blur-3xl pointer-events-none rounded-full" />

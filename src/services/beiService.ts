@@ -54,6 +54,77 @@ export interface BEITabDetail {
   active?: boolean;
 }
 
+export interface BEIJobContext {
+  jobId?: string;
+  target: BEITarget;
+  accountSlot: number;
+  prompt: string;
+  chatUrl?: string;
+  tabId?: number;
+  email?: string;
+  timestamp: number;
+  status: 'pending' | 'generating' | 'completed' | 'failed';
+  error?: string;
+}
+
+const LAST_BEI_JOB_KEY = 'mythic_bei_last_job';
+
+export const getLastBEIJobContext = (): BEIJobContext | null => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(LAST_BEI_JOB_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+  }
+  return null;
+};
+
+export const setLastBEIJobContext = (ctx: Partial<BEIJobContext>): void => {
+  if (typeof window !== 'undefined') {
+    try {
+      const current = getLastBEIJobContext() || {
+        target: 'gemini',
+        accountSlot: 0,
+        prompt: '',
+        timestamp: Date.now(),
+        status: 'pending',
+      };
+      const updated: BEIJobContext = { ...current, ...ctx, timestamp: Date.now() };
+      localStorage.setItem(LAST_BEI_JOB_KEY, JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('mythic_bei_job_updated', { detail: updated }));
+    } catch (e) {}
+  }
+};
+
+export const refetchBEIAsset = async (jobId?: string): Promise<{ success: boolean; image: string; jobId?: string; payload?: any } | null> => {
+  const config = getBEIConfig();
+  const port = config.port || DEFAULT_BEI_PORT;
+  const targetJobId = jobId || getLastBEIJobContext()?.jobId;
+  const query = targetJobId ? `?jobId=${encodeURIComponent(targetJobId)}` : '';
+  const urls = [
+    `http://127.0.0.1:${port}/api/bei/refetch${query}`,
+    `/api/bei/refetch${query}`
+  ];
+
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.image) {
+          setLastBEIJobContext({
+            jobId: data.jobId || targetJobId,
+            status: 'completed',
+            error: undefined
+          });
+          return { success: true, image: data.image, jobId: data.jobId, payload: data.payload };
+        }
+      }
+    } catch (e) {}
+  }
+  return null;
+};
+
 export { formatDisplayEmail, getIncognitoMode };
 
 export interface BEIAccountDetail {
@@ -361,43 +432,109 @@ export const generateWithBEI = async (
     });
   }
 
+  setLastBEIJobContext({
+    target: config.target,
+    accountSlot: config.accountSlot || 0,
+    prompt: assembled.imagePromptDirective,
+    status: 'generating',
+    error: undefined,
+  });
+
   const directUrl = `http://127.0.0.1:${port}/api/bei/generate`;
   const fallbackUrl = `/api/bei/generate`;
 
   let response: Response | null = null;
   let lastError: any = null;
+  const maxAttempts = 3;
 
-  try {
-    response = await fetch(directUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: params.signal,
-    });
-  } catch (err: any) {
-    if (params.signal?.aborted || err?.name === 'AbortError') {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (params.signal?.aborted) {
       cancelBEIGeneration().catch(() => {});
-      throw err;
+      throw new DOMException('Generation aborted', 'AbortError');
     }
-    lastError = err;
+
     try {
-      response = await fetch(fallbackUrl, {
+      response = await fetch(directUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: params.signal,
       });
-    } catch (fallbackErr: any) {
-      if (params.signal?.aborted || fallbackErr?.name === 'AbortError') {
+      if (response && response.ok) break;
+    } catch (err: any) {
+      if (params.signal?.aborted || err?.name === 'AbortError') {
         cancelBEIGeneration().catch(() => {});
-        throw fallbackErr;
+        throw err;
       }
-      lastError = fallbackErr;
+      lastError = err;
+      try {
+        response = await fetch(fallbackUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: params.signal,
+        });
+        if (response && response.ok) break;
+      } catch (fallbackErr: any) {
+        if (params.signal?.aborted || fallbackErr?.name === 'AbortError') {
+          cancelBEIGeneration().catch(() => {});
+          throw fallbackErr;
+        }
+        lastError = fallbackErr;
+      }
+    }
+
+    // Candidate Rescue Check: If fetch broke or timed out, see if server already captured the completed image
+    const rescued = await refetchBEIAsset();
+    if (rescued && rescued.image) {
+      const { recordBEISlotUsage } = await import('./quotaTrackerService');
+      recordBEISlotUsage(config.target, config.accountSlot || 0, 'success');
+      return {
+        image: rescued.image,
+        metadata: {
+          fullPrompt: assembled.fullPrompt,
+          directivePrompt: assembled.imagePromptDirective,
+          provider: 'bei',
+          target: config.target,
+          accountSlot: config.accountSlot,
+          jobId: rescued.jobId,
+        },
+      };
+    }
+
+    if (attempt < maxAttempts) {
+      window.dispatchEvent(new CustomEvent('mythic_bei_progress', {
+        detail: {
+          step: 'retrying',
+          detail: `Connecting to bridge (attempt ${attempt}/${maxAttempts}). Waiting for generation to finalize...`
+        }
+      }));
+      await new Promise(r => setTimeout(r, attempt * 2000));
     }
   }
 
   if (!response) {
-    throw new Error(`BEI Request failed: ${lastError?.message || 'Network error connecting to bridge'}`);
+    // One last rescue attempt
+    const finalRescue = await refetchBEIAsset();
+    if (finalRescue && finalRescue.image) {
+      const { recordBEISlotUsage } = await import('./quotaTrackerService');
+      recordBEISlotUsage(config.target, config.accountSlot || 0, 'success');
+      return {
+        image: finalRescue.image,
+        metadata: {
+          fullPrompt: assembled.fullPrompt,
+          directivePrompt: assembled.imagePromptDirective,
+          provider: 'bei',
+          target: config.target,
+          accountSlot: config.accountSlot,
+          jobId: finalRescue.jobId,
+        },
+      };
+    }
+
+    const errorMsg = `BEI Request failed: ${lastError?.message || 'Network error connecting to bridge'}`;
+    setLastBEIJobContext({ status: 'failed', error: errorMsg });
+    throw new Error(errorMsg);
   }
 
   if (!response.ok) {
@@ -408,6 +545,7 @@ export const generateWithBEI = async (
       const { recordBEISlotUsage } = await import('./quotaTrackerService');
       const isRateLimit = /limit|quota|exceeded|try again/i.test(message);
       recordBEISlotUsage(config.target, config.accountSlot || 0, isRateLimit ? 'rate_limited' : 'error');
+      setLastBEIJobContext({ status: 'failed', error: message });
       throw new Error(`BEI Generation Failed: ${message}`);
     }
     throw new Error(`Generation cancelled: ${message}`);
@@ -415,8 +553,32 @@ export const generateWithBEI = async (
 
   const result = await response.json();
   if (!result || !result.image) {
+    // Final rescue check if result payload has no image
+    const rescued = await refetchBEIAsset();
+    if (rescued && rescued.image) {
+      const { recordBEISlotUsage } = await import('./quotaTrackerService');
+      recordBEISlotUsage(config.target, config.accountSlot || 0, 'success');
+      return {
+        image: rescued.image,
+        metadata: {
+          fullPrompt: assembled.fullPrompt,
+          directivePrompt: assembled.imagePromptDirective,
+          provider: 'bei',
+          target: config.target,
+          accountSlot: config.accountSlot,
+          jobId: rescued.jobId,
+        },
+      };
+    }
+    setLastBEIJobContext({ status: 'failed', error: 'BEI Bridge completed but did not return image data.' });
     throw new Error('BEI Bridge completed but did not return image data.');
   }
+
+  setLastBEIJobContext({
+    jobId: result.jobId,
+    status: 'completed',
+    error: undefined
+  });
 
   const { recordBEISlotUsage } = await import('./quotaTrackerService');
   recordBEISlotUsage(config.target, config.accountSlot || 0, 'success');
@@ -564,8 +726,19 @@ export const initBEIProgressStream = (): void => {
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data && data.step && data.detail) {
-            window.dispatchEvent(new CustomEvent('mythic_bei_progress', { detail: data }));
+          if (data) {
+            if (data.step && data.detail) {
+              window.dispatchEvent(new CustomEvent('mythic_bei_progress', { detail: data }));
+            }
+            if (data.jobId || data.tabUrl || data.email || data.accountSlot !== undefined) {
+              setLastBEIJobContext({
+                jobId: data.jobId || undefined,
+                chatUrl: data.tabUrl || undefined,
+                email: data.email || undefined,
+                accountSlot: typeof data.accountSlot === 'number' ? data.accountSlot : undefined,
+                status: data.step === 'completed' ? 'completed' : data.step === 'failed' ? 'failed' : 'generating'
+              });
+            }
           }
         } catch (e) {}
       };

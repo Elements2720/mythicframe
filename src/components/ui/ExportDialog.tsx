@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { HistoryEntry, ExportConfig, WorkspaceTab } from '../../types';
 import { exportZip, exportProjectBatch } from '../../services/exportService';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 
 interface ExportDialogProps {
   isOpen: boolean;
@@ -42,6 +43,8 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
      }));
   };
 
+  const { handleBackdropClick } = useModalDismiss(isOpen, onClose);
+
   if (!isOpen) return null;
 
   const handleExportBatch = async () => {
@@ -59,8 +62,14 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200">
-       <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-[500px] shadow-2xl max-h-[90vh] flex flex-col">
+    <div 
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-200"
+      onClick={handleBackdropClick}
+    >
+       <div 
+         className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-[500px] shadow-2xl max-h-[90vh] flex flex-col"
+         onClick={(e) => e.stopPropagation()}
+       >
           <div className="flex justify-between items-center mb-6 shrink-0">
              <h2 className="text-xl font-black text-white flex items-center gap-3">
                 <i className="fa-solid fa-file-zipper text-blue-500" /> Project Bundle Export

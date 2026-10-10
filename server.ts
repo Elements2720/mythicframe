@@ -127,6 +127,26 @@ async function startServer() {
     beiBridge.handleResetSessionRequest(req as any, res as any);
   });
 
+  app.post("/api/bei/generate", (req, res) => {
+    beiBridge.handleGenerateRequest(req as any, res as any);
+  });
+
+  app.post("/api/bei/direct-image", (req, res) => {
+    beiBridge.handleDirectImageRequest(req as any, res as any);
+  });
+
+  app.post("/api/bei/scan-accounts", (req, res) => {
+    beiBridge.handleScanAccountsRequest(req as any, res as any);
+  });
+
+  app.get("/api/bei/refetch", (req, res) => {
+    beiBridge.handleRefetchRequest(req as any, res as any);
+  });
+
+  app.post("/api/bei/refetch", (req, res) => {
+    beiBridge.handleRefetchRequest(req as any, res as any);
+  });
+
   // API Routes
   app.get("/api/assets", (req, res) => {
     const assets = db.prepare("SELECT * FROM assets ORDER BY createdAt DESC").all();

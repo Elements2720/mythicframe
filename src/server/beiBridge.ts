@@ -30,7 +30,11 @@ export interface BEIPayloadStatus {
   imageFormat?: 'base64' | 'url' | 'none';
   imageSize?: number;
   srcUrl?: string;
+  imageBase64?: string;
   candidatesCount?: number;
+  candidates?: string[];
+  tabUrl?: string;
+  accountSlot?: number;
   error?: string;
   steps: Array<{ step: string; detail: string; timestamp: number }>;
 }
@@ -55,6 +59,7 @@ interface PendingJob {
   reject: (reason: any) => void;
   timeoutTimer: NodeJS.Timeout;
   isText?: boolean;
+  accountSlot?: number;
 }
 
 export class BEIBridgeServer {
@@ -115,7 +120,7 @@ export class BEIBridgeServer {
   }
   private pendingJobs = new Map<string, PendingJob>();
   private lastHeartbeat = Date.now();
-  private extensionVersion = '1.3.3';
+  private extensionVersion = '1.3.4';
   private projectDir = process.cwd();
   public latestProgress: Record<string, { step: string; detail: string; timestamp: number }> = {};
   public globalProgress: { step: string; detail: string; timestamp: number } | null = null;
@@ -250,6 +255,11 @@ export class BEIBridgeServer {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: true, count: list.length, payloads: list }));
           }
+          return;
+        }
+
+        if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/bei/refetch') {
+          this.handleRefetchRequest(req, res);
           return;
         }
 
@@ -527,9 +537,35 @@ export class BEIBridgeServer {
             }
           }
 
+          // Strict Webpage URL Rejection: Never treat html routes as image data
+          const isWebpageUrl = typeof image === 'string' && (
+            image.includes('gemini.google.com') || 
+            image.includes('chatgpt.com') ||
+            image.endsWith('/u/0') || 
+            image.endsWith('/u/0/')
+          );
+          if (isWebpageUrl) {
+            console.warn(`[MythicFrame BEI Bridge] Rejected webpage URL misidentified as image: ${image}`);
+            image = '';
+          }
+
+          // Candidate Rescue: If primary image was corrupted or rejected, check candidate URLs
+          if (!image || (!image.startsWith('data:image') && !image.startsWith('http'))) {
+            const candidateUrls = Array.isArray(data.metadata?.candidates) ? data.metadata.candidates : [];
+            const validCandidate = candidateUrls.find((c: string) => 
+              typeof c === 'string' && 
+              !c.includes('gemini.google.com') && 
+              (c.includes('googleusercontent.com') || c.startsWith('blob:') || c.startsWith('data:image'))
+            );
+            if (validCandidate) {
+              console.log(`[MythicFrame BEI Bridge] Rescued image for job ${jobId} using candidate URL: ${validCandidate.substring(0, 80)}...`);
+              image = validCandidate;
+            }
+          }
+
           // Image validation: Accept valid Data URIs OR valid remote image URLs
           const isDataUri = typeof image === 'string' && image.startsWith('data:image') && image.length > 512;
-          const isRemoteUrl = typeof image === 'string' && (image.startsWith('http://') || image.startsWith('https://')) && image.length > 15;
+          const isRemoteUrl = typeof image === 'string' && (image.startsWith('http://') || image.startsWith('https://')) && image.length > 15 && !image.includes('gemini.google.com');
           const isValidImage = isDataUri || isRemoteUrl;
 
           // Update payload tracking
@@ -540,6 +576,10 @@ export class BEIBridgeServer {
             payloadRecord.imageFormat = isDataUri ? 'base64' : (isRemoteUrl ? 'url' : 'none');
             payloadRecord.imageSize = typeof image === 'string' ? image.length : 0;
             payloadRecord.srcUrl = data.metadata?.srcUrl || (isRemoteUrl ? image : undefined);
+            payloadRecord.imageBase64 = isDataUri ? image : undefined;
+            payloadRecord.candidates = data.metadata?.candidates;
+            payloadRecord.tabUrl = data.metadata?.tabUrl || data.tabUrl;
+            payloadRecord.accountSlot = data.accountSlot ?? job.accountSlot;
             payloadRecord.retrievalMethod = converted ? 'server_fetch' : (data.metadata?.retrievalMethod || (isDataUri ? 'extension_base64' : 'remote_url'));
             payloadRecord.candidatesCount = Array.isArray(data.metadata?.candidates) ? data.metadata.candidates.length : 0;
             payloadRecord.steps.push({
@@ -729,6 +769,7 @@ export class BEIBridgeServer {
             jobId,
             target,
             prompt,
+            accountSlot,
             resolve,
             reject,
             timeoutTimer
@@ -996,6 +1037,44 @@ export class BEIBridgeServer {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true, scanning: true, message: 'Google account scan initiated in Chrome background.' }));
+  }
+
+  public async handleRefetchRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    try {
+      const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      let jobId = url.searchParams.get('jobId');
+
+      if (!jobId && req.method === 'POST') {
+        const body = await this.parseRequestBody(req);
+        jobId = body?.jobId;
+      }
+
+      let payload: BEIPayloadStatus | undefined;
+      if (jobId) {
+        payload = this.payloadHistory.get(jobId);
+      } else {
+        const list = Array.from(this.payloadHistory.values()).sort((a, b) => b.createdAt - a.createdAt);
+        payload = list.find(p => p.status === 'completed' || p.status === 'payload_ready') || list[0];
+      }
+
+      if (!payload) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'NO_PAYLOAD_FOUND', message: 'No recorded generation payload found.' }));
+        return;
+      }
+
+      const img = payload.imageBase64 || payload.srcUrl;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: true,
+        jobId: payload.jobId,
+        image: img,
+        payload
+      }));
+    } catch (err: any) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'REFETCH_FAILED', message: err.message }));
+    }
   }
 
   public close(): Promise<void> {

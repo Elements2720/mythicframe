@@ -6,6 +6,7 @@ import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAcco
 import { getBEIAccountQuota } from '../../services/quotaTrackerService';
 import { getIncognitoMode, setIncognitoMode, formatDisplayEmail } from '../../services/privacyService';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 
 interface AIEngineSelectorCardProps {
   compact?: boolean;
@@ -72,6 +73,8 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
       loadPayloads();
     }
   }, [showPayloadModal]);
+
+  const { handleBackdropClick: handlePayloadModalBackdropClick } = useModalDismiss(showPayloadModal, () => setShowPayloadModal(false));
 
   const toggleCollapse = () => {
     setIsCollapsed(prev => {
@@ -717,8 +720,14 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
 
       {/* BEI Payload Diagnostics Modal */}
       {showPayloadModal && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden text-left animate-in fade-in zoom-in-95 duration-150">
+        <div 
+          className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={handlePayloadModalBackdropClick}
+        >
+          <div 
+            className="bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden text-left animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Modal Header */}
             <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
               <div className="flex items-center gap-2.5">
@@ -902,6 +911,34 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
                         ))}
                       </div>
                     </div>
+
+                    {/* Action: Inject to Canvas if Image Available */}
+                    {(selectedPayload.imageBase64 || selectedPayload.srcUrl) && (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const img = selectedPayload.imageBase64 || selectedPayload.srcUrl;
+                            window.dispatchEvent(new CustomEvent('mythic_image_generated', {
+                              detail: {
+                                image: img,
+                                metadata: {
+                                  provider: 'bei',
+                                  jobId: selectedPayload.jobId,
+                                  target: selectedPayload.target,
+                                  accountSlot: selectedPayload.accountSlot
+                                }
+                              }
+                            }));
+                            setShowPayloadModal(false);
+                          }}
+                          className="w-full px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md transition-colors"
+                        >
+                          <i className="fa-solid fa-wand-magic-sparkles" />
+                          <span>Fetch Asset to Active Canvas</span>
+                        </button>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="p-8 text-center text-slate-500 text-xs">

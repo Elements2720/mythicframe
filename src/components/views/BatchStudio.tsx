@@ -1,16 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { BatchItem, BatchVariation, AspectRatio } from '../../types';
 import { parseBatchFile } from '../../utils/batchParser';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 
 interface BatchStudioProps {
   engine: any;
 }
 
 const Lightbox: React.FC<{ url: string; onClose: () => void }> = ({ url, onClose }) => {
+  const { handleBackdropClick } = useModalDismiss(Boolean(url), onClose);
   return (
     <div 
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 md:p-12 animate-in fade-in duration-300"
-      onClick={onClose}
+      onClick={handleBackdropClick}
     >
       <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center pointer-events-none">
         <div className="bg-black/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 flex items-center gap-2 pointer-events-auto">
@@ -517,6 +519,11 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
   const [quickAddText, setQuickAddText] = useState("");
   const { activeTab, updateActiveTab, handleGenerate, isGenerating, statusMessage, reorderBatchItem } = engine;
   const queue = activeTab.batchQueue || [];
+
+  const { handleBackdropClick: handleInterventionBackdropClick } = useModalDismiss(
+    Boolean(engine.batchIntervention), 
+    () => engine.batchIntervention?.resolve({ action: 'abort' })
+  );
 
   const handleQuickAdd = () => {
     if (!quickAddText.trim()) return;
@@ -1681,8 +1688,14 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
       </div>
       
       {engine.batchIntervention && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 text-left">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-2xl shadow-2xl p-6 relative overflow-hidden">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 text-left"
+          onClick={handleInterventionBackdropClick}
+        >
+          <div 
+            className="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-2xl shadow-2xl p-6 relative overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
              
              {/* Header */}
              <div className="flex items-center gap-4 mb-6">
