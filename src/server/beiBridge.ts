@@ -98,7 +98,7 @@ export class BEIBridgeServer {
   }
   private pendingJobs = new Map<string, PendingJob>();
   private lastHeartbeat = Date.now();
-  private extensionVersion = '1.3.2';
+  private extensionVersion = '1.3.3';
   private projectDir = process.cwd();
   public latestProgress: Record<string, { step: string; detail: string; timestamp: number }> = {};
   public globalProgress: { step: string; detail: string; timestamp: number } | null = null;
@@ -426,10 +426,13 @@ export class BEIBridgeServer {
             }
           }
 
-          // Strict image validation: Do NOT resolve with a broken URL or empty data!
-          const isValidBase64 = typeof image === 'string' && image.startsWith('data:image') && image.length > 512;
-          if (!isValidBase64) {
-            console.error(`[MythicFrame BEI Bridge] Corrupted image result for job ${jobId}. Image is not a valid Data URI.`);
+          // Image validation: Accept valid Data URIs OR valid remote image URLs
+          const isValidImage = typeof image === 'string' && (
+            (image.startsWith('data:image') && image.length > 512) ||
+            ((image.startsWith('http://') || image.startsWith('https://')) && image.length > 15)
+          );
+          if (!isValidImage) {
+            console.error(`[MythicFrame BEI Bridge] Corrupted image result for job ${jobId}. Image data is empty or invalid.`);
             job.reject(new Error('Image generated in browser, but asset retrieval failed or returned corrupted data. Please click Generate to retry.'));
             return;
           }

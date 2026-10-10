@@ -267,16 +267,28 @@
 
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          const res = await (typeof window !== 'undefined' && window.fetch ? window.fetch(targetUrl, { credentials: 'include' }) : fetch(targetUrl));
-          if (res.ok) {
-            const blob = await res.blob();
-            const dataUrl = await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
-            if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image') && dataUrl.length > 1024) {
+          let res = null;
+          try {
+            res = await fetch(targetUrl);
+          } catch (e1) {
+            try {
+              res = await fetch(targetUrl, { credentials: 'include' });
+            } catch (e2) {}
+          }
+
+          if (res && res.ok) {
+            const mime = res.headers.get('content-type') || 'image/png';
+            const buffer = await res.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            const len = bytes.byteLength;
+            const chunkSize = 8192;
+            for (let i = 0; i < len; i += chunkSize) {
+              const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+              binary += String.fromCharCode.apply(null, chunk);
+            }
+            const dataUrl = `data:${mime};base64,${btoa(binary)}`;
+            if (dataUrl && dataUrl.startsWith('data:image') && dataUrl.length > 512) {
               return dataUrl;
             }
           }

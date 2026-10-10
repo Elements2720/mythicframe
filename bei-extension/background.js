@@ -1261,14 +1261,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           try {
             const res = await fetch(highResUrl);
             if (res.ok) {
-              const blob = await res.blob();
-              const dataUrl = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              });
-              if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image')) {
+              const mime = res.headers.get('content-type') || 'image/png';
+              const buffer = await res.arrayBuffer();
+              const bytes = new Uint8Array(buffer);
+              let binary = '';
+              const len = bytes.byteLength;
+              const chunkSize = 8192;
+              for (let i = 0; i < len; i += chunkSize) {
+                const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+                binary += String.fromCharCode.apply(null, chunk);
+              }
+              const dataUrl = `data:${mime};base64,${btoa(binary)}`;
+              if (dataUrl && dataUrl.startsWith('data:image') && dataUrl.length > 512) {
                 image = dataUrl;
                 console.log(`[MythicFrame BEI] High-res image converted to Data URI in worker (${Math.round(image.length / 1024)} KB)`);
                 break;
