@@ -99,7 +99,6 @@ export default function App() {
         setMode={engine.setMode}
         showHistory={engine.showHistory}
         setShowHistory={engine.setShowHistory}
-        onOpenShutdown={() => setShowShutdownModal(true)}
       />
 
       {/* Main Content Area */}

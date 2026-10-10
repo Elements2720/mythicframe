@@ -8,13 +8,12 @@ interface AppSidebarProps {
   setMode: (mode: UIMode) => void;
   setShowHistory: (show: boolean) => void;
   showHistory: boolean;
-  onOpenShutdown?: () => void;
 }
 
 const Icon = ({ name, className = "" }: { name: string, className?: string }) => <i className={`fa-solid ${name} ${className}`}></i>;
 
 const AppSidebar: React.FC<AppSidebarProps> = ({
-  mode, setMode, setShowHistory, showHistory, onOpenShutdown
+  mode, setMode, setShowHistory, showHistory
 }) => {
   const { t } = useLanguage();
   const [isMinimized, setIsMinimized] = useState(() => localStorage.getItem('mythic_sidebar_minimized') === 'true');
@@ -182,26 +181,14 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
               <Icon name="fa-clock-rotate-left" /> {!isMinimized && <span>{t('recent_work')}</span>}
            </button>
          )}
-         <div className="flex items-center gap-1.5">
-           <button
-             type="button"
-             onClick={onOpenShutdown}
-             className={`flex-1 h-8 rounded-lg text-red-400 hover:text-white bg-red-950/25 hover:bg-red-900/50 border border-red-500/20 hover:border-red-500/50 flex items-center justify-center gap-2 transition-all group cursor-pointer text-xs font-semibold ${isMinimized ? 'px-0' : 'px-2'}`}
-             title="Turn Off Localhost Server"
-           >
-             <i className="fa-solid fa-power-off text-xs text-red-400 group-hover:scale-110 transition-transform" />
-             {!isMinimized && <span>Quit Server</span>}
-           </button>
-
-           <button 
-             type="button"
-             onClick={() => setIsMinimized(!isMinimized)}
-             className="w-8 h-8 rounded-lg text-slate-500 hover:text-white hover:bg-slate-900 flex items-center justify-center transition-all group cursor-pointer shrink-0"
-             title={isMinimized ? "Expand Sidebar" : "Minimize Sidebar"}
-           >
-             <i className={`fa-solid fa-chevron-${isMinimized ? 'right' : 'left'} text-xs group-hover:scale-110 transition-transform`} />
-           </button>
-         </div>
+         <button 
+           type="button"
+           onClick={() => setIsMinimized(!isMinimized)}
+           className="w-full h-8 rounded-lg text-slate-500 hover:text-white hover:bg-slate-900 flex items-center justify-center transition-all group cursor-pointer"
+           title={isMinimized ? "Expand Sidebar" : "Minimize Sidebar"}
+         >
+           <i className={`fa-solid fa-chevron-${isMinimized ? 'right' : 'left'} text-xs group-hover:scale-110 transition-transform`} />
+         </button>
       </div>
     </div>
   );

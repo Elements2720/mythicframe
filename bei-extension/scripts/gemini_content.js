@@ -34,6 +34,11 @@
   const GEMINI_REFUSAL_PATTERNS = [
     /cannot generate/i,
     /unable to generate/i,
+    /can't edit/i,
+    /cannot edit/i,
+    /can't create or edit/i,
+    /unable to edit/i,
+    /based on uploaded/i,
     /violates our safety/i,
     /violates safety/i,
     /content policy/i,
@@ -177,7 +182,7 @@
         return true;
       }
 
-      const shimmerEl = document.querySelector('.shimmer, .loading, mat-progress-bar, mat-progress-spinner, [aria-label*="creating" i], [aria-label*="loading" i], .spark-icon');
+      const shimmerEl = document.querySelector('.shimmer, .loading, mat-progress-bar, mat-progress-spinner, [aria-label*="creating" i], [aria-label*="loading" i]');
       if (shimmerEl && shimmerEl.offsetParent !== null) return true;
 
       return false;
@@ -1240,8 +1245,8 @@
 
         if (elapsed > timeoutMs) {
           // If Gemini is still actively generating (Stop button is present OR "... Creating your image" / shimmer is visible),
-          // DO NOT ABORT! Continue waiting until completion or manual user cancellation!
-          if (isGeminiActivelyGenerating()) {
+          // allow up to 30s grace period, but do not hang indefinitely.
+          if (isGeminiActivelyGenerating() && elapsed < timeoutMs + 30000) {
             return;
           }
 

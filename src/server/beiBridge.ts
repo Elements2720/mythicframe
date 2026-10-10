@@ -670,13 +670,28 @@ export class BEIBridgeServer {
     }
   }
 
-  public handleGenerateRequest(req: http.IncomingMessage, res: http.ServerResponse) {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const { target = 'gemini', prompt, fullPrompt, aspectRatio = '16:9', accountSlot = 0, timeoutSeconds = 120, images = [], tabMode, bringTabToFront, chatSessionMode = 'temporary_chat', tabSessionId } = payload;
+  private parseRequestBody(req: any): Promise<any> {
+    if (req.body && typeof req.body === 'object') {
+      return Promise.resolve(req.body);
+    }
+    return new Promise((resolve, reject) => {
+      let body = '';
+      req.on('data', (chunk: any) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          resolve(JSON.parse(body || '{}'));
+        } catch (e) {
+          reject(e);
+        }
+      });
+      req.on('error', reject);
+    });
+  }
+
+  public async handleGenerateRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    try {
+      const payload = await this.parseRequestBody(req);
+      const { target = 'gemini', prompt, fullPrompt, aspectRatio = '16:9', accountSlot = 0, timeoutSeconds = 120, images = [], tabMode, bringTabToFront, chatSessionMode = 'temporary_chat', tabSessionId } = payload;
 
         if (!prompt) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -784,15 +799,11 @@ export class BEIBridgeServer {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'INVALID_JSON', message: e.message }));
       }
-    });
   }
 
-  public handleCancelRequest(req: http.IncomingMessage, res: http.ServerResponse) {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const { jobId } = JSON.parse(body || '{}');
+  public async handleCancelRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    try {
+      const { jobId } = (await this.parseRequestBody(req)) || {};
         if (jobId && this.pendingJobs.has(jobId)) {
           const job = this.pendingJobs.get(jobId)!;
           clearTimeout(job.timeoutTimer);
@@ -829,102 +840,93 @@ export class BEIBridgeServer {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'INVALID_REQUEST', message: err.message }));
       }
-    });
   }
 
-  public handleTextRequest(req: http.IncomingMessage, res: http.ServerResponse) {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const { prompt, target = 'gemini', accountSlot = 0, timeoutSeconds = 60 } = payload;
-        if (!prompt) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'MISSING_PROMPT', message: 'Prompt is required' }));
-          return;
+  public async handleTextRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    try {
+      const payload = await this.parseRequestBody(req);
+      const { prompt, target = 'gemini', accountSlot = 0, timeoutSeconds = 60 } = payload;
+      if (!prompt) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'MISSING_PROMPT', message: 'Prompt is required' }));
+        return;
+      }
+
+      if (!this.isConnected()) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'BEI_EXTENSION_NOT_CONNECTED', message: 'BEI extension is not connected' }));
+        return;
+      }
+
+      const jobId = `text_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      console.log(`[MythicFrame BEI Bridge] Dispatching text job ${jobId} (Target: ${target}, Slot: ${accountSlot})`);
+
+      const timeoutTimer = setTimeout(() => {
+        if (this.pendingJobs.has(jobId)) {
+          const job = this.pendingJobs.get(jobId)!;
+          this.pendingJobs.delete(jobId);
+          job.reject(new Error('BEI text generation timed out in browser tab'));
         }
+      }, timeoutSeconds * 1000);
 
-        if (!this.isConnected()) {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'BEI_EXTENSION_NOT_CONNECTED', message: 'BEI extension is not connected' }));
-          return;
+      const jobPromise = new Promise<{ success: boolean; text: string; jobId: string }>((resolve, reject) => {
+        this.pendingJobs.set(jobId, {
+          jobId,
+          target,
+          prompt,
+          resolve,
+          reject,
+          timeoutTimer,
+          isText: true
+        });
+      });
+
+      this.extensionSocket!.send(JSON.stringify({
+        type: 'EXECUTE_TEXT_PROMPT',
+        data: {
+          jobId,
+          target,
+          prompt,
+          accountSlot,
+          timeoutSeconds
         }
+      }));
 
-        const jobId = `text_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-        console.log(`[MythicFrame BEI Bridge] Dispatching text job ${jobId} (Target: ${target}, Slot: ${accountSlot})`);
-
-        const timeoutTimer = setTimeout(() => {
-          if (this.pendingJobs.has(jobId)) {
-            const job = this.pendingJobs.get(jobId)!;
-            this.pendingJobs.delete(jobId);
-            job.reject(new Error('BEI text generation timed out in browser tab'));
-          }
-        }, timeoutSeconds * 1000);
-
-        const jobPromise = new Promise<{ success: boolean; text: string; jobId: string }>((resolve, reject) => {
-          this.pendingJobs.set(jobId, {
-            jobId,
-            target,
-            prompt,
-            resolve,
-            reject,
-            timeoutTimer,
-            isText: true
-          });
+      jobPromise
+        .then(result => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        })
+        .catch(err => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'TEXT_GEN_FAILED', message: err?.message || String(err) }));
         });
 
-        this.extensionSocket!.send(JSON.stringify({
-          type: 'EXECUTE_TEXT_PROMPT',
-          data: {
-            jobId,
-            target,
-            prompt,
-            accountSlot,
-            timeoutSeconds
-          }
-        }));
-
-        jobPromise
-          .then(result => {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
-          })
-          .catch(err => {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'TEXT_GEN_FAILED', message: err?.message || String(err) }));
-          });
-
-      } catch (e: any) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'INVALID_JSON', message: e.message }));
-      }
-    });
+    } catch (e: any) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'INVALID_JSON', message: e.message }));
+    }
   }
 
-  public handleResetSessionRequest(req: http.IncomingMessage, res: http.ServerResponse) {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const { target = 'gemini', accountSlot = 0, tabSessionId } = payload;
-        console.log(`[MythicFrame BEI Bridge] Resetting session for ${target} slot ${accountSlot} (TabSession: ${tabSessionId || 'none'})`);
+  public async handleResetSessionRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    try {
+      const payload = await this.parseRequestBody(req);
+      const { target = 'gemini', accountSlot = 0, tabSessionId } = payload;
+      console.log(`[MythicFrame BEI Bridge] Resetting session for ${target} slot ${accountSlot} (TabSession: ${tabSessionId || 'none'})`);
 
-        if (this.isConnected()) {
-          this.extensionSocket!.send(JSON.stringify({
-            type: 'RESET_SESSION',
-            data: { target, accountSlot, tabSessionId }
-          }));
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, reset: true }));
-      } catch (e: any) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'INVALID_JSON', message: e.message }));
+      if (this.isConnected()) {
+        this.extensionSocket!.send(JSON.stringify({
+          type: 'RESET_SESSION',
+          data: { target, accountSlot, tabSessionId }
+        }));
       }
-    });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, reset: true }));
+    } catch (e: any) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'INVALID_JSON', message: e.message }));
+    }
   }
 
   public handleDirectImageRequest(req: http.IncomingMessage, res: http.ServerResponse) {

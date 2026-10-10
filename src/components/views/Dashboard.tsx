@@ -50,20 +50,20 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onNavigate, onOpenShutdo
         </div>
 
         {/* Stats & Quick Actions Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
            {/* Total Generations */}
-           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col items-center justify-center gap-1.5 hover:border-purple-500/50 transition-colors">
-              <span className="text-3xl md:text-4xl font-bold text-white">{totalGenerations}</span>
-              <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">{t('assets_created')}</span>
+           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center gap-2 hover:border-purple-500/50 transition-colors">
+              <span className="text-4xl font-bold text-white">{totalGenerations}</span>
+              <span className="text-sm text-slate-500 uppercase tracking-wider font-semibold">{t('assets_created')}</span>
            </div>
            
            {/* Create Illustration */}
            <button 
              onClick={() => onNavigate('illustration')}
-             className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-5 flex items-center justify-between hover:bg-purple-900/40 hover:border-purple-500/60 transition-all group cursor-pointer text-left"
+             className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-6 flex items-center justify-between hover:bg-purple-900/40 hover:border-purple-500/60 transition-all group cursor-pointer text-left"
            >
               <div>
-                <div className="text-purple-300 font-bold mb-1 text-sm">{t('create_illustration')}</div>
+                <div className="text-purple-300 font-bold mb-1">{t('create_illustration')}</div>
                 <div className="text-purple-400/60 text-xs">{t('chars_scenes')}</div>
               </div>
               <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 shadow-md shadow-purple-900/30">
@@ -74,29 +74,14 @@ const Dashboard: React.FC<DashboardProps> = ({ history, onNavigate, onOpenShutdo
            {/* Character Bible */}
            <button 
              onClick={() => onNavigate('gacha')}
-             className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-5 flex items-center justify-between hover:bg-blue-900/40 hover:border-blue-500/60 transition-all group cursor-pointer text-left"
+             className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-6 flex items-center justify-between hover:bg-blue-900/40 hover:border-blue-500/60 transition-all group cursor-pointer text-left"
            >
               <div>
-                <div className="text-blue-300 font-bold mb-1 text-sm">{t('gacha')}</div>
+                <div className="text-blue-300 font-bold mb-1">{t('gacha')}</div>
                 <div className="text-blue-400/60 text-xs">Full Character Bibles</div>
               </div>
               <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shrink-0 shadow-md shadow-blue-900/30">
                  <Icon name="fa-person-rays" />
-              </div>
-           </button>
-
-           {/* Turn Off Server Quick Action */}
-           <button 
-             onClick={handleTriggerShutdown}
-             className="bg-red-950/20 border border-red-500/30 rounded-xl p-5 flex items-center justify-between hover:bg-red-950/50 hover:border-red-500/60 transition-all group cursor-pointer text-left"
-             title="Turn Off Localhost Server"
-           >
-              <div>
-                <div className="text-red-300 font-bold mb-1 text-sm">Turn Off Server</div>
-                <div className="text-red-400/60 text-xs">Quit Localhost & BEI</div>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-red-600/25 border border-red-500/40 text-red-300 flex items-center justify-center group-hover:scale-110 group-hover:bg-red-600 group-hover:text-white transition-all shrink-0 shadow-md shadow-red-950/40">
-                 <i className="fa-solid fa-power-off text-sm" />
               </div>
            </button>
         </div>
