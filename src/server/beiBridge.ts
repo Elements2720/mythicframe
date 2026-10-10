@@ -929,66 +929,58 @@ export class BEIBridgeServer {
     }
   }
 
-  public handleDirectImageRequest(req: http.IncomingMessage, res: http.ServerResponse) {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const jobId = payload.jobId || payload.job_id;
-        let image = payload.image_base64 || payload.imageBase64 || payload.image_url || payload.imageUrl;
+  public async handleDirectImageRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    try {
+      const payload = await this.parseRequestBody(req);
+      const jobId = payload.jobId || payload.job_id;
+      let image = payload.image_base64 || payload.imageBase64 || payload.image_url || payload.imageUrl;
 
-        if (jobId && this.pendingJobs.has(jobId)) {
-          const job = this.pendingJobs.get(jobId)!;
-          clearTimeout(job.timeoutTimer);
-          this.pendingJobs.delete(jobId);
+      if (jobId && this.pendingJobs.has(jobId)) {
+        const job = this.pendingJobs.get(jobId)!;
+        clearTimeout(job.timeoutTimer);
+        this.pendingJobs.delete(jobId);
 
-          job.resolve({
-            success: true,
-            image,
-            jobId,
-            metadata: {
-              target: job.target,
-              fullPrompt: job.prompt
-            }
-          });
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, received: true }));
-      } catch (err: any) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'INVALID_DIRECT_IMAGE', message: err.message }));
+        job.resolve({
+          success: true,
+          image,
+          jobId,
+          metadata: {
+            target: job.target,
+            fullPrompt: job.prompt
+          }
+        });
       }
-    });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, received: true }));
+    } catch (err: any) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'INVALID_DIRECT_IMAGE', message: err.message }));
+    }
   }
 
-  public handleOpenTabRequest(req: http.IncomingMessage, res: http.ServerResponse) {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const { target = 'gemini', accountSlot = 0, tabMode, bringTabToFront } = payload;
+  public async handleOpenTabRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    try {
+      const payload = await this.parseRequestBody(req);
+      const { target = 'gemini', accountSlot = 0, tabMode, bringTabToFront } = payload;
 
-        if (!this.isConnected()) {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'EXTENSION_NOT_CONNECTED', message: 'BEI Chrome Extension is not connected.' }));
-          return;
-        }
-
-        this.extensionSocket!.send(JSON.stringify({
-          type: 'OPEN_TAB',
-          data: { target, accountSlot, tabMode, bringTabToFront }
-        }));
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, opened: true, target, accountSlot }));
-      } catch (err: any) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'INVALID_REQUEST', message: err.message }));
+      if (!this.isConnected()) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'EXTENSION_NOT_CONNECTED', message: 'BEI Chrome Extension is not connected.' }));
+        return;
       }
-    });
+
+      this.extensionSocket!.send(JSON.stringify({
+        type: 'OPEN_TAB',
+        data: { target, accountSlot, tabMode, bringTabToFront }
+      }));
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, opened: true, target, accountSlot }));
+    } catch (err: any) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'INVALID_REQUEST', message: err.message }));
+    }
   }
 
   public handleScanAccountsRequest(req: http.IncomingMessage, res: http.ServerResponse) {
