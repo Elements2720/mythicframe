@@ -17,6 +17,7 @@ import {
   buildCardSuggestionsPrompt
 } from "../services/promptTemplates.js";
 import { GameContext, BackgroundConfig, MapGridConfig, PoseData } from "../types.js";
+import { ART_STYLES } from "../constants/artStyles.js";
 
 const server = new Server(
   {
@@ -116,26 +117,42 @@ const formatTextInstruction = (promptStr: string) => {
 const defaultGameContext: GameContext = { setting: "High Fantasy", tone: "Epic" } as any;
 const defaultBgConfig: BackgroundConfig = { mode: "transparent" } as any;
 
+function getActiveGameContext(): GameContext {
+  const projectFile = path.join(process.cwd(), "mythic_project.json");
+  if (fs.existsSync(projectFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(projectFile, "utf8"));
+      if (data.gameContext) return data.gameContext;
+    } catch (e) {}
+  }
+  return defaultGameContext;
+}
+
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
         name: "prepare_illustration_prompt",
-        description: "Prepares a highly optimized illustration or character prompt using MythicFrame rules.",
+        description: "Prepares a highly optimized illustration or character prompt using MythicFrame rules. Supports character helper (pose, look target, expression), camera viewpoints, framing, chibi modes, seed control, and biological eraser.",
         inputSchema: {
           type: "object",
           properties: {
             geminiApiKey: { type: "string" },
-            prompt: { type: "string" },
-            aspectRatio: { type: "string" },
-            style: { type: "string" },
-            viewpoint: { type: "string" },
-            framing: { type: "string" },
+            prompt: { type: "string", description: "Base character, creature, or scene prompt" },
+            aspectRatio: { type: "string", description: "'1:1', '16:9', '9:16', '3:4', or '4:3'" },
+            style: { type: "string", description: "Art style snippet or style ID (e.g. 'arknights_tactical', 'pixel_art')" },
+            viewpoint: { type: "string", description: "Camera viewpoint: 'front', 'back', 'side', 'three-quarter', 'top-down', 'high-angle', 'low-angle', 'isometric', or 'cinematic'" },
+            framing: { type: "string", description: "Shot framing: 'full-body', 'waist-up', 'bust', or 'head-only'" },
+            characterPose: { type: "string", description: "Character pose/action description (e.g. 'standing heroic with sword raised', 'sitting relaxed on throne')" },
+            lookTarget: { type: "string", description: "Direction subject is looking: 'at camera / direct gaze', 'looking away', 'looking up', 'looking down'" },
+            expression: { type: "string", description: "Facial expression: 'stoic', 'gentle smile', 'fierce grin', 'mysterious smirk', 'angry'" },
             backgroundMode: { type: "string", description: "'solid', 'transparent', 'scene', 'pattern', 'none', 'prompt-only', or 'AI Decides'" },
             backgroundColor: { type: "string", description: "Hex color if solid, e.g. '#FFFFFF'" },
-            chibiMode: { type: "boolean" },
-            chibiRatio: { type: "string", description: "'1:1' (micro_2h), '1:2' (chibi_3h), or '1:4' (deformed_4h)" },
-            noCharacters: { type: "boolean" }
+            chibiMode: { type: "boolean", description: "Enable chibi styling. When true, chibiRatio selects proportion" },
+            chibiRatio: { type: "string", description: "'1:1' (micro_2h / nendoroid 2-head), '1:2' (chibi_3h / classic gacha 3-head), or '1:4' (deformed_4h / puchi 4-head)" },
+            noCharacters: { type: "boolean", description: "STRICT negative constraint removing all people, humanoids, creatures, and animals. Use for environments, landscapes, props, inventory icons, and UI scenes." },
+            biologicalEraser: { type: "boolean", description: "STRICT negative constraint erasing all skin, eyes, face, hair, and body parts to render a hollow ghost asset / standalone equipment." },
+            seed: { type: "number", description: "Seed number for deterministic prompt repeatability" }
           },
           required: ["prompt"],
         },
@@ -158,13 +175,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "prepare_clothes_prompt",
-        description: "Prepares a prompt for the Clothes Designer.",
+        description: "Prepares a prompt for the Clothes Designer studio. Can generate clothes on character or hollow ghost assets (Biological Eraser).",
         inputSchema: {
           type: "object",
           properties: {
             geminiApiKey: { type: "string" },
-            prompt: { type: "string" },
-            styleSnippet: { type: "string" }
+            prompt: { type: "string", description: "Clothing description, garment items, fabrics, and colors" },
+            styleSnippet: { type: "string", description: "Optional art style snippet" },
+            renderMode: { type: "string", enum: ["character", "asset"], description: "'asset' enables Biological Eraser (erases all body/skin/face, rendering hollow 3D ghost clothes). 'character' renders worn on character." },
+            lockPose: { type: "boolean", description: "Strictly preserve reference anatomy and body posture" },
+            layout: { type: "string", enum: ["single", "spread"], description: "'single' view or 'spread' (multi-view orthographic fashion design sheet)" },
+            framing: { type: "string", enum: ["full-body", "waist-up", "bust", "head-only"] }
           },
           required: ["prompt"],
         },
@@ -376,6 +397,44 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {},
           required: [],
         },
+      },
+      {
+        name: "mythic_list_art_styles",
+        description: "Lists all available art styles (45+ built-in styles + custom project styles) with style IDs, descriptions, and prompt snippets.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            category: { type: "string", description: "Optional filter: 'Game Art', 'Anime/Manga', 'Digital Painting', 'Traditional', 'Abstract/UI', 'Retro', 'Other'" }
+          },
+          required: []
+        }
+      },
+      {
+        name: "mythic_apply_art_style",
+        description: "Applies an art style from the library or sets a custom prompt anchor in mythic_project.json so subsequent generations use it.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            styleId: { type: "string", description: "ID of the art style to activate (e.g. 'arknights_tactical', 'dark_souls', 'pixel_art')" },
+            customPromptSnippet: { type: "string", description: "Optional custom prompt snippet override" }
+          },
+          required: ["styleId"]
+        }
+      },
+      {
+        name: "mythic_create_art_style",
+        description: "Creates and saves a new custom art style into mythic_project.json for reusable game asset synthesis.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "Unique identifier for the new style, e.g. 'cyber_samurai'" },
+            name: { type: "string", description: "Display name for the style" },
+            promptSnippet: { type: "string", description: "Exact visual prompt snippet and negative/positive style anchors" },
+            description: { type: "string", description: "Short description of the aesthetic and rendering technique" },
+            category: { type: "string", description: "Category name (default 'Custom')" }
+          },
+          required: ["id", "name", "promptSnippet"]
+        }
       }
     ],
   };
@@ -398,7 +457,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           color: args.backgroundColor 
       } as any;
 
-      const chibiConfig = args.chibiMode ? ({ headSize: 2.0, bodyPlumpness: 1.5, limbStubbiness: 0.8, enableSparkles: false } as any) : undefined;
+      const chibiConfig = args.chibiMode ? ({ enabled: true, headSize: 2.0, bodyPlumpness: 1.5, limbStubbiness: 0.8, enableSparkles: false } as any) : undefined;
       
       let mappedChibiProportion: any = undefined;
       if (args.chibiMode && args.chibiRatio) {
@@ -409,10 +468,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           mappedChibiProportion = "chibi_3h"; // default 1:2
       }
 
+      let characterTool: any = undefined;
+      if (args.characterPose || args.lookTarget) {
+        characterTool = {
+          enabled: true,
+          poseDescription: args.characterPose || "",
+          lookTarget: typeof args.lookTarget === "object" ? args.lookTarget : null
+        };
+      }
+
+      let promptToBuild = args.prompt;
+      if (args.expression) {
+        promptToBuild += ` with a ${args.expression} facial expression`;
+      }
+      if (typeof args.lookTarget === "string") {
+        promptToBuild += `, looking ${args.lookTarget}`;
+      }
+
+      const activeContext = getActiveGameContext();
       const built = buildIllustrationPrompt(
-          args.prompt, defaultGameContext, args.style || "", bgConfig, [], undefined, undefined, mappedChibiProportion, chibiConfig, args.viewpoint, args.noCharacters, args.framing as any
+          promptToBuild, activeContext, args.style || "", bgConfig, [], undefined, undefined, mappedChibiProportion, chibiConfig, args.viewpoint, args.noCharacters, args.framing as any, characterTool
       );
       result = built.textPrompt;
+
+      if (args.biologicalEraser) {
+        result += `\n[STRICT NEGATIVE CONSTRAINT - BIOLOGICAL ERASER]: ZERO BIOLOGICAL MATTER. Erase the character completely. NO face, NO eyes, NO skin, NO hair, NO hands, NO neck. Render the equipment, armor, or clothing as a hollow void / ghost asset floating in 3D space.\n`;
+      }
+
+      if (args.seed !== undefined && args.seed !== null) {
+        result += `\n[DETERMINISTIC SEED]: ${args.seed}\n`;
+      }
+
       aspectRatio = args.aspectRatio || "1:1";
     }
 
@@ -648,8 +734,86 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       aspectRatio = args.aspectRatio || "16:9";
     }
     else if (name === "prepare_clothes_prompt") {
-      const built = buildClothesPrompt(args.prompt, defaultGameContext, args.styleSnippet || "", defaultBgConfig, []);
+      const clothesParams = {
+        renderMode: args.renderMode === "asset" ? "asset" : "model",
+        layout: args.layout === "spread" ? "spread" : "assembled",
+        lockPose: args.lockPose ?? true,
+        framing: args.framing || "full-body"
+      } as any;
+      const activeContext = getActiveGameContext();
+      const built = buildClothesPrompt(args.prompt, activeContext, args.styleSnippet || "", defaultBgConfig, [], undefined, clothesParams);
       result = built.textPrompt;
+    }
+    else if (name === "mythic_list_art_styles") {
+      let styles = [...ART_STYLES];
+      const projectFile = path.join(process.cwd(), "mythic_project.json");
+      if (fs.existsSync(projectFile)) {
+        try {
+          const proj = JSON.parse(fs.readFileSync(projectFile, "utf8"));
+          if (Array.isArray(proj.customStyles)) {
+            styles = [...styles, ...proj.customStyles];
+          }
+        } catch (e) {}
+      }
+      if (args.category) {
+        styles = styles.filter(s => s.category?.toLowerCase() === args.category.toLowerCase());
+      }
+      let output = `MYTHICFRAME ART STYLE LIBRARY (${styles.length} styles available):\n\n`;
+      styles.forEach(s => {
+        output += `• ID: '${s.id}' - ${s.name} [${s.category || 'General'}]\n  Description: ${s.description}\n  Snippet: "${s.promptSnippet}"\n\n`;
+      });
+      return { content: [{ type: "text", text: output }] };
+    }
+    else if (name === "mythic_apply_art_style") {
+      const projectFile = path.join(process.cwd(), "mythic_project.json");
+      let projectData: any = {};
+      if (fs.existsSync(projectFile)) {
+        try { projectData = JSON.parse(fs.readFileSync(projectFile, "utf8")); } catch (e) {}
+      }
+      let targetStyle = ART_STYLES.find(s => s.id === args.styleId);
+      if (!targetStyle && Array.isArray(projectData.customStyles)) {
+        targetStyle = projectData.customStyles.find((s: any) => s.id === args.styleId);
+      }
+      if (!targetStyle && !args.customPromptSnippet) {
+        return {
+          content: [{ type: "text", text: `Style with ID '${args.styleId}' not found in library. Use 'mythic_list_art_styles' to see valid style IDs.` }],
+          isError: true
+        };
+      }
+      const styleName = targetStyle ? targetStyle.name : args.styleId;
+      const snippet = args.customPromptSnippet || (targetStyle ? targetStyle.promptSnippet : "");
+      projectData.activeArtStyle = {
+        id: args.styleId,
+        name: styleName,
+        promptSnippet: snippet
+      };
+      fs.writeFileSync(projectFile, JSON.stringify(projectData, null, 2), "utf8");
+      return {
+        content: [{ type: "text", text: `Active art style set to '${styleName}' (ID: ${args.styleId}). All subsequent generations will incorporate this style anchor.` }]
+      };
+    }
+    else if (name === "mythic_create_art_style") {
+      const projectFile = path.join(process.cwd(), "mythic_project.json");
+      let projectData: any = {};
+      if (fs.existsSync(projectFile)) {
+        try { projectData = JSON.parse(fs.readFileSync(projectFile, "utf8")); } catch (e) {}
+      }
+      if (!Array.isArray(projectData.customStyles)) {
+        projectData.customStyles = [];
+      }
+      const newStyle = {
+        id: args.id,
+        name: args.name,
+        promptSnippet: args.promptSnippet,
+        description: args.description || "",
+        category: args.category || "Custom"
+      };
+      projectData.customStyles = projectData.customStyles.filter((s: any) => s.id !== args.id);
+      projectData.customStyles.push(newStyle);
+      fs.writeFileSync(projectFile, JSON.stringify(projectData, null, 2), "utf8");
+      return {
+        content: [{ type: "text", text: `Custom art style '${args.name}' (ID: ${args.id}) created and saved to project! You can now activate it using 'mythic_apply_art_style'.` }]
+      };
     }
     else if (name === "prepare_map_grid_prompt") {
       const mapConfig: MapGridConfig = {

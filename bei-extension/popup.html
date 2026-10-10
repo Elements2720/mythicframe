@@ -61,6 +61,7 @@
       </div>
     </div>
 
+
     <!-- Active Sessions & Discovered Accounts Card -->
     <div class="card">
       <div class="card-title">Active Browser Sessions & Accounts</div>
@@ -90,11 +91,41 @@
       </div>
     </div>
 
+    <!-- Performance & Resource Monitor Card -->
+    <div class="card">
+      <div class="card-title flex-between">
+        <span>Performance &amp; RAM Monitor</span>
+        <span id="perfStatusBadge" class="saved-indicator" style="display: none;">Optimized</span>
+      </div>
+      <div class="perf-grid">
+        <div class="perf-row">
+          <span class="perf-label">Extension Worker:</span>
+          <span id="workerHeapText" class="perf-val font-mono">Measuring...</span>
+        </div>
+        <div class="perf-row">
+          <span class="perf-label">AI Tabs (Gemini/ChatGPT):</span>
+          <span id="activeTabsRamText" class="perf-val font-mono">Scanning...</span>
+        </div>
+        <div class="perf-row">
+          <span class="perf-label">System RAM:</span>
+          <span id="systemRamText" class="perf-val font-mono">Checking...</span>
+        </div>
+      </div>
+      <div style="margin-top: 8px;">
+        <button id="hibernateTabsBtn" class="action-btn action-btn-accent" style="width: 100%; padding: 6px 10px; font-size: 11px;" title="Hibernates inactive Gemini &amp; ChatGPT background tabs from RAM. Chrome restores them instantly when clicked.">
+          Free RAM (Hibernate Inactive Tabs)
+        </button>
+      </div>
+      <div class="setting-hint" style="margin-top: 5px;">
+        Chrome Task Manager shortcut: <kbd class="font-mono" style="background:#1e293b; padding:1px 4px; border-radius:3px; color:#cbd5e1;">Shift + Esc</kbd>
+      </div>
+    </div>
+
     <!-- Footer Controls -->
     <div class="footer-actions">
       <button id="refreshBtn" class="btn-refresh">↻ Refresh State</button>
       <button id="reloadExtBtn" class="btn-refresh" title="Reload extension service worker and scripts into Chrome">🔄 Reload Extension</button>
-      <div class="footer-brand">Zero API Key Mode &bull; v1.2.0</div>
+      <div class="footer-brand">Zero API Key Mode &bull; v1.4.4</div>
     </div>
   </div>
 

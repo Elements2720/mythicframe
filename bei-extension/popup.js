@@ -158,10 +158,76 @@ function copyProjectDirectory() {
   });
 }
 
+
+function loadPerformanceMetrics() {
+  const workerHeapText = document.getElementById('workerHeapText');
+  const activeTabsRamText = document.getElementById('activeTabsRamText');
+  const systemRamText = document.getElementById('systemRamText');
+
+  chrome.runtime.sendMessage({ type: 'GET_PERFORMANCE_METRICS' }, (metrics) => {
+    if (chrome.runtime.lastError || !metrics) {
+      if (workerHeapText) workerHeapText.textContent = '~20 MB (Idle)';
+      if (activeTabsRamText) activeTabsRamText.textContent = '0 open (0 MB)';
+      if (systemRamText) systemRamText.textContent = 'Normal';
+      return;
+    }
+
+    if (workerHeapText) {
+      workerHeapText.textContent = metrics.workerHeapMB 
+        ? `${metrics.workerHeapMB} MB (Heap)` 
+        : '< 25 MB (Idle)';
+    }
+
+    if (activeTabsRamText) {
+      const activeCount = (metrics.tabsCount?.geminiActive || 0) + (metrics.tabsCount?.chatgptActive || 0);
+      const discardedCount = (metrics.tabsCount?.geminiDiscarded || 0) + (metrics.tabsCount?.chatgptDiscarded || 0);
+      if (activeCount === 0 && discardedCount === 0) {
+        activeTabsRamText.textContent = '0 open (0 MB)';
+      } else if (activeCount === 0 && discardedCount > 0) {
+        activeTabsRamText.textContent = `0 active (${discardedCount} hibernated)`;
+      } else {
+        const hibernatedSuffix = discardedCount > 0 ? ` (${discardedCount} hibernated)` : '';
+        activeTabsRamText.textContent = `${activeCount} active (~${metrics.estimatedTabRamMB} MB)${hibernatedSuffix}`;
+      }
+    }
+
+    if (systemRamText) {
+      if (metrics.systemMemory) {
+        systemRamText.textContent = `${metrics.systemMemory.availableGB}GB free / ${metrics.systemMemory.totalGB}GB (${metrics.systemMemory.usedPercent}% used)`;
+      } else {
+        systemRamText.textContent = 'Available';
+      }
+    }
+  });
+}
+
+function hibernateInactiveTabs() {
+  const btn = document.getElementById('hibernateTabsBtn');
+  const perfStatusBadge = document.getElementById('perfStatusBadge');
+  if (btn) btn.disabled = true;
+
+  chrome.runtime.sendMessage({ type: 'DISCARD_BEI_TABS' }, (resp) => {
+    if (btn) btn.disabled = false;
+    const freed = resp?.freedRamMBEstimate || 0;
+    const count = resp?.discardedCount || 0;
+
+    if (perfStatusBadge) {
+      perfStatusBadge.textContent = count > 0 ? `Freed ~${freed} MB!` : 'All Tabs Clear';
+      perfStatusBadge.style.display = 'inline-block';
+      setTimeout(() => {
+        perfStatusBadge.style.display = 'none';
+      }, 2500);
+    }
+    loadPerformanceMetrics();
+    updateTabs();
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   loadProjectDirectory();
   checkBridgeStatus();
   updateTabs();
+  loadPerformanceMetrics();
 
   // Localhost Launchers
   document.getElementById('openStudioBtn').addEventListener('click', () => {
@@ -185,18 +251,23 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.tabs.create({ url: 'https://chatgpt.com/' });
   });
 
+  // Performance / Memory Management
+  document.getElementById('hibernateTabsBtn')?.addEventListener('click', hibernateInactiveTabs);
+
   // Reconnect & Refresh
   document.getElementById('reconnectBtn').addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: 'RECONNECT_BRIDGE' });
     setTimeout(() => {
       checkBridgeStatus();
       updateTabs();
+      loadPerformanceMetrics();
     }, 800);
   });
 
   document.getElementById('refreshBtn').addEventListener('click', () => {
     checkBridgeStatus();
     updateTabs();
+    loadPerformanceMetrics();
   });
 
   document.getElementById('reloadExtBtn')?.addEventListener('click', () => {

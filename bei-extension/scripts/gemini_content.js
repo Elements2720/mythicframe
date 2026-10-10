@@ -396,25 +396,192 @@
     } catch (e) {}
   }
 
-  async function ensureCreateImageMode(jobId = null) {
+  async function selectNativeAspectRatio(targetRatio = '1:1') {
+    if (!targetRatio) return;
     try {
-      if (isCreateImageTagActive()) {
-        console.log('[MythicFrame BEI] "Create image" tool mode already active in composer.');
-        return true;
+      const normalizedRatio = String(targetRatio).trim();
+      console.log(`[MythicFrame BEI] Selecting native aspect ratio: ${normalizedRatio}...`);
+
+      // 1. Locate Aspect ratio button under/around composer
+      const candidates = Array.from(document.querySelectorAll(
+        "button, [role='button'], .aspect-ratio-button, [aria-label*='Aspect ratio' i], [mattooltip*='Aspect ratio' i]"
+      ));
+      
+      const arBtn = candidates.find(b => {
+        if (b.closest('[role="menu"], .cdk-overlay-pane')) return false;
+        const text = (b.textContent || '').trim().toLowerCase();
+        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+        return text.includes('aspect ratio') || aria.includes('aspect ratio') ||
+               text === '1:1' || text === '16:9' || text === '9:16' || text === '4:3' || text === '3:4';
+      });
+
+      if (!arBtn) {
+        console.log('[MythicFrame BEI] Native Aspect ratio button not found yet.');
+        return;
       }
 
-      // Close any stray open menus/overlays by clicking body safely
-      const openMenus = document.querySelectorAll('.cdk-overlay-pane [role="menu"]');
-      if (openMenus.length > 0) {
-        document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await new Promise(r => setTimeout(r, 100));
+      // Check if button text already matches target ratio
+      const currentText = (arBtn.textContent || '').trim();
+      if (currentText === normalizedRatio || currentText.includes(normalizedRatio)) {
+        console.log(`[MythicFrame BEI] Aspect ratio already set to ${normalizedRatio}.`);
+        return;
       }
 
-      const ok = injectCustomCreateImageTag();
-      if (ok) {
-        if (jobId) reportProgress(jobId, 'create_image_mode', '"Create image" visual tag active.');
-        return true;
+      // 2. Click button to open the popup menu
+      arBtn.click();
+      await new Promise(r => setTimeout(r, 250));
+
+      // 3. Find matching option in the opened menu (1:1, 9:16, 3:4, 4:3, 16:9)
+      const menuOptions = Array.from(document.querySelectorAll(
+        ".cdk-overlay-pane [role='menuitem'], .cdk-overlay-pane button, [role='menu'] [role='menuitem'], [role='menu'] button"
+      ));
+
+      const matchOption = menuOptions.find(opt => {
+        const txt = (opt.textContent || '').trim();
+        return txt === normalizedRatio || txt.includes(normalizedRatio);
+      });
+
+      if (matchOption) {
+        matchOption.click();
+        console.log(`✅ [MythicFrame BEI] Successfully selected native aspect ratio: ${normalizedRatio}`);
+        await new Promise(r => setTimeout(r, 200));
+      } else {
+        console.warn(`[MythicFrame BEI] Option for aspect ratio ${normalizedRatio} not found in menu.`);
       }
+
+      // Dismiss stray open overlay if still open
+      const remainingOverlay = document.querySelector('.cdk-overlay-backdrop');
+      if (remainingOverlay) {
+        remainingOverlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    } catch (err) {
+      console.warn('[MythicFrame BEI] selectNativeAspectRatio notice:', err);
+    }
+  }
+
+  async function selectNativeModelQuality(targetQuality = 'auto') {
+    if (!targetQuality) return;
+    try {
+      const q = String(targetQuality).trim().toLowerCase();
+      console.log(`[MythicFrame BEI] Selecting native model quality / thinking depth: ${q}...`);
+
+      // 1. Locate Model / Thinking depth button under/around composer or navigation
+      const candidates = Array.from(document.querySelectorAll(
+        "button, [role='button'], .model-selector, [aria-label*='model' i], [aria-label*='thinking' i], [aria-label*='depth' i], [mattooltip*='model' i], [mattooltip*='thinking' i]"
+      ));
+
+      const modelBtn = candidates.find(b => {
+        if (b.closest('[role="menu"], .cdk-overlay-pane')) return false;
+        const text = (b.textContent || '').trim().toLowerCase();
+        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+        return aria.includes('model') || aria.includes('thinking') || aria.includes('depth') ||
+               text.includes('gemini 3') || text.includes('gemini 2') ||
+               text === 'auto' || text === 'low' || text === 'medium' || text === 'high' ||
+               text.includes('quick and efficient') || text.includes('balanced depth') || text.includes('extra thorough');
+      });
+
+      if (!modelBtn) {
+        console.log('[MythicFrame BEI] Native model quality / thinking depth button not found.');
+        return;
+      }
+
+      // Check if already set to target
+      const currentText = (modelBtn.textContent || '').trim().toLowerCase();
+      if (
+        (q === 'auto' && (currentText.includes('auto') || currentText.includes('gemini 3'))) ||
+        (q === 'low' && (currentText.includes('low') || currentText.includes('quick and efficient'))) ||
+        (q === 'medium' && (currentText.includes('medium') || currentText.includes('balanced depth'))) ||
+        (q === 'high' && (currentText.includes('high') || currentText.includes('extra thorough')))
+      ) {
+        console.log(`[MythicFrame BEI] Model quality already set to ${q}.`);
+        return;
+      }
+
+      // 2. Click button to open popup menu
+      modelBtn.click();
+      await new Promise(r => setTimeout(r, 250));
+
+      // 3. Find matching option in menu
+      const menuOptions = Array.from(document.querySelectorAll(
+        ".cdk-overlay-pane [role='menuitem'], .cdk-overlay-pane button, [role='menu'] [role='menuitem'], [role='menu'] button, .mat-mdc-menu-item, div[role='option']"
+      ));
+
+      const matchOption = menuOptions.find(opt => {
+        const txt = (opt.textContent || '').toLowerCase();
+        if (q === 'auto' && (txt.includes('auto') || txt.includes('gemini 3'))) return true;
+        if (q === 'low' && (txt.includes('low') || txt.includes('quick and efficient'))) return true;
+        if (q === 'medium' && (txt.includes('medium') || txt.includes('balanced depth'))) return true;
+        if (q === 'high' && (txt.includes('high') || txt.includes('extra thorough'))) return true;
+        return txt.includes(q);
+      });
+
+      if (matchOption) {
+        matchOption.click();
+        console.log(`✅ [MythicFrame BEI] Successfully selected native model quality: ${q}`);
+        await new Promise(r => setTimeout(r, 200));
+      } else {
+        console.warn(`[MythicFrame BEI] Option for model quality "${q}" not found in menu.`);
+      }
+
+      // Dismiss overlay if still open
+      const remainingOverlay = document.querySelector('.cdk-overlay-backdrop');
+      if (remainingOverlay) {
+        remainingOverlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    } catch (err) {
+      console.warn('[MythicFrame BEI] selectNativeModelQuality notice:', err);
+    }
+  }
+
+  async function ensureCreateImageMode(jobId = null, targetAspectRatio = '1:1') {
+    try {
+      // 1. Check if native Create image or aspect ratio button is already active
+      let nativeActive = isCreateImageTagActive();
+
+      if (!nativeActive) {
+        // Try clicking the native "+" / tools button to select "Create image"
+        const toolsBtns = Array.from(document.querySelectorAll(
+          "button[aria-label*='Tools' i], button[aria-label*='Add' i], button[aria-label*='Upload' i], .input-area button, .chat-input-container button"
+        ));
+
+        const addBtn = toolsBtns.find(b => {
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          const txt = (b.textContent || '').trim().toLowerCase();
+          return aria.includes('add') || aria.includes('tools') || aria.includes('more') || txt === '+';
+        });
+
+        if (addBtn) {
+          addBtn.click();
+          await new Promise(r => setTimeout(r, 250));
+
+          // Find "Create image" in menu
+          const menuItems = Array.from(document.querySelectorAll(".cdk-overlay-pane [role='menuitem'], [role='menu'] button, [role='menu'] [role='menuitem']"));
+          const createImgItem = menuItems.find(m => {
+            const txt = (m.textContent || '').toLowerCase();
+            return txt.includes('create image');
+          });
+
+          if (createImgItem) {
+            createImgItem.click();
+            console.log('✅ [MythicFrame BEI] Native "Create image" tool clicked from menu.');
+            await new Promise(r => setTimeout(r, 400));
+            nativeActive = true;
+          }
+        }
+      }
+
+      // 2. Select native aspect ratio if available
+      if (targetAspectRatio) {
+        await selectNativeAspectRatio(targetAspectRatio);
+      }
+
+      // 3. Fallback: visual tag injection if native menu was not reachable
+      if (!nativeActive && !isCreateImageTagActive()) {
+        const ok = injectCustomCreateImageTag();
+        if (ok && jobId) reportProgress(jobId, 'create_image_mode', '"Create image" visual tag active.');
+      }
+
+      return true;
     } catch (e) {
       console.debug('[MythicFrame BEI] ensureCreateImageMode notice:', e);
     }
@@ -951,7 +1118,242 @@
     return { ok: false, reason: 'Pre-send verification timed out after 3 remediation cycles.' };
   }
 
-  async function executePrompt(jobId, prompt, timeoutSeconds = 900, images = [], quality = "ultra_original") {
+  function findDownloadFullSizeButton(imgOrContainer) {
+    try {
+      const container = (imgOrContainer && imgOrContainer.closest 
+        ? imgOrContainer.closest('model-response, conversation-turn, image-card, .image-card, .generated-image, div.response-container, [data-test-id*="response"]') 
+        : null) || (imgOrContainer && imgOrContainer.parentElement ? imgOrContainer.parentElement.parentElement : null) || document.body;
+
+      if (!container) return null;
+
+      // 1. Look for mat-icon with download name or fonticon
+      const icon = container.querySelector('mat-icon[data-mat-icon-name="download"], mat-icon[fonticon="download"], [data-mat-icon-name="download"]');
+      if (icon) {
+        const btn = icon.closest('button, a, [role="button"]') || icon;
+        if (btn) return btn;
+      }
+
+      // 2. Look for button or anchor matching "download full size" in aria-label, tooltip, or title
+      const btn = container.querySelector(
+        'button[aria-label*="download full size" i], a[aria-label*="download full size" i], ' +
+        'button[mattooltip*="download full size" i], a[mattooltip*="download full size" i], ' +
+        'button[title*="download full size" i], a[title*="download full size" i], ' +
+        'button[aria-label*="download" i], a[aria-label*="download" i], ' +
+        '[data-test-id*="download" i]'
+      );
+      if (btn) return btn;
+    } catch (e) {
+      console.debug('[MythicFrame BEI] Error finding download button:', e);
+    }
+    return null;
+  }
+
+  async function triggerNativeDownloadButton(downloadBtn, timeoutMs = 2000) {
+    if (!downloadBtn) return null;
+    try {
+      if (downloadBtn.tagName === 'A' && downloadBtn.href && !downloadBtn.href.startsWith('javascript:')) {
+        return downloadBtn.href;
+      }
+
+      return new Promise((resolve) => {
+        let finished = false;
+        let originalAnchorClick = null;
+
+        const cleanup = () => {
+          if (finished) return;
+          finished = true;
+          window.removeEventListener('click', clickInterceptor, true);
+          if (originalAnchorClick && HTMLAnchorElement.prototype.click === patchedAnchorClick) {
+            HTMLAnchorElement.prototype.click = originalAnchorClick;
+          }
+          clearTimeout(timer);
+        };
+
+        const timer = setTimeout(() => {
+          cleanup();
+          resolve(null);
+        }, timeoutMs);
+
+        const clickInterceptor = (e) => {
+          try {
+            const anchor = e.target && e.target.closest ? e.target.closest('a') : null;
+            if (anchor && anchor.href) {
+              const href = anchor.href;
+              if (anchor.hasAttribute('download') || href.includes('googleusercontent.com') || href.startsWith('blob:') || href.includes('image_retrieval')) {
+                e.preventDefault();
+                e.stopPropagation();
+                cleanup();
+                resolve(href);
+              }
+            }
+          } catch (err) {}
+        };
+
+        const patchedAnchorClick = function() {
+          try {
+            if (this.href && (this.hasAttribute('download') || this.href.includes('googleusercontent.com') || this.href.startsWith('blob:') || this.href.includes('image_retrieval'))) {
+              cleanup();
+              resolve(this.href);
+              return;
+            }
+          } catch (err) {}
+          return originalAnchorClick.apply(this, arguments);
+        };
+
+        try {
+          originalAnchorClick = HTMLAnchorElement.prototype.click;
+          HTMLAnchorElement.prototype.click = patchedAnchorClick;
+          window.addEventListener('click', clickInterceptor, true);
+
+          downloadBtn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
+          downloadBtn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
+          downloadBtn.click();
+        } catch (dispatchErr) {
+          cleanup();
+          resolve(null);
+        }
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function extractFullResolutionAsset(imgOrUrl, quality = 'ultra_original') {
+    let finalData = '';
+    let srcUrl = '';
+
+    // Ultra quality: Attempt extraction via native "Download full size" button first
+    if ((quality === 'ultra_original' || quality === 'ultra') && typeof imgOrUrl !== 'string' && imgOrUrl) {
+      try {
+        const downloadBtn = findDownloadFullSizeButton(imgOrUrl);
+        if (downloadBtn) {
+          console.log('[MythicFrame BEI] Located native "Download full size" button! Triggering capture...');
+          const capturedUrl = await triggerNativeDownloadButton(downloadBtn, 2000);
+          if (capturedUrl) {
+            console.log(`✅ [MythicFrame BEI] Captured full size URL via Download button: ${capturedUrl.substring(0, 100)}...`);
+            srcUrl = capturedUrl;
+            finalData = await protocol.fetchBlobAsBase64(capturedUrl, quality);
+            if (finalData && finalData.startsWith('data:image')) {
+              return { finalData, srcUrl };
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[MythicFrame BEI] Notice triggering native download button, falling back to CDN upgrade:', err);
+      }
+    }
+
+    if (typeof imgOrUrl === 'string') {
+      srcUrl = imgOrUrl;
+      if (imgOrUrl.startsWith('data:image')) {
+        finalData = imgOrUrl;
+      } else {
+        try {
+          finalData = await protocol.fetchBlobAsBase64(srcUrl, quality);
+        } catch (e) {
+          finalData = srcUrl;
+        }
+      }
+    } else if (imgOrUrl) {
+      const rawSrc = imgOrUrl.currentSrc || imgOrUrl.src || '';
+      srcUrl = rawSrc;
+      try {
+        if (rawSrc.startsWith('blob:')) {
+          finalData = await protocol.fetchBlobAsBase64(rawSrc, quality);
+        } else if (rawSrc.startsWith('data:image')) {
+          finalData = rawSrc;
+        } else {
+          finalData = await protocol.imageToBase64(imgOrUrl, quality);
+        }
+      } catch (e) {
+        finalData = srcUrl;
+      }
+    }
+
+    if ((!finalData || !finalData.startsWith('data:image')) && srcUrl) {
+      try {
+        finalData = await protocol.fetchBlobAsBase64(srcUrl, quality);
+      } catch (e) {}
+    }
+
+    return { finalData, srcUrl };
+  }
+
+  async function handleJobRecovery(jobId, prompt, chatUrl, quality = "ultra_original", aspectRatio = "1:1", modelQuality = "auto") {
+    console.log(`[MythicFrame BEI] Starting recovery scan for active job ${jobId}...`);
+    ensureBackgroundCpuAwake();
+
+    // 1. Check if an image is already rendered in the latest model response
+    const modelResponses = Array.from(document.querySelectorAll('model-response, [data-test-id*="model-response"], div.response-container'))
+      .filter(r => !r.closest('user-query, .user-query, .chat-input-container'));
+
+    if (modelResponses.length > 0) {
+      const latest = modelResponses[modelResponses.length - 1];
+      const imagesInLatest = protocol.getAllImagesRecursively(latest);
+
+      for (const img of imagesInLatest) {
+        if (protocol.isGeneratedImage(img) && img.complete && (img.naturalWidth > 120 || img.naturalHeight > 120)) {
+          console.log(`✅ [MythicFrame BEI Recovery] Found completed generated image in latest turn for job ${jobId}!`);
+          const extracted = await extractFullResolutionAsset(img, quality);
+          let finalData = extracted.finalData;
+          const srcUrl = extracted.srcUrl || img.currentSrc || img.src;
+          const grid = protocol.detectCandidateGrid ? protocol.detectCandidateGrid(document.body) : null;
+          const candidates = grid && grid.urls && grid.urls.length > 0 ? grid.urls : undefined;
+
+          chrome.runtime.sendMessage({
+            type: 'GENERATION_COMPLETED',
+            data: {
+              jobId,
+              image: finalData || srcUrl,
+              target: 'gemini',
+              metadata: {
+                srcUrl,
+                width: img.naturalWidth || 1024,
+                height: img.naturalHeight || 1024,
+                candidates,
+                retrievalMethod: finalData ? 'recovered_base64' : 'recovered_url',
+                imageFormat: finalData ? 'base64' : 'url'
+              }
+            }
+          });
+          return;
+        }
+      }
+
+      // Check if response has image collection / retrieval URLs
+      const respUrls = protocol.extractImageUrlsFromNode(latest);
+      if (respUrls.length > 0) {
+        const u = respUrls[respUrls.length - 1];
+        console.log(`✅ [MythicFrame BEI Recovery] Found image retrieval URL in latest turn for job ${jobId}: ${u}`);
+        const base64 = await protocol.fetchBlobAsBase64(u, quality);
+        chrome.runtime.sendMessage({
+          type: 'GENERATION_COMPLETED',
+          data: {
+            jobId,
+            image: base64 || u,
+            target: 'gemini',
+            metadata: {
+              srcUrl: u,
+              retrievalMethod: 'recovered_url'
+            }
+          }
+        });
+        return;
+      }
+
+      // If latest response is still generating, re-bind observation polling loop!
+      if (isModelResponseGenerating(latest) || getStopButton()) {
+        console.log(`[MythicFrame BEI Recovery] Model response is currently generating. Attaching observation loop...`);
+        return executePrompt(jobId, prompt, 900, [], quality, aspectRatio, modelQuality);
+      }
+    }
+
+    // If no response exists at all, this was a draft loss prior to submission
+    console.log(`[MythicFrame BEI Recovery] No model response detected. Re-injecting prompt for clean submission...`);
+    return executePrompt(jobId, prompt, 900, [], quality, aspectRatio, modelQuality);
+  }
+
+  async function executePrompt(jobId, prompt, timeoutSeconds = 900, images = [], quality = "ultra_original", aspectRatio = "1:1", modelQuality = "auto") {
     ensureBackgroundCpuAwake();
     let keepAlivePort = null;
     try {
@@ -996,9 +1398,14 @@
       promptToSend = `Create image: ${promptToSend}`;
     }
 
-    // Try selecting Create Image mode tool if available in UI
-    reportProgress(jobId, 'create_image_mode', 'Activating native "Create image" tool mode...');
-    await ensureCreateImageMode(jobId);
+    // Try selecting Create Image mode tool and aspect ratio if available in UI
+    reportProgress(jobId, 'create_image_mode', `Activating native "Create image" tool mode (AR: ${aspectRatio || '1:1'})...`);
+    await ensureCreateImageMode(jobId, aspectRatio || '1:1');
+
+    // Select native model quality / thinking depth if requested
+    if (modelQuality && modelQuality !== 'default') {
+      await selectNativeModelQuality(modelQuality);
+    }
 
     // Attach reference images if any exist, waiting for upload to fully complete
     if (images && images.length > 0) {
@@ -1037,7 +1444,7 @@
     // Re-verify "Create image" tag in case file upload reset it
     if (!isCreateImageTagActive()) {
       console.log('[MythicFrame BEI] "Create image" tag missing after attachment. Re-activating...');
-      await ensureCreateImageMode(jobId);
+      await ensureCreateImageMode(jobId, aspectRatio || '1:1');
     }
 
     // Inject prompt text into the fresh composer
@@ -1114,6 +1521,12 @@
 
     reportProgress(jobId, 'generating', 'Prompt submitted! Waiting for Gemini / Imagen 3 generation...');
     console.log(`[MythicFrame BEI] Prompt submitted for job ${jobId}. Watching for generated image...`);
+    try {
+      chrome.runtime.sendMessage({
+        type: 'PROMPT_SUBMITTED',
+        data: { jobId, chatUrl: window.location.href }
+      });
+    } catch (e) {}
 
     // Observe mutations and polls for generated images
     const startTime = Date.now();
@@ -1157,42 +1570,7 @@
 
       reportProgress(jobId, 'capturing_image', 'Generated artwork detected! Extracting high-resolution asset...');
 
-      let finalData = '';
-      let srcUrl = '';
-
-      if (typeof imgOrUrl === 'string') {
-        srcUrl = imgOrUrl;
-        if (imgOrUrl.startsWith('data:image')) {
-          finalData = imgOrUrl;
-        } else {
-          try {
-            finalData = await protocol.fetchBlobAsBase64(srcUrl, quality);
-          } catch (e) {
-            finalData = srcUrl;
-          }
-        }
-      } else {
-        const rawSrc = imgOrUrl.currentSrc || imgOrUrl.src || '';
-        srcUrl = rawSrc;
-        try {
-          if (rawSrc.startsWith('blob:')) {
-            finalData = await protocol.fetchBlobAsBase64(rawSrc, quality);
-          } else if (rawSrc.startsWith('data:image')) {
-            finalData = rawSrc;
-          } else {
-            finalData = await protocol.imageToBase64(imgOrUrl, quality);
-          }
-        } catch (e) {
-          finalData = srcUrl;
-        }
-      }
-
-      // Final sanity check: if finalData is still not base64 and srcUrl exists, attempt one last fetch
-      if ((!finalData || !finalData.startsWith('data:image')) && srcUrl) {
-        try {
-          finalData = await protocol.fetchBlobAsBase64(srcUrl);
-        } catch (e) {}
-      }
+      const { finalData, srcUrl } = await extractFullResolutionAsset(imgOrUrl, quality);
 
       // Candidate grid detection (multiple images in Imagen 3 responses)
       const grid = protocol.detectCandidateGrid ? protocol.detectCandidateGrid(document.body) : null;
@@ -1467,6 +1845,14 @@
 
   function extractGoogleAccountEmail() {
     try {
+      // 0. Direct instant extraction from window.WIZ_global_data
+      if (typeof window.WIZ_global_data === 'object' && window.WIZ_global_data) {
+        const direct = window.WIZ_global_data.oPEP7c;
+        if (typeof direct === 'string' && direct.includes('@') && !isSystemEmail(direct)) {
+          return direct;
+        }
+      }
+
       // 1. Any element with aria-label containing @
       const ariaEls = document.querySelectorAll("[aria-label*='@']");
       for (const el of ariaEls) {
@@ -1624,9 +2010,8 @@
   // CustomEvent listener for direct dispatch from executeScript
   window.addEventListener('__MYTHIC_BEI_EXECUTE_PROMPT__', (e) => {
     if (e.detail) {
-      const { jobId, prompt, timeoutSeconds, images, quality } = e.detail;
-      executePrompt(jobId, prompt, timeoutSeconds, images, quality);
-      executePrompt(jobId, prompt, timeoutSeconds, images);
+      const { jobId, prompt, timeoutSeconds, images, quality, aspectRatio, modelQuality } = e.detail;
+      executePrompt(jobId, prompt, timeoutSeconds, images, quality || 'ultra_original', aspectRatio || '1:1', modelQuality || 'auto');
     }
   });
 
@@ -1654,9 +2039,16 @@
     }
 
     if (request.action === 'EXECUTE_PROMPT') {
-      const { jobId, prompt, timeoutSeconds, images } = request.data || {};
-      executePrompt(jobId, prompt, timeoutSeconds, images);
+      const { jobId, prompt, timeoutSeconds, images, quality, aspectRatio, modelQuality } = request.data || {};
+      executePrompt(jobId, prompt, timeoutSeconds, images, quality || 'ultra_original', aspectRatio || '1:1', modelQuality || 'auto');
       sendResponse({ success: true, started: true });
+      return true;
+    }
+
+    if (request.action === 'RECOVER_JOB') {
+      const { jobId, prompt, chatUrl, quality, aspectRatio, modelQuality } = request.data || {};
+      handleJobRecovery(jobId, prompt, chatUrl, quality || 'ultra_original', aspectRatio || '1:1', modelQuality || 'auto');
+      sendResponse({ success: true, recovering: true });
       return true;
     }
 

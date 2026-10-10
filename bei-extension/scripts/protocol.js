@@ -24,6 +24,12 @@
       'auth0',
       'openai.com/avatars',
       'oaistatic.com/avatars',
+      'gemini_sparkle',
+      'sparkle',
+      'lamda/images',
+      'gstatic.com',
+      'landing/a/',
+      'app_upsell',
     ],
 
     AVATAR_SIZE_REGEX: /=s\d+(?:-c|-p|-ns|-rw)?/i,
@@ -73,7 +79,12 @@
 
       const alt = (imgElement.alt || '').toLowerCase();
       const aria = (imgElement.getAttribute('aria-label') || '').toLowerCase();
-      if (alt.includes('profile') || alt.includes('avatar') || aria.includes('profile') || aria.includes('avatar')) {
+      if (
+        alt.includes('profile') || alt.includes('avatar') ||
+        aria.includes('profile') || aria.includes('avatar') ||
+        alt.includes('sparkle') || aria.includes('sparkle') ||
+        alt.includes('gemini') || aria.includes('gemini')
+      ) {
         return false;
       }
 
@@ -84,8 +95,8 @@
         }
       }
 
-      // Valid generative image sources
-      const isGoogleCdn = src.includes('googleusercontent.com') || src.includes('gstatic.com') || src.includes('photos.google.com');
+      // Valid generative image sources (STATIC gstatic.com IS EXCLUDED)
+      const isGoogleCdn = src.includes('googleusercontent.com') || src.includes('photos.google.com');
       const isOpenAiBlob = src.includes('oaidalleapiprodscus') || src.includes('files.oaiusercontent.com') || src.includes('backend-api/files');
       const isBlob = src.startsWith('blob:');
       const isBase64 = src.startsWith('data:image/');
@@ -96,7 +107,7 @@
 
       // Fallback: check if parent container is a model response
       if (imgElement.closest && imgElement.closest('model-response, message-content, div.response-container, conversation-turn, [data-test-id*="response"]')) {
-        if (/\.(png|jpe?g|webp|gif)($|\?)/i.test(src) || (imgElement.naturalWidth >= 256 && imgElement.naturalHeight >= 256)) {
+        if (!src.includes('gstatic.com') && (/\.(png|jpe?g|webp|gif)($|\?)/i.test(src) || (imgElement.naturalWidth >= 256 && imgElement.naturalHeight >= 256))) {
           return true;
         }
       }
@@ -131,7 +142,6 @@
       try {
         if (
           url.includes('googleusercontent.com') ||
-          url.includes('gstatic.com') ||
           url.includes('photos.google.com')
         ) {
           // If standard quality requested, keep current sizing or default to s1024
@@ -150,11 +160,11 @@
             return url.includes('=') ? `${url}-s2048` : `${url}=s2048`;
           }
 
-          // Default: 'ultra_original' - Strip dimension boundaries or use =s0 (original master uncompressed resolution)
+          // Default: 'ultra_original' or 'ultra' - Strip dimension boundaries and request uncompressed original with download directive (=s0-d)
           if (/=[swh]\d+/i.test(url) || /=w\d+-h\d+/i.test(url)) {
-            return url.replace(/=(?:s\d+|w\d+-h\d+|w\d+|h\d+)(?:-[a-zA-Z0-9_-]+)*(?=[?&#]|$)/i, '=s0');
+            return url.replace(/=(?:s\d+|w\d+-h\d+|w\d+|h\d+)(?:-[a-zA-Z0-9_-]+)*(?=[?&#]|$)/i, '=s0-d');
           }
-          return url.includes('=') ? `${url}-s0` : `${url}=s0`;
+          return url.includes('=') ? `${url}-s0-d` : `${url}=s0-d`;
         }
       } catch (e) {
         console.debug('[MythicBEI] Error upgrading URL to high-res:', e);

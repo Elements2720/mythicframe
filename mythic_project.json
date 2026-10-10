@@ -1,0 +1,15 @@
+{
+  "projectName": "Kingdoms Divided",
+  "gameContext": {
+    "setting": "Grim medieval fantasy realm under siege",
+    "tone": "Dark, gritty, tactical, dramatic lighting",
+    "visualConstraints": "Consistent black contour outlines, cel-shaded highlights, no modern tech",
+    "defaultStyleId": "arknights_tactical"
+  },
+  "activeArtStyle": {
+    "id": "arknights_tactical",
+    "name": "Tactical Dark Fantasy",
+    "promptSnippet": ", arknights style, tactical anime aesthetic, urban dark fantasy, muted colors with vibrant highlights"
+  },
+  "defaultModelQuality": "auto"
+}
