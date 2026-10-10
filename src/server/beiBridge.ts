@@ -311,6 +311,15 @@ export class BEIBridgeServer {
           return;
         }
 
+        if (req.method === 'POST' && (url.pathname === '/api/system/shutdown' || url.pathname === '/shutdown')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, message: 'MythicFrame BEI Bridge is shutting down...' }));
+          setTimeout(() => {
+            this.stop().then(() => process.exit(0)).catch(() => process.exit(0));
+          }, 300);
+          return;
+        }
+
         if (res.headersSent) return;
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'NOT_FOUND', path: url.pathname }));
@@ -368,6 +377,35 @@ export class BEIBridgeServer {
         resolve();
       });
     });
+  }
+
+  public async stop(): Promise<void> {
+    if (this.extensionSocket) {
+      try {
+        this.extensionSocket.close();
+      } catch (e) {}
+      this.extensionSocket = null;
+    }
+    for (const res of this.eventResponses) {
+      try {
+        res.end();
+      } catch (e) {}
+    }
+    this.eventResponses.clear();
+
+    if (this.wss) {
+      try {
+        this.wss.close();
+      } catch (e) {}
+      this.wss = null;
+    }
+    if (this.httpServer) {
+      await new Promise<void>((resolve) => {
+        this.httpServer?.close(() => resolve());
+      });
+      this.httpServer = null;
+    }
+    console.log(`[MythicFrame BEI Bridge] Bridge server on port ${this.port} stopped.`);
   }
 
   private handleExtensionMessage(msg: any, ws: WebSocket) {

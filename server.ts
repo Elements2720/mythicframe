@@ -166,6 +166,33 @@ async function startServer() {
     }
   });
 
+  app.post("/api/system/shutdown", async (req, res) => {
+    res.json({ success: true, message: "MythicFrame server is shutting down..." });
+    console.log("\n🛑 [MythicFrame] Shutdown request received from dashboard.");
+    console.log("🛑 Stopping BEI bridge, closing database, and terminating server process...");
+
+    setTimeout(async () => {
+      try {
+        await beiBridge.stop();
+      } catch (err) {
+        console.warn("Could not cleanly stop BEI Bridge:", err);
+      }
+      try {
+        db.close();
+      } catch (err) {}
+
+      expressServer.close(() => {
+        console.log("👋 [MythicFrame] Server shut down successfully. Process exiting.");
+        process.exit(0);
+      });
+
+      // Safety fallback to exit within 1 second
+      setTimeout(() => {
+        process.exit(0);
+      }, 1000);
+    }, 300);
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -180,7 +207,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const expressServer = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

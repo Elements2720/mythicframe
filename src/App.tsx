@@ -11,6 +11,7 @@ import AssetPicker from './components/ui/AssetPicker';
 import CropModal from './components/ui/CropModal';
 import FolderPickerModal from './components/ui/FolderPickerModal';
 import ErrorModal from './components/ui/ErrorModal';
+import ShutdownModal from './components/ui/ShutdownModal';
 
 // Views
 import Dashboard from './components/views/Dashboard';
@@ -23,6 +24,13 @@ import QuotaInspector from './components/views/QuotaInspector';
 
 export default function App() {
   const engine = useAppEngine();
+  const [showShutdownModal, setShowShutdownModal] = React.useState(false);
+
+  React.useEffect(() => {
+    const handleOpen = () => setShowShutdownModal(true);
+    window.addEventListener('mythic_open_shutdown_modal', handleOpen);
+    return () => window.removeEventListener('mythic_open_shutdown_modal', handleOpen);
+  }, []);
 
   // Unified check for modes that use the standard Studio Layout (Canvas + Bottom Panels)
   const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch'].includes(engine.mode);
@@ -30,6 +38,11 @@ export default function App() {
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans selection:bg-purple-500 selection:text-white">
       
+      <ShutdownModal
+        isOpen={showShutdownModal}
+        onClose={() => setShowShutdownModal(false)}
+      />
+
       <ExportDialog 
         isOpen={engine.showExport} 
         onClose={() => engine.setShowExport(false)} 
@@ -86,6 +99,7 @@ export default function App() {
         setMode={engine.setMode}
         showHistory={engine.showHistory}
         setShowHistory={engine.setShowHistory}
+        onOpenShutdown={() => setShowShutdownModal(true)}
       />
 
       {/* Main Content Area */}
@@ -97,7 +111,13 @@ export default function App() {
         ) : (
           /* PROJECT VIEWS */
           <>
-             {engine.mode === 'dashboard' && <Dashboard history={engine.history} onNavigate={engine.setMode} />}
+             {engine.mode === 'dashboard' && (
+               <Dashboard 
+                 history={engine.history} 
+                 onNavigate={engine.setMode} 
+                 onOpenShutdown={() => setShowShutdownModal(true)} 
+               />
+             )}
              {engine.mode === 'library' && <Library history={engine.history} onRestore={engine.handleRestore} />}
              {engine.mode === 'downloads' && <Downloads exportHistory={engine.exports.exportHistory} onDelete={engine.exports.handleDeleteExport} onDownloadAgain={engine.exports.handleDownloadAgain} />}
              {engine.mode === 'style-library' && (
