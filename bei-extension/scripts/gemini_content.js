@@ -1128,7 +1128,7 @@
       let srcUrl = '';
 
       if (typeof imgOrUrl === 'string') {
-        srcUrl = protocol.upgradeToHighResUrl(imgOrUrl);
+        srcUrl = imgOrUrl;
         if (imgOrUrl.startsWith('data:image')) {
           finalData = imgOrUrl;
         } else {
@@ -1140,7 +1140,7 @@
         }
       } else {
         const rawSrc = imgOrUrl.currentSrc || imgOrUrl.src || '';
-        srcUrl = protocol.upgradeToHighResUrl(rawSrc);
+        srcUrl = rawSrc;
         try {
           if (rawSrc.startsWith('blob:')) {
             finalData = await protocol.fetchBlobAsBase64(rawSrc);
@@ -1154,7 +1154,7 @@
         }
       }
 
-      // Final sanity check: if finalData is still not base64 and srcUrl exists, attempt one last authenticated fetch
+      // Final sanity check: if finalData is still not base64 and srcUrl exists, attempt one last fetch
       if ((!finalData || !finalData.startsWith('data:image')) && srcUrl) {
         try {
           finalData = await protocol.fetchBlobAsBase64(srcUrl);
@@ -1165,7 +1165,15 @@
       const grid = protocol.detectCandidateGrid ? protocol.detectCandidateGrid(document.body) : null;
       const candidates = grid && grid.urls && grid.urls.length > 0 ? grid.urls : undefined;
 
-      console.log(`[MythicFrame BEI] Successfully captured Gemini high-res image for job ${jobId}`);
+      const isBase64 = typeof finalData === 'string' && finalData.startsWith('data:image');
+      const retrievalMethod = isBase64 ? 'in_page_converted' : 'raw_url_passed';
+
+      reportProgress(jobId, 'payload_ready', isBase64 
+        ? `Asset captured as Base64 Data URI (${Math.round(finalData.length / 1024)} KB). Dispatching...`
+        : `Asset captured as direct URL. Dispatching for worker conversion...`
+      );
+
+      console.log(`[MythicFrame BEI] Captured Gemini image for job ${jobId} (format: ${isBase64 ? 'base64' : 'url'}, size: ${finalData.length})`);
       try {
         chrome.runtime.sendMessage({
           type: 'GENERATION_COMPLETED',
@@ -1177,7 +1185,10 @@
               srcUrl,
               width: width || 1024,
               height: height || 1024,
-              candidates
+              candidates,
+              retrievalMethod,
+              imageFormat: isBase64 ? 'base64' : 'url',
+              imageSize: finalData.length
             }
           }
         });

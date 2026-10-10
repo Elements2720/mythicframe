@@ -228,7 +228,7 @@
       if (!imgElement) return '';
       const rawSrc = imgElement.currentSrc || imgElement.src || '';
       
-      // Attempt 1: Canvas export
+      // Attempt 1: Canvas export on the live element
       try {
         const canvas = document.createElement('canvas');
         canvas.width = imgElement.naturalWidth || imgElement.width || 1024;
@@ -242,14 +242,52 @@
           }
         }
       } catch (err) {
-        console.debug('[MythicBEI] Canvas export notice (likely CORS), falling back to in-page authenticated fetch:', err);
+        console.debug('[MythicBEI] Canvas export notice, falling back to multi-tier fetch/conversion:', err);
       }
 
-      // Attempt 2: In-page authenticated blob fetch (inherits Google session cookies)
+      // Attempt 2: Offscreen image with crossOrigin = 'anonymous' + canvas export
+      if (rawSrc && (rawSrc.startsWith('http://') || rawSrc.startsWith('https://'))) {
+        try {
+          const offscreenDataUrl = await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            const timer = setTimeout(() => reject(new Error('timeout')), 3000);
+            img.onload = () => {
+              clearTimeout(timer);
+              try {
+                const c = document.createElement('canvas');
+                c.width = img.naturalWidth || 1024;
+                c.height = img.naturalHeight || 1024;
+                const ctx = c.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0);
+                  resolve(c.toDataURL('image/png'));
+                } else {
+                  reject(new Error('No canvas context'));
+                }
+              } catch (e) {
+                reject(e);
+              }
+            };
+            img.onerror = () => {
+              clearTimeout(timer);
+              reject(new Error('Failed to load image with anonymous CORS'));
+            };
+            img.src = rawSrc;
+          });
+          if (offscreenDataUrl && offscreenDataUrl.startsWith('data:image') && offscreenDataUrl.length > 512) {
+            return offscreenDataUrl;
+          }
+        } catch (offscreenErr) {
+          console.debug('[MythicBEI] Offscreen anonymous CORS notice:', offscreenErr);
+        }
+      }
+
+      // Attempt 3: Multi-tier fetchBlobAsBase64
       if (rawSrc) {
         try {
           const fetched = await this.fetchBlobAsBase64(rawSrc);
-          if (fetched && fetched.startsWith('data:image') && fetched.length > 1024) {
+          if (fetched && fetched.startsWith('data:image') && fetched.length > 512) {
             return fetched;
           }
         } catch (fetchErr) {
@@ -263,41 +301,70 @@
 
     async fetchBlobAsBase64(url) {
       if (!url) return '';
-      const targetUrl = this.upgradeToHighResUrl(url);
+      if (url.startsWith('data:image')) return url;
 
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          let res = null;
+      const upgradedUrl = this.upgradeToHighResUrl(url);
+      const urlCandidates = Array.from(new Set([upgradedUrl, url].filter(Boolean)));
+
+      for (const targetUrl of urlCandidates) {
+        for (let attempt = 1; attempt <= 2; attempt++) {
           try {
-            res = await fetch(targetUrl);
-          } catch (e1) {
+            let res = null;
             try {
-              res = await fetch(targetUrl, { credentials: 'include' });
-            } catch (e2) {}
-          }
+              res = await fetch(targetUrl, { mode: 'cors' });
+            } catch (e1) {
+              try {
+                res = await fetch(targetUrl);
+              } catch (e2) {}
+            }
 
-          if (res && res.ok) {
-            const mime = res.headers.get('content-type') || 'image/png';
-            const buffer = await res.arrayBuffer();
-            const bytes = new Uint8Array(buffer);
-            let binary = '';
-            const len = bytes.byteLength;
-            const chunkSize = 8192;
-            for (let i = 0; i < len; i += chunkSize) {
-              const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
-              binary += String.fromCharCode.apply(null, chunk);
+            if (res && res.ok) {
+              const mime = res.headers.get('content-type') || 'image/png';
+              const buffer = await res.arrayBuffer();
+              const bytes = new Uint8Array(buffer);
+              let binary = '';
+              const len = bytes.byteLength;
+              const chunkSize = 8192;
+              for (let i = 0; i < len; i += chunkSize) {
+                const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+                binary += String.fromCharCode.apply(null, chunk);
+              }
+              const dataUrl = `data:${mime};base64,${btoa(binary)}`;
+              if (dataUrl && dataUrl.startsWith('data:image') && dataUrl.length > 512) {
+                return dataUrl;
+              }
             }
-            const dataUrl = `data:${mime};base64,${btoa(binary)}`;
-            if (dataUrl && dataUrl.startsWith('data:image') && dataUrl.length > 512) {
-              return dataUrl;
-            }
+          } catch (e) {
+            console.debug(`[MythicBEI] fetchBlobAsBase64 attempt ${attempt} for ${targetUrl.substring(0, 50)} notice:`, e);
           }
-        } catch (e) {
-          console.debug(`[MythicBEI] fetchBlobAsBase64 attempt ${attempt} notice:`, e);
+          await new Promise(r => setTimeout(r, 200 * attempt));
         }
-        await new Promise(r => setTimeout(r, 300 * attempt));
       }
-      return targetUrl;
+
+      // Attempt background service worker delegation (service worker has extension host permissions)
+      if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+        try {
+          const bgResult = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+              type: 'CONVERT_URL_TO_BASE64',
+              data: { url }
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                resolve(null);
+              } else {
+                resolve(response);
+              }
+            });
+          });
+          if (bgResult && bgResult.dataUrl && bgResult.dataUrl.startsWith('data:image') && bgResult.dataUrl.length > 512) {
+            return bgResult.dataUrl;
+          }
+        } catch (bgErr) {
+          console.debug('[MythicBEI] Background delegation notice:', bgErr);
+        }
+      }
+
+      return upgradedUrl || url;
     }
   };
 

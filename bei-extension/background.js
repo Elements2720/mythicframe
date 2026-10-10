@@ -1233,6 +1233,42 @@ async function handleBridgeCommand(msg) {
   }
 }
 
+async function fetchUrlAsBase64(url) {
+  if (!url || typeof url !== 'string') return '';
+  if (url.startsWith('data:image')) return url;
+
+  const upgradedUrl = protocol.upgradeToHighResUrl ? protocol.upgradeToHighResUrl(url) : url;
+  const candidates = Array.from(new Set([upgradedUrl, url].filter(Boolean)));
+
+  for (const targetUrl of candidates) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetch(targetUrl);
+        if (res.ok) {
+          const mime = res.headers.get('content-type') || 'image/png';
+          const buffer = await res.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          const len = bytes.byteLength;
+          const chunkSize = 8192;
+          for (let i = 0; i < len; i += chunkSize) {
+            const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+            binary += String.fromCharCode.apply(null, chunk);
+          }
+          const dataUrl = `data:${mime};base64,${btoa(binary)}`;
+          if (dataUrl && dataUrl.startsWith('data:image') && dataUrl.length > 512) {
+            return dataUrl;
+          }
+        }
+      } catch (fetchErr) {
+        console.warn(`[MythicFrame BEI Worker] Fetch attempt ${attempt} for ${targetUrl.substring(0, 50)} notice:`, fetchErr);
+      }
+      await new Promise(r => setTimeout(r, 200 * attempt));
+    }
+  }
+  return url;
+}
+
 // Listen for messages from content scripts and extension popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "GENERATION_PROGRESS") {
@@ -1240,6 +1276,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       ws.send(JSON.stringify(message));
     }
     return;
+  }
+
+  if (message.type === "CONVERT_URL_TO_BASE64") {
+    const url = message.data?.url || message.url;
+    fetchUrlAsBase64(url).then(dataUrl => {
+      sendResponse({ success: Boolean(dataUrl && dataUrl.startsWith('data:image')), dataUrl: dataUrl || url });
+    }).catch(err => {
+      sendResponse({ success: false, dataUrl: url, error: err?.message || String(err) });
+    });
+    return true;
   }
 
   if (message.type === "GENERATION_COMPLETED") {
@@ -1253,40 +1299,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     processNextInQueue(jobTarget, jobSlot);
 
     (async () => {
-      // High-Res URL fetch: Ensure background worker fetches the upgraded high-res URL when converting to Base64 Data URI
-      if (typeof image === 'string' && (image.startsWith('http://') || image.startsWith('https://'))) {
-        const highResUrl = protocol.upgradeToHighResUrl ? protocol.upgradeToHighResUrl(image) : image;
-        console.log(`[MythicFrame BEI] Background worker fetching high-res image URL: ${highResUrl.substring(0, 80)}...`);
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            const res = await fetch(highResUrl);
-            if (res.ok) {
-              const mime = res.headers.get('content-type') || 'image/png';
-              const buffer = await res.arrayBuffer();
-              const bytes = new Uint8Array(buffer);
-              let binary = '';
-              const len = bytes.byteLength;
-              const chunkSize = 8192;
-              for (let i = 0; i < len; i += chunkSize) {
-                const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
-                binary += String.fromCharCode.apply(null, chunk);
-              }
-              const dataUrl = `data:${mime};base64,${btoa(binary)}`;
-              if (dataUrl && dataUrl.startsWith('data:image') && dataUrl.length > 512) {
-                image = dataUrl;
-                console.log(`[MythicFrame BEI] High-res image converted to Data URI in worker (${Math.round(image.length / 1024)} KB)`);
-                break;
-              }
-            }
-          } catch (fetchErr) {
-            console.warn(`[MythicFrame BEI] Background fetch attempt ${attempt} notice:`, fetchErr);
-          }
-          await new Promise(r => setTimeout(r, 400 * attempt));
+      let finalImage = image;
+      let retrievalMethod = metadata?.retrievalMethod || 'in_page';
+
+      // High-Res URL fetch: Ensure background worker converts remote URL to Base64 using extension privileges
+      if (typeof finalImage === 'string' && (finalImage.startsWith('http://') || finalImage.startsWith('https://'))) {
+        console.log(`[MythicFrame BEI] Background worker converting remote image URL: ${finalImage.substring(0, 80)}...`);
+        const b64 = await fetchUrlAsBase64(finalImage);
+        if (b64 && b64.startsWith('data:image') && b64.length > 512) {
+          finalImage = b64;
+          retrievalMethod = 'service_worker_fetch';
+          console.log(`[MythicFrame BEI] Service worker successfully converted image to Base64 (${Math.round(finalImage.length / 1024)} KB)`);
+        } else {
+          retrievalMethod = 'raw_url_fallback';
         }
+      } else if (typeof finalImage === 'string' && finalImage.startsWith('data:image')) {
+        retrievalMethod = metadata?.retrievalMethod || 'in_page_data_uri';
       }
 
       // Upgrade any candidate or source URLs in metadata
       if (metadata) {
+        metadata.retrievalMethod = retrievalMethod;
+        metadata.imageFormat = (typeof finalImage === 'string' && finalImage.startsWith('data:')) ? 'base64' : 'url';
+        metadata.imageSize = typeof finalImage === 'string' ? finalImage.length : 0;
         if (metadata.srcUrl && protocol.upgradeToHighResUrl) {
           metadata.srcUrl = protocol.upgradeToHighResUrl(metadata.srcUrl);
         }
@@ -1300,7 +1335,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           type: "GENERATION_COMPLETED",
           data: {
             jobId,
-            image,
+            image: finalImage,
             target,
             metadata
           }

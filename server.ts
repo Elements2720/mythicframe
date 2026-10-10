@@ -80,6 +80,28 @@ async function startServer() {
     res.json({ success: true, progress });
   });
 
+  app.get("/api/bei/payloads", (req, res) => {
+    const jobId = req.query.jobId as string | undefined;
+    if (jobId) {
+      const payload = (beiBridge as any).getPayloadStatus(jobId);
+      if (payload) return res.json({ success: true, payload });
+      return res.status(404).json({ success: false, error: "Payload not found" });
+    }
+    const payloads = (beiBridge as any).getPayloadHistory();
+    res.json({ success: true, count: payloads.length, payloads });
+  });
+
+  app.get("/api/bei/payload-status", (req, res) => {
+    const jobId = req.query.jobId as string | undefined;
+    if (jobId) {
+      const payload = (beiBridge as any).getPayloadStatus(jobId);
+      if (payload) return res.json({ success: true, payload });
+      return res.status(404).json({ success: false, error: "Payload not found" });
+    }
+    const payloads = (beiBridge as any).getPayloadHistory();
+    res.json({ success: true, count: payloads.length, payloads });
+  });
+
   app.post("/api/bei/cancel", (req, res) => {
     const { jobId } = req.body;
     if (jobId && (beiBridge as any).pendingJobs?.has(jobId)) {

@@ -19,6 +19,22 @@ export interface BEIAccountInfo {
   tier?: 'free' | 'pro';
 }
 
+export interface BEIPayloadStatus {
+  jobId: string;
+  target: string;
+  status: 'dispatched' | 'tab_routed' | 'generating' | 'capturing_image' | 'payload_ready' | 'completed' | 'failed' | 'cancelled';
+  updatedAt: number;
+  createdAt: number;
+  promptExcerpt: string;
+  retrievalMethod?: string;
+  imageFormat?: 'base64' | 'url' | 'none';
+  imageSize?: number;
+  srcUrl?: string;
+  candidatesCount?: number;
+  error?: string;
+  steps: Array<{ step: string; detail: string; timestamp: number }>;
+}
+
 export interface BEIBridgeStatus {
   connected: boolean;
   port: number;
@@ -28,6 +44,7 @@ export interface BEIBridgeStatus {
   activeJobsCount: number;
   lastHeartbeat?: number;
   projectDir?: string;
+  recentPayloads?: BEIPayloadStatus[];
 }
 
 interface PendingJob {
@@ -102,6 +119,7 @@ export class BEIBridgeServer {
   private projectDir = process.cwd();
   public latestProgress: Record<string, { step: string; detail: string; timestamp: number }> = {};
   public globalProgress: { step: string; detail: string; timestamp: number } | null = null;
+  public payloadHistory: Map<string, BEIPayloadStatus> = new Map();
   private progressListeners: Set<(data: any) => void> = new Set();
   private eventResponses: Set<http.ServerResponse> = new Set();
 
@@ -115,6 +133,14 @@ export class BEIBridgeServer {
 
   public isConnected(): boolean {
     return this.extensionSocket !== null && this.extensionSocket.readyState === WebSocket.OPEN;
+  }
+
+  public getPayloadHistory(): BEIPayloadStatus[] {
+    return Array.from(this.payloadHistory.values()).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  public getPayloadStatus(jobId: string): BEIPayloadStatus | undefined {
+    return this.payloadHistory.get(jobId);
   }
 
   public onProgress(cb: (data: any) => void) {
@@ -169,6 +195,7 @@ export class BEIBridgeServer {
       activeJobsCount: this.pendingJobs.size,
       lastHeartbeat: this.lastHeartbeat,
       projectDir: this.projectDir,
+      recentPayloads: Array.from(this.payloadHistory.values()).sort((a, b) => b.createdAt - a.createdAt).slice(0, 10),
     };
   }
 
@@ -204,6 +231,20 @@ export class BEIBridgeServer {
           const progress = jobId ? this.latestProgress[jobId] : this.globalProgress;
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, progress }));
+          return;
+        }
+
+        if (req.method === 'GET' && (url.pathname === '/api/bei/payloads' || url.pathname === '/api/bei/payload-status')) {
+          const jobId = url.searchParams.get('jobId');
+          if (jobId) {
+            const payload = this.payloadHistory.get(jobId);
+            res.writeHead(payload ? 200 : 404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: Boolean(payload), payload }));
+          } else {
+            const list = Array.from(this.payloadHistory.values()).sort((a, b) => b.createdAt - a.createdAt);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, count: list.length, payloads: list }));
+          }
           return;
         }
 
@@ -372,6 +413,18 @@ export class BEIBridgeServer {
 
     if (type === 'GENERATION_PROGRESS') {
       const jobId = data?.jobId;
+      if (jobId) {
+        const payloadRecord = this.payloadHistory.get(jobId);
+        if (payloadRecord) {
+          payloadRecord.status = data?.step || payloadRecord.status;
+          payloadRecord.updatedAt = Date.now();
+          payloadRecord.steps.push({
+            step: data?.step || 'progress',
+            detail: data?.detail || '',
+            timestamp: data?.timestamp || Date.now()
+          });
+        }
+      }
       if (jobId && this.pendingJobs.has(jobId)) {
         const job = this.pendingJobs.get(jobId)!;
         clearTimeout(job.timeoutTimer);
@@ -403,12 +456,13 @@ export class BEIBridgeServer {
 
         // Bulletproof server-side fallback: If image is a remote URL, fetch and convert to base64 Data URI
         (async () => {
+          let converted = false;
           if (typeof image === 'string' && (image.startsWith('http://') || image.startsWith('https://'))) {
             try {
               console.log(`[MythicFrame BEI Bridge] Converting image URL to Base64 data URI: ${image.substring(0, 80)}...`);
               const imgRes = await fetch(image, {
                 headers: {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
                   'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
                 }
               });
@@ -417,6 +471,7 @@ export class BEIBridgeServer {
                 const mime = imgRes.headers.get('content-type') || 'image/png';
                 const b64 = Buffer.from(arrayBuffer).toString('base64');
                 image = `data:${mime};base64,${b64}`;
+                converted = true;
                 console.log(`[MythicFrame BEI Bridge] Image converted to Base64 successfully (${Math.round(image.length / 1024)} KB)`);
               } else {
                 console.warn(`[MythicFrame BEI Bridge] Fetching image returned HTTP ${imgRes.status}`);
@@ -427,17 +482,36 @@ export class BEIBridgeServer {
           }
 
           // Image validation: Accept valid Data URIs OR valid remote image URLs
-          const isValidImage = typeof image === 'string' && (
-            (image.startsWith('data:image') && image.length > 512) ||
-            ((image.startsWith('http://') || image.startsWith('https://')) && image.length > 15)
-          );
+          const isDataUri = typeof image === 'string' && image.startsWith('data:image') && image.length > 512;
+          const isRemoteUrl = typeof image === 'string' && (image.startsWith('http://') || image.startsWith('https://')) && image.length > 15;
+          const isValidImage = isDataUri || isRemoteUrl;
+
+          // Update payload tracking
+          const payloadRecord = this.payloadHistory.get(jobId);
+          if (payloadRecord) {
+            payloadRecord.updatedAt = Date.now();
+            payloadRecord.status = isValidImage ? 'completed' : 'failed';
+            payloadRecord.imageFormat = isDataUri ? 'base64' : (isRemoteUrl ? 'url' : 'none');
+            payloadRecord.imageSize = typeof image === 'string' ? image.length : 0;
+            payloadRecord.srcUrl = data.metadata?.srcUrl || (isRemoteUrl ? image : undefined);
+            payloadRecord.retrievalMethod = converted ? 'server_fetch' : (data.metadata?.retrievalMethod || (isDataUri ? 'extension_base64' : 'remote_url'));
+            payloadRecord.candidatesCount = Array.isArray(data.metadata?.candidates) ? data.metadata.candidates.length : 0;
+            payloadRecord.steps.push({
+              step: isValidImage ? 'completed' : 'failed',
+              detail: isValidImage 
+                ? `Payload validated successfully (format: ${payloadRecord.imageFormat}, size: ${Math.round(payloadRecord.imageSize / 1024)} KB, method: ${payloadRecord.retrievalMethod})`
+                : 'Payload validation failed: returned image data is empty or invalid format.',
+              timestamp: Date.now()
+            });
+          }
+
           if (!isValidImage) {
             console.error(`[MythicFrame BEI Bridge] Corrupted image result for job ${jobId}. Image data is empty or invalid.`);
             job.reject(new Error('Image generated in browser, but asset retrieval failed or returned corrupted data. Please click Generate to retry.'));
             return;
           }
 
-          console.log(`[MythicFrame BEI Bridge] Job ${jobId} completed successfully!`);
+          console.log(`[MythicFrame BEI Bridge] Job ${jobId} completed successfully! (format: ${isDataUri ? 'base64' : 'url'}, method: ${payloadRecord?.retrievalMethod || 'unknown'})`);
           this.broadcastProgress({
             jobId,
             step: 'completed',
@@ -452,7 +526,11 @@ export class BEIBridgeServer {
               target: job.target,
               fullPrompt: data.fullPrompt || job.prompt,
               aspectRatio: data.aspectRatio,
-              accountSlot: data.accountSlot
+              accountSlot: data.accountSlot,
+              srcUrl: data.metadata?.srcUrl,
+              candidates: data.metadata?.candidates,
+              retrievalMethod: payloadRecord?.retrievalMethod,
+              imageFormat: isDataUri ? 'base64' : 'url'
             }
           });
         })();
@@ -484,6 +562,19 @@ export class BEIBridgeServer {
 
     if (type === 'GENERATION_FAILED') {
       const jobId = data?.jobId || data?.job_id;
+      if (jobId) {
+        const payloadRecord = this.payloadHistory.get(jobId);
+        if (payloadRecord) {
+          payloadRecord.status = 'failed';
+          payloadRecord.updatedAt = Date.now();
+          payloadRecord.error = data.error || 'Generation failed in browser tab';
+          payloadRecord.steps.push({
+            step: 'failed',
+            detail: payloadRecord.error,
+            timestamp: Date.now()
+          });
+        }
+      }
       if (jobId && this.pendingJobs.has(jobId)) {
         const job = this.pendingJobs.get(jobId)!;
         clearTimeout(job.timeoutTimer);
@@ -503,6 +594,18 @@ export class BEIBridgeServer {
 
     if (type === 'GENERATION_CANCELLED') {
       const jobId = data?.jobId || data?.job_id;
+      if (jobId) {
+        const payloadRecord = this.payloadHistory.get(jobId);
+        if (payloadRecord) {
+          payloadRecord.status = 'cancelled';
+          payloadRecord.updatedAt = Date.now();
+          payloadRecord.steps.push({
+            step: 'cancelled',
+            detail: data.reason || 'Generation cancelled manually by user in browser tab',
+            timestamp: Date.now()
+          });
+        }
+      }
       if (jobId && this.pendingJobs.has(jobId)) {
         const job = this.pendingJobs.get(jobId)!;
         clearTimeout(job.timeoutTimer);
@@ -570,6 +673,25 @@ export class BEIBridgeServer {
             timeoutTimer
           });
         });
+
+        // Initialize payload tracking record
+        this.payloadHistory.set(jobId, {
+          jobId,
+          target,
+          status: 'dispatched',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          promptExcerpt: (prompt || '').substring(0, 150),
+          steps: [{
+            step: 'dispatched',
+            detail: `Dispatched generation request to Chrome Extension (${target}, slot ${accountSlot})...`,
+            timestamp: Date.now()
+          }]
+        });
+        if (this.payloadHistory.size > 50) {
+          const oldestKey = this.payloadHistory.keys().next().value;
+          if (oldestKey) this.payloadHistory.delete(oldestKey);
+        }
 
         // Broadcast initial dispatch progress
         this.broadcastProgress({

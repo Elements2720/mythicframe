@@ -584,6 +584,24 @@ export const initBEIProgressStream = (): void => {
   tryConnect(0);
 };
 
+export const getBEIPayloads = async (jobId?: string): Promise<any> => {
+  const config = getBEIConfig();
+  const port = config.port || DEFAULT_BEI_PORT;
+  const urlParam = jobId ? `?jobId=${encodeURIComponent(jobId)}` : '';
+  const urls = [
+    `http://127.0.0.1:${port}/api/bei/payloads${urlParam}`,
+    `/api/bei/payloads${urlParam}`
+  ];
+
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) return await resp.json();
+    } catch (e) {}
+  }
+  return { success: false, payloads: [] };
+};
+
 if (typeof window !== 'undefined') {
   setTimeout(() => initBEIProgressStream(), 1000);
 }
