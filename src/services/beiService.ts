@@ -20,7 +20,35 @@ export const DEFAULT_BEI_CONFIG: BEIConfig = {
   askQualityPreference: 'once',
   accountDispatchMode: 'single',
   askAccountDispatchPreference: 'once',
+  preferredBrowser: 'auto',
 };
+
+let cachedDetectedHostBrowser: 'chrome' | 'brave' | 'edge' = 'chrome';
+if (typeof window !== 'undefined') {
+  try {
+    const nav = window.navigator as any;
+    if (nav.brave && typeof nav.brave.isBrave === 'function') {
+      nav.brave.isBrave().then((isBrave: boolean) => {
+        if (isBrave) cachedDetectedHostBrowser = 'brave';
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
+export function getDetectedHostBrowser(): 'chrome' | 'brave' | 'edge' {
+  if (typeof window === 'undefined') return 'chrome';
+  const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '';
+  if (ua.includes('Edg/')) return 'edge';
+  return cachedDetectedHostBrowser;
+}
+
+export function getEffectiveBEIBrowser(): 'chrome' | 'brave' | 'edge' {
+  const config = getBEIConfig();
+  if (config.preferredBrowser && config.preferredBrowser !== 'auto') {
+    return config.preferredBrowser;
+  }
+  return getDetectedHostBrowser();
+}
 
 export const BEI_PRIORITY_ORDER_KEY = 'mythic_bei_priority_order';
 
@@ -297,6 +325,8 @@ export interface BEIStatusResponse {
   activeJobsCount?: number;
   projectDir?: string;
   error?: string;
+  connectedBrowsers?: Array<{ browser: string; browserName: string; tabsCount: number; accountsCount: number; lastSeen: number }>;
+  activeBrowser?: string;
 }
 
 export const openBEITab = async (
@@ -323,7 +353,8 @@ export const openBEITab = async (
           target, 
           accountSlot,
           tabMode: chosenTabMode,
-          bringTabToFront: chosenBringFront
+          bringTabToFront: chosenBringFront,
+          preferredBrowser: getEffectiveBEIBrowser()
         }),
       });
       if (resp.ok) {
@@ -526,6 +557,7 @@ export const generateWithBEI = async (
       chatSessionMode,
       tabSessionId: params.tabSessionId,
       images: processedImages,
+      preferredBrowser: getEffectiveBEIBrowser(),
     };
 
     if (params.signal) {
@@ -767,7 +799,8 @@ export const generateBEIText = async (prompt: string, timeoutSeconds = 60, image
     prompt,
     target: config.target,
     accountSlot: config.accountSlot || 0,
-    timeoutSeconds
+    timeoutSeconds,
+    preferredBrowser: getEffectiveBEIBrowser()
   };
 
   let lastError: any = null;
@@ -806,7 +839,8 @@ export const resetBEISession = async (tabSessionId?: string): Promise<boolean> =
         body: JSON.stringify({
           target: config.target,
           accountSlot: config.accountSlot || 0,
-          tabSessionId
+          tabSessionId,
+          preferredBrowser: getEffectiveBEIBrowser()
         })
       });
       if (resp.ok) return true;
@@ -828,7 +862,9 @@ export const scanBEIAccounts = async (): Promise<boolean> => {
       const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({
+          preferredBrowser: getEffectiveBEIBrowser()
+        })
       });
       if (resp.ok) return true;
     } catch (e) {}

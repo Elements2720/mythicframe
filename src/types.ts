@@ -57,6 +57,7 @@ export interface BEIConfig {
   askQualityPreference?: 'always' | 'once';
   accountDispatchMode?: 'single' | 'multi';
   askAccountDispatchPreference?: 'always' | 'once';
+  preferredBrowser?: 'auto' | 'chrome' | 'brave' | 'edge';
 }
 
 export interface AIConfig {

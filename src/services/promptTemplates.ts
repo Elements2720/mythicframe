@@ -13,10 +13,32 @@ import {
   PoseData,
   MapGridConfig,
   UIMode,
-  SpriteStripConfig
+  SpriteStripConfig,
+  CharacterToolState
 } from "../types.js";
 import { CHIBI_STYLE_CONFIG } from "../constants/gacha.js";
 import { DEFAULT_BACKGROUND_CONFIG } from "../constants/backgrounds.js";
+
+/**
+ * Helper to detect explicit camera framing keywords directly from the prompt text
+ */
+export const detectPromptFraming = (prompt: string): 'head-only' | 'bust' | 'waist-up' | 'full-body' | null => {
+  if (!prompt) return null;
+  const p = prompt.toLowerCase();
+  if (/(close[\s-]?up|headshot|head[\s-]?shot|portrait|profile pic|profile picture|avatar|face\b)/i.test(p)) {
+    return 'head-only';
+  }
+  if (/(bust[\s-]?shot|chest[\s-]?up|upper torso)/i.test(p)) {
+    return 'bust';
+  }
+  if (/(waist[\s-]?up|medium shot|half[\s-]?body)/i.test(p)) {
+    return 'waist-up';
+  }
+  if (/(full[\s-]?body|head to toe|entire character)/i.test(p)) {
+    return 'full-body';
+  }
+  return null;
+};
 
 /**
  * Helper to detect if a prompt is likely describing a character
@@ -313,7 +335,8 @@ export const buildIllustrationPrompt = (
   chibiConfig?: ChibiConfig,
   viewpoint?: string,
   noCharacters?: boolean,
-  framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only'
+  framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only',
+  characterTool?: CharacterToolState
 ): { textPrompt: string; referenceParts: { text?: string }[] } => {
   let fullPrompt = "";
 
@@ -349,8 +372,28 @@ export const buildIllustrationPrompt = (
     else if (viewpoint === 'cinematic') fullPrompt += `- Use dramatic cinematic framing and wide-angle perspective.\n`;
   }
 
-  if (framing && characterLikely) {
-    switch (framing) {
+  const detectedFraming = detectPromptFraming(basePrompt);
+  let effectiveFraming: 'full-body' | 'waist-up' | 'bust' | 'head-only' | null = null;
+
+  if (characterTool?.enabled) {
+    effectiveFraming = framing || detectedFraming || 'full-body';
+  } else if (detectedFraming) {
+    effectiveFraming = detectedFraming;
+  } else if (framing && framing !== 'full-body') {
+    effectiveFraming = framing;
+  }
+
+  if (characterTool?.enabled) {
+    if (characterTool.poseDescription && characterTool.poseDescription.trim()) {
+      fullPrompt += `\n[CHARACTER POSE & ACTION]: ${characterTool.poseDescription.trim()}\n`;
+    }
+    if (characterTool.lookTarget) {
+      fullPrompt += `\n[EYE GAZE & LOOK DIRECTION]: The subject's eyes and head MUST look towards canvas target point (${characterTool.lookTarget.x.toFixed(1)}%, ${characterTool.lookTarget.y.toFixed(1)}%).\n`;
+    }
+  }
+
+  if (effectiveFraming && characterLikely) {
+    switch (effectiveFraming) {
       case 'waist-up':
         fullPrompt += `\n[CRITICAL OVERRIDE - FRAMING]: WAIST-UP SHOT. Waist-up portrait: the frame MUST cut at the waist. The character is cropped at the hips. Legs, knees, and feet must NOT be visible under any circumstance. Waist-up character portrait for dialogue UI. STRICT framing rules: Crop exactly at the waist (hips level). No legs, knees, or feet visible. Upper body fills most of the frame (60-80%). Head and torso are the focus. Composition: Centered or slightly offset character. Clear silhouette for UI readability. DO NOT: Do not generate full body, Do not zoom out to include legs, Do not keep original full-body proportions.\n`;
         break;
@@ -862,6 +905,7 @@ export interface AssemblePromptParams {
   mapGridConfig?: MapGridConfig;
   spriteStripConfig?: SpriteStripConfig;
   aspectRatio?: string;
+  characterTool?: CharacterToolState;
 }
 
 export interface AssembledMythicPromptResult {
@@ -926,7 +970,8 @@ export const assembleFullMythicPrompt = (params: AssemblePromptParams): Assemble
       params.chibiConfig,
       params.viewpoint,
       params.noCharacters,
-      params.framing
+      params.framing,
+      params.characterTool
     );
     textPrompt = built.textPrompt;
     referenceParts = built.referenceParts;

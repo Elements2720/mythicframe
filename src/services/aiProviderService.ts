@@ -1,4 +1,4 @@
-import { AIProvider, AIConfig, AspectRatio, ImageSize, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, PoseData, MapGridConfig, SpriteStripConfig } from '../types';
+import { AIProvider, AIConfig, AspectRatio, ImageSize, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, PoseData, MapGridConfig, SpriteStripConfig, CharacterToolState } from '../types';
 import { generateIllustration, editImage, checkApiKey as checkGeminiApiKey } from './geminiService';
 import { generateOpenAIImage, getOpenAIApiKey } from './openAIService';
 import { generateOpenCodeImage, getOpenCodeConfig } from './openCodeService';
@@ -73,6 +73,7 @@ export interface UnifiedGenerationParams {
   chatSessionMode?: 'temporary_chat' | 'same_chat' | 'new_chat';
   tabSessionId?: string;
   hasHoldingImages?: boolean;
+  characterTool?: CharacterToolState;
 }
 
 export const generateWithActiveProvider = async (
@@ -148,7 +149,8 @@ export const generateWithActiveProvider = async (
           params.noCharacters,
           params.framing,
           params.seed,
-          params.spriteStripConfig
+          params.spriteStripConfig,
+          params.characterTool
         );
         break;
       }

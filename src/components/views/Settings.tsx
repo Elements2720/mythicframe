@@ -12,7 +12,8 @@ import {
   getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAccounts, 
   updateBEIAccountCustomInfo, BEIStatusResponse, DEFAULT_BEI_PORT,
   getBEIAccountPriorityOrder, setBEIAccountPriorityOrder, sortTabsByPriorityOrder, 
-  getTabAccountKey, BEITabDetail 
+  getTabAccountKey, BEITabDetail,
+  getDetectedHostBrowser, getEffectiveBEIBrowser 
 } from '../../services/beiService';
 import { getBEIAccountQuota, resetBEISlotCooldown } from '../../services/quotaTrackerService';
 import { getIncognitoMode, setIncognitoMode, formatDisplayEmail } from '../../services/privacyService';
@@ -1735,6 +1736,115 @@ const Settings: React.FC<SettingsProps> = ({
                             </div>
                          </div>
                       )}
+
+                      {/* Target Browser Routing */}
+                      <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-4 space-y-3">
+                         <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                               <i className="fa-solid fa-compass text-purple-400 text-sm" />
+                               <div>
+                                  <span className="text-xs font-bold text-slate-200">Target Browser Routing</span>
+                                  <p className="text-[11px] text-slate-400">Select which browser executes BEI requests when multiple browsers are open.</p>
+                               </div>
+                            </div>
+                            {beiStatus?.connectedBrowsers && beiStatus.connectedBrowsers.length > 0 && (
+                               <div className="flex items-center gap-1.5 flex-wrap">
+                                  {beiStatus.connectedBrowsers.map((b) => (
+                                     <span
+                                        key={b.browser}
+                                        className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/70 border border-purple-500/40 text-purple-300 font-medium flex items-center gap-1 shadow-sm"
+                                        title={`${b.browserName} (${b.count} extension socket${b.count > 1 ? 's' : ''})`}
+                                     >
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                        <span>{b.browserName}</span>
+                                     </span>
+                                  ))}
+                               </div>
+                            )}
+                         </div>
+
+                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                            <button
+                               type="button"
+                               onClick={() => handleUpdateBEIConfig({ preferredBrowser: 'auto' })}
+                               className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                                  (beiConfigState.preferredBrowser || 'auto') === 'auto'
+                                     ? 'bg-purple-950/50 border-purple-500 text-purple-200 ring-1 ring-purple-500/50 shadow-sm'
+                                     : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-400'
+                               }`}
+                            >
+                               <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                  <span>Auto (Same Browser)</span>
+                                  {(beiConfigState.preferredBrowser || 'auto') === 'auto' && (
+                                     <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                  )}
+                               </div>
+                               <p className="text-[10px] text-slate-400">
+                                  Auto-match host ({getDetectedHostBrowser()})
+                               </p>
+                            </button>
+
+                            <button
+                               type="button"
+                               onClick={() => handleUpdateBEIConfig({ preferredBrowser: 'chrome' })}
+                               className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                                  beiConfigState.preferredBrowser === 'chrome'
+                                     ? 'bg-purple-950/50 border-purple-500 text-purple-200 ring-1 ring-purple-500/50 shadow-sm'
+                                     : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-400'
+                               }`}
+                            >
+                               <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                  <span className="flex items-center gap-1"><i className="fa-brands fa-chrome text-amber-400" /> Chrome</span>
+                                  {beiConfigState.preferredBrowser === 'chrome' && (
+                                     <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                  )}
+                               </div>
+                               <p className="text-[10px] text-slate-400">
+                                  Always route to Google Chrome
+                               </p>
+                            </button>
+
+                            <button
+                               type="button"
+                               onClick={() => handleUpdateBEIConfig({ preferredBrowser: 'brave' })}
+                               className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                                  beiConfigState.preferredBrowser === 'brave'
+                                     ? 'bg-purple-950/50 border-purple-500 text-purple-200 ring-1 ring-purple-500/50 shadow-sm'
+                                     : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-400'
+                               }`}
+                            >
+                               <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                  <span className="flex items-center gap-1"><i className="fa-solid fa-shield text-orange-400" /> Brave</span>
+                                  {beiConfigState.preferredBrowser === 'brave' && (
+                                     <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                  )}
+                               </div>
+                               <p className="text-[10px] text-slate-400">
+                                  Always route to Brave Browser
+                               </p>
+                            </button>
+
+                            <button
+                               type="button"
+                               onClick={() => handleUpdateBEIConfig({ preferredBrowser: 'edge' })}
+                               className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                                  beiConfigState.preferredBrowser === 'edge'
+                                     ? 'bg-purple-950/50 border-purple-500 text-purple-200 ring-1 ring-purple-500/50 shadow-sm'
+                                     : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-400'
+                               }`}
+                            >
+                               <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                  <span className="flex items-center gap-1"><i className="fa-brands fa-edge text-cyan-400" /> Edge</span>
+                                  {beiConfigState.preferredBrowser === 'edge' && (
+                                     <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                  )}
+                               </div>
+                               <p className="text-[10px] text-slate-400">
+                                  Always route to Microsoft Edge
+                               </p>
+                            </button>
+                         </div>
+                      </div>
 
                       {/* Browser Tab & Window Placement Settings */}
                       <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-4 space-y-4">

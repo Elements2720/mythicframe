@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { UIMode, AIProvider } from '../../types';
 import { getActiveAIProvider } from '../../services/aiProviderService';
+import { getEffectiveBEIBrowser } from '../../services/beiService';
 
 interface AppHeaderProps {
   mode: UIMode;
@@ -62,7 +63,7 @@ const AppHeader: React.FC<any> = (props) => {
                 className="px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-xs border border-slate-700/80 hover:border-purple-500/60 flex items-center gap-1.5 font-medium transition-all cursor-pointer shadow-sm group"
                 title="Click to view or switch AI Generation Engine & Model"
               >
-                {currentEngine === 'bei' && <><span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /><span className="text-cyan-300">BEI Mode (Chrome)</span></>}
+                {currentEngine === 'bei' && <><span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /><span className="text-cyan-300">BEI Mode ({getEffectiveBEIBrowser() === 'brave' ? 'Brave' : getEffectiveBEIBrowser() === 'edge' ? 'Edge' : 'Chrome'})</span></>}
                 {currentEngine === 'pollinations' && <><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /><span className="text-emerald-300">Pollinations (Free)</span></>}
                 {currentEngine === 'openai' && <><span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" /><span className="text-blue-300">OpenAI DALL-E</span></>}
                 {currentEngine === 'opencode' && <><span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /><span className="text-cyan-300">OpenCode Local</span></>}

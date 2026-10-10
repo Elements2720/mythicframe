@@ -41,6 +41,36 @@ const tabEmailsCache = new Map(); // tabId -> email string
 const knownGoogleAccounts = new Map(); // slot -> { slot, email, name }
 const inFlightTabCreations = new Map(); // target:slot -> Promise<tabId>
 
+let cachedBrowserInfo = { browser: 'chrome', browserName: 'Google Chrome' };
+async function detectExtensionBrowser() {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.brave && typeof navigator.brave.isBrave === 'function') {
+      if (await navigator.brave.isBrave()) {
+        cachedBrowserInfo = { browser: 'brave', browserName: 'Brave' };
+        return cachedBrowserInfo;
+      }
+    }
+  } catch (e) {}
+  try {
+    if (typeof chrome !== 'undefined' && ((chrome && chrome.brave) || (chrome && chrome.braveWallet))) {
+      cachedBrowserInfo = { browser: 'brave', browserName: 'Brave' };
+      return cachedBrowserInfo;
+    }
+  } catch (e) {}
+  const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '';
+  if (ua.includes('Edg/')) {
+    cachedBrowserInfo = { browser: 'edge', browserName: 'Microsoft Edge' };
+    return cachedBrowserInfo;
+  }
+  if (ua.includes('Chrome')) {
+    cachedBrowserInfo = { browser: 'chrome', browserName: 'Google Chrome' };
+    return cachedBrowserInfo;
+  }
+  cachedBrowserInfo = { browser: 'chrome', browserName: 'Google Chrome' };
+  return cachedBrowserInfo;
+}
+detectExtensionBrowser().catch(() => {});
+
 // Load saved project folder path and cached Google accounts
 let currentProjectDir = DEFAULT_PROJECT_DIR;
 if (chrome.storage && chrome.storage.local) {
@@ -292,12 +322,15 @@ function connectBridge() {
       await injectAllExistingTabs();
 
       // Report discovered tabs & detected emails to bridge
+      await detectExtensionBrowser();
       const tabs = await discoverTabs();
       ws.send(JSON.stringify({
         type: "browser_bridge_connected",
         data: {
           version: chrome.runtime?.getManifest?.()?.version || "1.2.0",
           name: "MythicFrame BEI Bridge",
+          browser: cachedBrowserInfo.browser,
+          browserName: cachedBrowserInfo.browserName,
           projectDir: currentProjectDir,
           tabs,
           accounts: Array.from(knownGoogleAccounts.values()),

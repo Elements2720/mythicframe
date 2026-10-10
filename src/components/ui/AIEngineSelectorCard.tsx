@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AIProvider, AvailableModel } from '../../types';
 import { getActiveAIProvider, setActiveAIProvider } from '../../services/aiProviderService';
 import { getPollinationsModel, setPollinationsModel, POLLINATIONS_MODELS } from '../../services/pollinationsService';
-import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAccounts, BEIStatusResponse, getSavedBEIAccounts, setBEIAccountTier, getBEIPayloads } from '../../services/beiService';
+import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAccounts, BEIStatusResponse, getSavedBEIAccounts, setBEIAccountTier, getBEIPayloads, getEffectiveBEIBrowser } from '../../services/beiService';
 import { getBEIAccountQuota } from '../../services/quotaTrackerService';
 import { getIncognitoMode, setIncognitoMode, formatDisplayEmail } from '../../services/privacyService';
 import { useLanguage } from '../../i18n/LanguageContext';
@@ -285,8 +285,10 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
             <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">BEI Web Target</span>
             <div className="flex items-center gap-1.5 text-[9px]">
               <span className={`w-1.5 h-1.5 rounded-full ${beiStatus.connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-              <span className={beiStatus.connected ? 'text-emerald-400' : 'text-amber-400'}>
-                {beiStatus.connected ? `Bridge Connected (v${beiStatus.extensionVersion || '1.0.0'})` : 'Extension Waiting'}
+              <span className={beiStatus.connected ? 'text-emerald-400 font-medium' : 'text-amber-400'}>
+                {beiStatus.connected
+                  ? `Bridge (${beiStatus.activeBrowser?.browserName || (getEffectiveBEIBrowser().charAt(0).toUpperCase() + getEffectiveBEIBrowser().slice(1))})`
+                  : 'Extension Waiting'}
               </span>
             </div>
           </div>
