@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mythic-image-gen": {
+      "command": "node",
+      "args": ["G:/AI/Projects/mythic-frame/mcp-server/index.js"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
