@@ -69,14 +69,28 @@ Because MythicFrame runs entirely on your local machine with zero external middl
 * [Node.js](https://nodejs.org/) (v18 or higher recommended)
 * [Google Chrome](https://www.google.com/chrome/) (optional, for BEI browser extension mode)
 
-### 1. Installation
+### 1-Click Automated Setup
+
+**Windows:**
+Double-click `run.bat` (or run `.\run.bat` in CMD / PowerShell). It verifies Node.js, installs dependencies, builds the MCP bundle, starts the studio server, and launches your browser automatically.
+
+**Linux / macOS:**
+```bash
+chmod +x run.sh && ./run.sh
+```
+
+---
+
+### Manual Setup
+
+1. **Clone & Install:**
 ```bash
 git clone https://github.com/VioleGracex/mythicframe.git
 cd mythicframe
 npm install
 ```
 
-### 2. Run Locally
+2. **Run Locally:**
 ```bash
 # Starts both the Vite frontend studio and the BEI local bridge server
 npm run dev
