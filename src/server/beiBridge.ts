@@ -186,6 +186,11 @@ export class BEIBridgeServer {
   }
 
   public getStatus(): BEIBridgeStatus {
+    if (this.knownTabs.length === 0 && this.isConnected()) {
+      try {
+        this.extensionSocket?.send(JSON.stringify({ type: 'LIST_TABS' }));
+      } catch (e) {}
+    }
     return {
       connected: this.isConnected(),
       port: this.port,
@@ -327,6 +332,9 @@ export class BEIBridgeServer {
             timestamp: Date.now()
           }
         }));
+
+        // Immediately request current tabs and discovered accounts
+        ws.send(JSON.stringify({ type: 'LIST_TABS' }));
 
         ws.on('message', (data: any) => {
           try {
