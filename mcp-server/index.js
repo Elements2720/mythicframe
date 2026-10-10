@@ -880,9 +880,27 @@ import path2 from "path";
 import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
-var BRIDGE_PORT = 58925;
-var WEB_PORT = 3488;
-var PROJECT_ROOT = "d:\\GeminiWeb\\mythicframe";
+var BRIDGE_PORT = Number(process.env.BEI_PORT) || 58925;
+var WEB_PORT = Number(process.env.PORT) || 3488;
+function resolveProjectRoot() {
+  if (process.env.MYTHICFRAME_ROOT && fs.existsSync(process.env.MYTHICFRAME_ROOT)) {
+    return path.resolve(process.env.MYTHICFRAME_ROOT);
+  }
+  const cwd = process.cwd();
+  if (fs.existsSync(path.join(cwd, "package.json")) && fs.existsSync(path.join(cwd, "src"))) {
+    return cwd;
+  }
+  if (process.argv[1]) {
+    const scriptDir = path.dirname(path.resolve(process.argv[1]));
+    for (const candidate of [scriptDir, path.join(scriptDir, ".."), path.join(scriptDir, "..", "..")]) {
+      if (fs.existsSync(path.join(candidate, "package.json")) && fs.existsSync(path.join(candidate, "src"))) {
+        return path.resolve(candidate);
+      }
+    }
+  }
+  return cwd;
+}
+var PROJECT_ROOT = resolveProjectRoot();
 async function checkMythicStatus() {
   let bridgeRunning = false;
   let beiConnected = false;
@@ -975,7 +993,10 @@ async function launchMythicServer() {
     return { success: true, message: `MythicFrame server is already running (${current.summary})` };
   }
   try {
-    const devServer = spawn("cmd.exe", ["/c", "start", "/MIN", "npm.cmd", "run", "dev"], {
+    const isWindows = process.platform === "win32";
+    const command = isWindows ? "cmd.exe" : "npm";
+    const args = isWindows ? ["/c", "start", "/MIN", "npm.cmd", "run", "dev"] : ["run", "dev"];
+    const devServer = spawn(command, args, {
       cwd: PROJECT_ROOT,
       detached: true,
       stdio: "ignore",
@@ -1166,7 +1187,7 @@ Please embed this image for the user, AND provide a clickable markdown link [${p
     const data = await response.json();
     const base64Data = data.predictions[0].bytesBase64Encoded;
     const arrayBuffer = Buffer.from(base64Data, "base64");
-    const projectRoot = "d:\\\\GeminiWeb\\\\mythicframe";
+    const projectRoot = process.env.MYTHICFRAME_ROOT || (fs2.existsSync(path2.join(process.cwd(), "package.json")) ? process.cwd() : path2.resolve(path2.dirname(process.argv[1] || process.cwd()), ".."));
     const outDir = path2.join(projectRoot, "outputs");
     if (!fs2.existsSync(outDir)) fs2.mkdirSync(outDir, { recursive: true });
     const fileName = `${toolName}_${Date.now()}.jpg`;

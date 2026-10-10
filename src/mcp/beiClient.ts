@@ -53,9 +53,39 @@ export interface BEIGenerateResult {
   metadata?: any;
 }
 
-const BRIDGE_PORT = 58925;
-const WEB_PORT = 3488;
-const PROJECT_ROOT = 'd:\\GeminiWeb\\mythicframe';
+const BRIDGE_PORT = Number(process.env.BEI_PORT) || 58925;
+const WEB_PORT = Number(process.env.PORT) || 3488;
+
+/**
+ * Dynamically resolves the root directory of the MythicFrame project.
+ * Works on any OS, drive letter, or installation directory.
+ */
+function resolveProjectRoot(): string {
+  if (process.env.MYTHICFRAME_ROOT && fs.existsSync(process.env.MYTHICFRAME_ROOT)) {
+    return path.resolve(process.env.MYTHICFRAME_ROOT);
+  }
+
+  // 1. Check current working directory
+  const cwd = process.cwd();
+  if (fs.existsSync(path.join(cwd, 'package.json')) && fs.existsSync(path.join(cwd, 'src'))) {
+    return cwd;
+  }
+
+  // 2. Resolve relative to entry file if executed via node
+  if (process.argv[1]) {
+    const scriptDir = path.dirname(path.resolve(process.argv[1]));
+    // Check scriptDir, scriptDir/.., scriptDir/../..
+    for (const candidate of [scriptDir, path.join(scriptDir, '..'), path.join(scriptDir, '..', '..')]) {
+      if (fs.existsSync(path.join(candidate, 'package.json')) && fs.existsSync(path.join(candidate, 'src'))) {
+        return path.resolve(candidate);
+      }
+    }
+  }
+
+  return cwd;
+}
+
+const PROJECT_ROOT = resolveProjectRoot();
 
 /**
  * Checks the status of MythicFrame web server and BEI extension bridge.
@@ -172,7 +202,13 @@ export async function launchMythicServer(): Promise<{ success: boolean; message:
   }
 
   try {
-    const devServer = spawn("cmd.exe", ["/c", "start", "/MIN", "npm.cmd", "run", "dev"], {
+    const isWindows = process.platform === "win32";
+    const command = isWindows ? "cmd.exe" : "npm";
+    const args = isWindows 
+      ? ["/c", "start", "/MIN", "npm.cmd", "run", "dev"]
+      : ["run", "dev"];
+
+    const devServer = spawn(command, args, {
       cwd: PROJECT_ROOT,
       detached: true,
       stdio: "ignore",

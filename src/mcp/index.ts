@@ -91,7 +91,8 @@ const executeImageGeneration = async (promptStr: string, aspectRatio: string = "
         const base64Data = data.predictions[0].bytesBase64Encoded;
         const arrayBuffer = Buffer.from(base64Data, 'base64');
         
-        const projectRoot = "d:\\\\GeminiWeb\\\\mythicframe";
+        const projectRoot = process.env.MYTHICFRAME_ROOT || 
+          (fs.existsSync(path.join(process.cwd(), 'package.json')) ? process.cwd() : path.resolve(path.dirname(process.argv[1] || process.cwd()), '..'));
         const outDir = path.join(projectRoot, "outputs");
         if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
