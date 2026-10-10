@@ -27,7 +27,7 @@ This guide provides instructions for both **Humans** (manual setup and daily wor
    <path-to-mythicframe>/bei-extension
    ```
 6. The **MythicFrame BEI** extension card will appear in your extensions list:
-   * **Version:** `v1.2.0` (or higher)
+   * **Version:** `v1.3.6` (or higher)
    * **Permissions:** Storage, Scripting, Tabs, TabGroups
    * **Badge:** If the MythicFrame server is running, the extension icon badge will turn purple and display **ON**. If the server is offline, it will display **OFF**.
 
@@ -65,8 +65,9 @@ Google allows multiple Google accounts to be signed into the same Chrome profile
      * `🟡 High Usage` (Approaching daily limit)
      * `🔴 Cooldown (12m)` (Rate limited; cooldown timer)
    * **Tab Layout Mode:**
-     * **Same Window Group:** (Recommended) Groups all generation tabs into a single purple tab group named `"MythicFrame BEI"` in your current Chrome window.
-     * **Dedicated Window:** Moves generation tabs into a separate standalone Chrome window to keep your main workspace clean.
+     * **Dedicated Window:** (Default & Recommended) Moves generation tabs into a separate standalone Chrome window with a purple `"MythicFrame BEI"` tab group to eliminate background tab sleeping and workspace clutter.
+     * **Same Window Group:** Groups all generation tabs into a single purple tab group in your current window.
+     * **Fake Active Anti-Throttling:** Built-in AudioContext & visibility spoofing prevents Chrome from throttling background tab CPU execution during long generations.
 4. **Generate Artwork:**
    * Enter your prompt in the prompt panel.
    * *(Optional)* Attach reference images (sprites, pose guides, style references).

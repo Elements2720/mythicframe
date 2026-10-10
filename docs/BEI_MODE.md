@@ -103,6 +103,8 @@ If one Google account hits a daily limit or enters cooldown:
 
 ## 4. Built-In Resilience & Safety Features
 
+* **Fake Active Mode & Anti-Throttling:** Overrides `document.hidden`, `document.visibilityState`, and traps `visibilitychange` events, paired with an inaudible `AudioContext` media stream. This prevents Chromium and Angular from suspending background tabs or throttling JavaScript execution timers during long image generation sessions.
+* **Default Dedicated Window Grouping:** Isolates generation tabs into a dedicated standalone window with a labeled purple tab group (`"MythicFrame BEI"`), eliminating workspace clutter while preventing background tab sleeping.
 * **Dynamic Network Timeout:** Automatically extends upload waiting times up to 150–210 seconds while Google Scotty media servers are actively transmitting bytes, preventing premature timeouts on slower connections.
 * **Real-Time Heartbeat Keep-Alive:** Extension service worker maintains an active keep-alive communication port during generation so Chrome never suspends the worker mid-request.
 * **Safety & Policy Refusal Detection:** Detects prompt refusals instantly (*"cannot generate"*, *"violates policy"*) and fails immediately with a descriptive message rather than hanging.
