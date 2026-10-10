@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AIProvider, AvailableModel } from '../../types';
 import { getActiveAIProvider, setActiveAIProvider } from '../../services/aiProviderService';
 import { getPollinationsModel, setPollinationsModel, POLLINATIONS_MODELS } from '../../services/pollinationsService';
-import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAccounts, BEIStatusResponse, getSavedBEIAccounts, setBEIAccountTier } from '../../services/beiService';
+import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAccounts, BEIStatusResponse, getSavedBEIAccounts, setBEIAccountTier, getBEIPayloads } from '../../services/beiService';
 import { getBEIAccountQuota } from '../../services/quotaTrackerService';
 import { getIncognitoMode, setIncognitoMode, formatDisplayEmail } from '../../services/privacyService';
 import { useLanguage } from '../../i18n/LanguageContext';
@@ -43,6 +43,35 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return localStorage.getItem('mythic_ai_engine_card_collapsed') === 'true';
   });
+
+  // BEI Payload Diagnostics modal state
+  const [showPayloadModal, setShowPayloadModal] = useState(false);
+  const [payloadList, setPayloadList] = useState<any[]>([]);
+  const [isLoadingPayloads, setIsLoadingPayloads] = useState(false);
+  const [selectedPayload, setSelectedPayload] = useState<any | null>(null);
+
+  const loadPayloads = async () => {
+    setIsLoadingPayloads(true);
+    try {
+      const res = await getBEIPayloads();
+      if (res && res.payloads) {
+        setPayloadList(res.payloads);
+        if (res.payloads.length > 0 && !selectedPayload) {
+          setSelectedPayload(res.payloads[0]);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load BEI payloads:', e);
+    } finally {
+      setIsLoadingPayloads(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showPayloadModal) {
+      loadPayloads();
+    }
+  }, [showPayloadModal]);
 
   const toggleCollapse = () => {
     setIsCollapsed(prev => {
@@ -535,15 +564,26 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
               <i className={`fa-solid ${isOpeningTab ? 'fa-spinner fa-spin' : 'fa-arrows-rotate'} text-[9px]`} />
               <span>{isOpeningTab ? 'Syncing...' : 'Sync Account in Background'}</span>
             </button>
-            {setMode && (
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setMode('settings')}
-                className="text-purple-400 hover:text-purple-300 underline cursor-pointer"
+                onClick={() => setShowPayloadModal(true)}
+                className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                title="View recent generation payloads, format, size, and status details"
               >
-                BEI Setup
+                <i className="fa-solid fa-list-check text-[9px]" />
+                <span>Diagnostics</span>
               </button>
-            )}
+              {setMode && (
+                <button
+                  type="button"
+                  onClick={() => setMode('settings')}
+                  className="text-purple-400 hover:text-purple-300 underline cursor-pointer"
+                >
+                  BEI Setup
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -674,6 +714,217 @@ export const AIEngineSelectorCard: React.FC<AIEngineSelectorCardProps> = ({
       )}
         </div>
       </div>
+
+      {/* BEI Payload Diagnostics Modal */}
+      {showPayloadModal && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden text-left animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-cyan-950/60 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                  <i className="fa-solid fa-list-check text-sm" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                    <span>BEI Payload Diagnostics</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 font-mono">
+                      {payloadList.length} recent
+                    </span>
+                  </h3>
+                  <p className="text-[10px] text-slate-400">Track browser generation payloads, formats, and step lifecycle</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadPayloads}
+                  disabled={isLoadingPayloads}
+                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Refresh diagnostics"
+                >
+                  <i className={`fa-solid fa-arrows-rotate text-[10px] ${isLoadingPayloads ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPayloadModal(false)}
+                  className="w-7 h-7 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 flex items-center justify-center cursor-pointer"
+                >
+                  <i className="fa-solid fa-xmark text-sm" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[320px]">
+              {/* Left Column: Payload List */}
+              <div className="md:col-span-5 border-r border-slate-800 overflow-y-auto max-h-[55vh] p-2 space-y-1.5 bg-slate-950/40">
+                {payloadList.length === 0 ? (
+                  <div className="p-6 text-center text-slate-500 text-xs">
+                    <i className="fa-regular fa-folder-open text-2xl mb-2 opacity-50 block" />
+                    No recent payloads recorded yet. Generate an image to see live telemetry.
+                  </div>
+                ) : (
+                  payloadList.map(item => {
+                    const isSelected = selectedPayload?.jobId === item.jobId;
+                    const isOk = item.status === 'completed';
+                    const isErr = item.status === 'failed';
+                    return (
+                      <button
+                        key={item.jobId}
+                        type="button"
+                        onClick={() => setSelectedPayload(item)}
+                        className={`w-full text-left p-2 rounded-lg border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-slate-800 border-cyan-500/80 shadow-sm'
+                            : 'bg-slate-900/60 border-slate-800/80 hover:bg-slate-850 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-mono font-bold text-slate-300 uppercase">
+                            {item.target || 'gemini'}
+                          </span>
+                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-medium ${
+                            isOk
+                              ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/60'
+                              : isErr
+                              ? 'bg-rose-950/80 text-rose-300 border border-rose-800/60'
+                              : 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 animate-pulse'
+                          }`}>
+                            {item.status}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 line-clamp-1 mb-1 font-mono">
+                          {item.promptExcerpt || item.jobId}
+                        </div>
+                        <div className="flex items-center justify-between text-[9px] text-slate-500">
+                          <span>{new Date(item.createdAt || Date.now()).toLocaleTimeString()}</span>
+                          {item.imageSize ? (
+                            <span className="text-cyan-400/90 font-mono">
+                              {item.imageFormat === 'base64' ? 'Base64' : 'URL'} ({Math.round(item.imageSize / 1024)} KB)
+                            </span>
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Right Column: Selected Payload Details */}
+              <div className="md:col-span-7 overflow-y-auto max-h-[55vh] p-3 space-y-3 bg-slate-900/60">
+                {selectedPayload ? (
+                  <>
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <div>
+                        <div className="text-xs font-bold text-slate-200 font-mono">{selectedPayload.jobId}</div>
+                        <div className="text-[10px] text-slate-500">
+                          {new Date(selectedPayload.createdAt || Date.now()).toLocaleString()}
+                        </div>
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                        selectedPayload.status === 'completed'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : selectedPayload.status === 'failed'
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                      }`}>
+                        {selectedPayload.status}
+                      </span>
+                    </div>
+
+                    {/* Metadata Grid */}
+                    <div className="grid grid-cols-2 gap-2 text-[10px] bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+                      <div>
+                        <span className="text-slate-500 block">Format:</span>
+                        <span className="font-mono text-cyan-300 font-bold uppercase">
+                          {selectedPayload.imageFormat || 'none'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Payload Size:</span>
+                        <span className="font-mono text-slate-200">
+                          {selectedPayload.imageSize ? `${(selectedPayload.imageSize / 1024).toFixed(1)} KB` : 'N/A'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Retrieval Method:</span>
+                        <span className="font-mono text-purple-300">
+                          {selectedPayload.retrievalMethod || 'standard'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Candidate Grid:</span>
+                        <span className="font-mono text-slate-200">
+                          {selectedPayload.candidatesCount ? `${selectedPayload.candidatesCount} images` : 'None'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Error Box if Failed */}
+                    {selectedPayload.error && (
+                      <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-800/80 text-[11px] text-rose-200">
+                        <div className="font-bold flex items-center gap-1.5 text-rose-300 mb-1">
+                          <i className="fa-solid fa-triangle-exclamation" />
+                          <span>Error Diagnosis</span>
+                        </div>
+                        <div className="font-mono text-[10px] break-words">{selectedPayload.error}</div>
+                      </div>
+                    )}
+
+                    {/* Source URL if present */}
+                    {selectedPayload.srcUrl && (
+                      <div className="text-[10px]">
+                        <span className="text-slate-500 block mb-1">Extracted Source URL:</span>
+                        <div className="p-1.5 rounded bg-slate-950 border border-slate-800 font-mono text-slate-400 break-all text-[9px] select-all max-h-16 overflow-y-auto">
+                          {selectedPayload.srcUrl}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step Timeline */}
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                        Lifecycle Steps ({selectedPayload.steps?.length || 0})
+                      </span>
+                      <div className="space-y-1.5 border-l-2 border-slate-800 pl-2.5 ml-1">
+                        {(selectedPayload.steps || []).map((st: any, i: number) => (
+                          <div key={i} className="text-[10px]">
+                            <div className="flex items-center justify-between text-slate-400">
+                              <span className="font-mono font-bold text-cyan-400/90">{st.step}</span>
+                              <span className="text-[9px] text-slate-500">
+                                {new Date(st.timestamp || Date.now()).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <div className="text-slate-300 text-[10px] mt-0.5">{st.detail}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-8 text-center text-slate-500 text-xs">
+                    Select a payload on the left to inspect its complete telemetry and step diagnostics.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-2.5 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between text-[11px] text-slate-400">
+              <span>Bridge Endpoint: <code className="text-cyan-400 font-mono">/api/bei/payloads</code></span>
+              <button
+                type="button"
+                onClick={() => setShowPayloadModal(false)}
+                className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
