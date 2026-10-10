@@ -67,24 +67,40 @@ function resolveProjectRoot(): string {
     return path.resolve(process.env.MYTHICFRAME_ROOT);
   }
 
-  // 1. Check current working directory
-  const cwd = process.cwd();
-  if (fs.existsSync(path.join(cwd, 'package.json')) && fs.existsSync(path.join(cwd, 'src'))) {
-    return cwd;
+  const isMythicFrameDir = (dir: string): boolean => {
+    try {
+      const pkgPath = path.join(dir, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        if (pkg.name === 'mythicframe') return true;
+      }
+    } catch {
+      // ignore
+    }
+    return fs.existsSync(path.join(dir, 'package.json')) && fs.existsSync(path.join(dir, 'src'));
+  };
+
+  // 1. Check current working directory and walk up
+  let currentDir = process.cwd();
+  for (let i = 0; i < 5; i++) {
+    if (isMythicFrameDir(currentDir)) return currentDir;
+    const parent = path.dirname(currentDir);
+    if (parent === currentDir) break;
+    currentDir = parent;
   }
 
-  // 2. Resolve relative to entry file if executed via node
+  // 2. Resolve relative to entry file if executed via node and walk up
   if (process.argv[1]) {
-    const scriptDir = path.dirname(path.resolve(process.argv[1]));
-    // Check scriptDir, scriptDir/.., scriptDir/../..
-    for (const candidate of [scriptDir, path.join(scriptDir, '..'), path.join(scriptDir, '..', '..')]) {
-      if (fs.existsSync(path.join(candidate, 'package.json')) && fs.existsSync(path.join(candidate, 'src'))) {
-        return path.resolve(candidate);
-      }
+    let scriptDir = path.dirname(path.resolve(process.argv[1]));
+    for (let i = 0; i < 5; i++) {
+      if (isMythicFrameDir(scriptDir)) return scriptDir;
+      const parent = path.dirname(scriptDir);
+      if (parent === scriptDir) break;
+      scriptDir = parent;
     }
   }
 
-  return cwd;
+  return process.cwd();
 }
 
 const PROJECT_ROOT = resolveProjectRoot();

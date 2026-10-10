@@ -886,19 +886,34 @@ function resolveProjectRoot() {
   if (process.env.MYTHICFRAME_ROOT && fs.existsSync(process.env.MYTHICFRAME_ROOT)) {
     return path.resolve(process.env.MYTHICFRAME_ROOT);
   }
-  const cwd = process.cwd();
-  if (fs.existsSync(path.join(cwd, "package.json")) && fs.existsSync(path.join(cwd, "src"))) {
-    return cwd;
+  const isMythicFrameDir = (dir) => {
+    try {
+      const pkgPath = path.join(dir, "package.json");
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        if (pkg.name === "mythicframe") return true;
+      }
+    } catch {
+    }
+    return fs.existsSync(path.join(dir, "package.json")) && fs.existsSync(path.join(dir, "src"));
+  };
+  let currentDir = process.cwd();
+  for (let i = 0; i < 5; i++) {
+    if (isMythicFrameDir(currentDir)) return currentDir;
+    const parent = path.dirname(currentDir);
+    if (parent === currentDir) break;
+    currentDir = parent;
   }
   if (process.argv[1]) {
-    const scriptDir = path.dirname(path.resolve(process.argv[1]));
-    for (const candidate of [scriptDir, path.join(scriptDir, ".."), path.join(scriptDir, "..", "..")]) {
-      if (fs.existsSync(path.join(candidate, "package.json")) && fs.existsSync(path.join(candidate, "src"))) {
-        return path.resolve(candidate);
-      }
+    let scriptDir = path.dirname(path.resolve(process.argv[1]));
+    for (let i = 0; i < 5; i++) {
+      if (isMythicFrameDir(scriptDir)) return scriptDir;
+      const parent = path.dirname(scriptDir);
+      if (parent === scriptDir) break;
+      scriptDir = parent;
     }
   }
-  return cwd;
+  return process.cwd();
 }
 var PROJECT_ROOT = resolveProjectRoot();
 async function checkMythicStatus() {
