@@ -13,6 +13,34 @@
 
   console.log('[MythicFrame BEI] ChatGPT content script attached.');
 
+  // ─── FAKE ACTIVE MODE ────────────────────────────────────────────────────────
+  try {
+    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+    Object.defineProperty(document, 'webkitHidden', { get: () => false, configurable: true });
+    Object.defineProperty(document, 'webkitVisibilityState', { get: () => 'visible', configurable: true });
+    window.addEventListener('visibilitychange', (e) => e.stopImmediatePropagation(), true);
+  } catch (e) {}
+
+  let silentAudioCtx = null;
+  function ensureBackgroundCpuAwake() {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass && (!silentAudioCtx || silentAudioCtx.state === 'closed')) {
+        silentAudioCtx = new AudioContextClass();
+        const osc = silentAudioCtx.createOscillator();
+        const gain = silentAudioCtx.createGain();
+        gain.gain.value = 0.00001;
+        osc.connect(gain);
+        gain.connect(silentAudioCtx.destination);
+        osc.start();
+        if (silentAudioCtx.state === 'suspended') {
+          silentAudioCtx.resume().catch(() => {});
+        }
+      }
+    } catch (e) {}
+  }
+
   function reportProgress(jobId, step, detail) {
     if (!jobId) return;
     try {

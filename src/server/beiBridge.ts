@@ -120,7 +120,7 @@ export class BEIBridgeServer {
   }
   private pendingJobs = new Map<string, PendingJob>();
   private lastHeartbeat = Date.now();
-  private extensionVersion = '1.3.5';
+  private extensionVersion = '1.3.6';
   private projectDir = process.cwd();
   public latestProgress: Record<string, { step: string; detail: string; timestamp: number }> = {};
   public globalProgress: { step: string; detail: string; timestamp: number } | null = null;
@@ -736,7 +736,7 @@ export class BEIBridgeServer {
   public async handleGenerateRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     try {
       const payload = await this.parseRequestBody(req);
-      const { target = 'gemini', prompt, fullPrompt, aspectRatio = '16:9', accountSlot = 0, timeoutSeconds = 120, images = [], tabMode, bringTabToFront, chatSessionMode = 'temporary_chat', tabSessionId } = payload;
+      const { target = 'gemini', prompt, fullPrompt, aspectRatio = '16:9', accountSlot = 0, timeoutSeconds = 120, images = [], tabMode = 'new_window_group', bringTabToFront, chatSessionMode = 'temporary_chat', tabSessionId } = payload;
 
         if (!prompt) {
           res.writeHead(400, { 'Content-Type': 'application/json' });

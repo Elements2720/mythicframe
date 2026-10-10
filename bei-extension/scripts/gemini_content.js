@@ -14,6 +14,38 @@
 
   console.log(`[MythicFrame BEI] Gemini content script attached to slot /u/${protocol.extractGeminiAccountSlot(window.location.href)}/`);
 
+  // ─── FAKE ACTIVE MODE ────────────────────────────────────────────────────────
+  // Prevents Chromium & Angular/Gemini from sleeping or throttling background tabs.
+  // 1. Spoofs document.hidden, document.visibilityState to always report active.
+  // 2. Plays an inaudible AudioContext oscillator buffer, which Chromium treats as
+  //    media playback and grants high CPU priority / exempts from timer throttling.
+  try {
+    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+    Object.defineProperty(document, 'webkitHidden', { get: () => false, configurable: true });
+    Object.defineProperty(document, 'webkitVisibilityState', { get: () => 'visible', configurable: true });
+    window.addEventListener('visibilitychange', (e) => e.stopImmediatePropagation(), true);
+  } catch (e) {}
+
+  let silentAudioCtx = null;
+  function ensureBackgroundCpuAwake() {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass && (!silentAudioCtx || silentAudioCtx.state === 'closed')) {
+        silentAudioCtx = new AudioContextClass();
+        const osc = silentAudioCtx.createOscillator();
+        const gain = silentAudioCtx.createGain();
+        gain.gain.value = 0.00001; // Inaudible
+        osc.connect(gain);
+        gain.connect(silentAudioCtx.destination);
+        osc.start();
+        if (silentAudioCtx.state === 'suspended') {
+          silentAudioCtx.resume().catch(() => {});
+        }
+      }
+    } catch (e) {}
+  }
+
   const COMPOSER_SELECTORS = [
     "rich-textarea div[contenteditable='true']",
     "div[contenteditable='true'][role='textbox']",
@@ -920,6 +952,7 @@
   }
 
   async function executePrompt(jobId, prompt, timeoutSeconds = 900, images = []) {
+    ensureBackgroundCpuAwake();
     let keepAlivePort = null;
     try {
       if (chrome.runtime && chrome.runtime.connect) {

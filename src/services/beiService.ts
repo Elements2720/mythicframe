@@ -415,7 +415,7 @@ export const generateWithBEI = async (
     aspectRatio: params.aspectRatio || '16:9',
     accountSlot: config.accountSlot || 0,
     timeoutSeconds: Math.max(config.timeoutSeconds || 900, 900),
-    tabMode: config.tabMode || 'same_window_group',
+    tabMode: config.tabMode || 'new_window_group',
     bringTabToFront: Boolean(config.bringTabToFront),
     chatSessionMode,
     tabSessionId: params.tabSessionId,

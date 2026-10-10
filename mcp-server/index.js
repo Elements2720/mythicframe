@@ -1043,7 +1043,7 @@ async function generateWithBEI(options) {
     accountSlot = 0,
     images = [],
     timeoutSeconds = 900,
-    tabMode = "current",
+    tabMode = "new_window_group",
     bringTabToFront = false
   } = options;
   const processedImages = [];

@@ -519,7 +519,7 @@ let beiDedicatedWindowId = null;
  * Organizes BEI tabs into a single dedicated Chrome Tab Group ("MythicFrame BEI")
  * Supports same window group, dedicated new window, and foreground/background focus.
  */
-async function organizeTabIntoBEIGroup(tabId, tabMode = 'same_window_group', bringTabToFront = false) {
+async function organizeTabIntoBEIGroup(tabId, tabMode = 'new_window_group', bringTabToFront = false) {
   try {
     const tab = await chrome.tabs.get(tabId);
     if (!tab) return;
@@ -672,7 +672,7 @@ async function waitForTabReady(tabId, timeoutMs = 20000) {
  * Deduplicates strictly: checks "MythicFrame BEI" tab group first, all open tabs second.
  * Reuses existing tabs to 100% eliminate duplicate tabs in the browser.
  */
-async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null) {
+async function findOrCreateTab(target, accountSlot = 0, tabMode = 'new_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null) {
   const targetSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
   const lockKey = `${target}:${targetSlot}`;
 
@@ -843,7 +843,7 @@ async function findOrCreateTab(target, accountSlot = 0, tabMode = 'same_window_g
  * 3. If needed, opens a fresh background tab and dispatches
  * 4. 100% eliminates "Receiving end does not exist" failure
  */
-async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds = 900, accountSlot = 0, images = [], tabMode = 'same_window_group', bringTabToFront = false) {
+async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds = 900, accountSlot = 0, images = [], tabMode = 'new_window_group', bringTabToFront = false) {
   // Step 1: Attempt direct message dispatch with script injection
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -973,7 +973,7 @@ function isSlotBusy(target, slot) {
 }
 
 async function startJob(jobData) {
-  const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'same_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null } = jobData;
+  const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'new_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null } = jobData;
   const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
   const tabId = await findOrCreateTab(target, parsedSlot, tabMode, bringTabToFront, chatSessionMode, tabSessionId);
   if (!tabId) {
@@ -1036,7 +1036,7 @@ async function handleBridgeCommand(msg) {
   }
 
   if (type === "OPEN_TAB") {
-    const { target = "gemini", accountSlot = 0, tabMode = 'same_window_group' } = data || {};
+    const { target = "gemini", accountSlot = 0, tabMode = 'new_window_group' } = data || {};
     const bringTabToFront = data?.bringTabToFront !== undefined ? Boolean(data.bringTabToFront) : true;
     const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
     const tabId = await findOrCreateTab(target, parsedSlot, tabMode, bringTabToFront);
@@ -1054,7 +1054,7 @@ async function handleBridgeCommand(msg) {
   }
 
   if (type === "EXECUTE_PROMPT") {
-    const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'same_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null } = data;
+    const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'new_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null } = data;
     const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
     const slotKey = getSlotKey(target, parsedSlot);
 
@@ -1097,7 +1097,7 @@ async function handleBridgeCommand(msg) {
   }
 
   if (type === "EXECUTE_TEXT_PROMPT") {
-    const { jobId, target = "gemini", prompt, accountSlot = 0, timeoutSeconds = 60, tabMode = 'same_window_group', bringTabToFront = false } = data;
+    const { jobId, target = "gemini", prompt, accountSlot = 0, timeoutSeconds = 60, tabMode = 'new_window_group', bringTabToFront = false } = data;
     const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
 
     try {

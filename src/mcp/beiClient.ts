@@ -255,7 +255,7 @@ export async function generateWithBEI(options: BEIGenerateOptions): Promise<BEIG
     accountSlot = 0,
     images = [],
     timeoutSeconds = 900,
-    tabMode = 'current',
+    tabMode = 'new_window_group',
     bringTabToFront = false
   } = options;
 
