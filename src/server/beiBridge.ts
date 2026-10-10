@@ -321,6 +321,11 @@ export class BEIBridgeServer {
           return;
         }
 
+        if (req.method === 'POST' && url.pathname === '/api/bei/reload-extension') {
+          this.handleReloadExtensionRequest(req, res);
+          return;
+        }
+
         if (req.method === 'POST' && (url.pathname === '/api/system/shutdown' || url.pathname === '/shutdown')) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, message: 'MythicFrame BEI Bridge is shutting down...' }));
@@ -1037,6 +1042,21 @@ export class BEIBridgeServer {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true, scanning: true, message: 'Google account scan initiated in Chrome background.' }));
+  }
+
+  public handleReloadExtensionRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    if (!this.isConnected()) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'EXTENSION_NOT_CONNECTED', message: 'BEI Chrome Extension is not connected.' }));
+      return;
+    }
+
+    this.extensionSocket!.send(JSON.stringify({
+      type: 'RELOAD_EXTENSION'
+    }));
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, reloading: true, message: 'Extension reload signal dispatched to Chrome.' }));
   }
 
   public async handleRefetchRequest(req: http.IncomingMessage, res: http.ServerResponse) {

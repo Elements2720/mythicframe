@@ -1231,6 +1231,14 @@ async function handleBridgeCommand(msg) {
     });
     return;
   }
+
+  if (type === "RELOAD_EXTENSION") {
+    console.log("[MythicFrame BEI Worker] Reloading extension from disk...");
+    if (chrome.runtime && typeof chrome.runtime.reload === 'function') {
+      chrome.runtime.reload();
+    }
+    return;
+  }
 }
 
 async function fetchUrlAsBase64(url) {

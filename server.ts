@@ -139,6 +139,10 @@ async function startServer() {
     beiBridge.handleScanAccountsRequest(req as any, res as any);
   });
 
+  app.post("/api/bei/reload-extension", (req, res) => {
+    beiBridge.handleReloadExtensionRequest(req as any, res as any);
+  });
+
   app.get("/api/bei/refetch", (req, res) => {
     beiBridge.handleRefetchRequest(req as any, res as any);
   });
