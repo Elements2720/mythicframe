@@ -754,7 +754,9 @@ export const buildAnimationStripPrompt = (
   // Core character
   fullPrompt += `CHARACTER METADATA:\n`;
   fullPrompt += `Core Identity: ${prompt}\n`;
-  fullPrompt += `Game Setting: ${gameContext.setting}. Theme: ${gameContext.tone}.\n\n`;
+  if (gameContext?.setting?.trim()) { fullPrompt += `Game Setting: ${gameContext.setting.trim()}. `; }
+  if (gameContext?.tone?.trim()) { fullPrompt += `Theme: ${gameContext.tone.trim()}. `; }
+  fullPrompt += '\n\n';
 
   // Action and strip rules
   fullPrompt += `ANIMATION RULES:\n`;
@@ -898,7 +900,7 @@ export const assembleFullMythicPrompt = (params: AssemblePromptParams): Assemble
     referenceParts = built.referenceParts;
   } else if (mode === 'sprite-strip' && params.spriteStripConfig) {
     const built = buildAnimationStripPrompt(
-      params.prompt,
+      params.prompt || params.spriteStripConfig.prompt || '',
       gameContext,
       styleSnippet,
       bgConfig,
@@ -950,3 +952,5 @@ export const assembleFullMythicPrompt = (params: AssemblePromptParams): Assemble
     imagePromptDirective
   };
 };
+
+

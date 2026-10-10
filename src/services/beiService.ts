@@ -16,6 +16,10 @@ export const DEFAULT_BEI_CONFIG: BEIConfig = {
   chatSessionMode: 'temporary_chat',
   autoRotateOnQuota: true,
   accountOrder: ['gemini:0', 'gemini:1', 'gemini:2', 'gemini:3', 'chatgpt:0'],
+  downloadQuality: 'ultra_original',
+  askQualityPreference: 'once',
+  accountDispatchMode: 'single',
+  askAccountDispatchPreference: 'once',
 };
 
 export const BEI_PRIORITY_ORDER_KEY = 'mythic_bei_priority_order';
@@ -95,6 +99,10 @@ export const getBEIConfig = (): BEIConfig => {
           port: parsed.port || DEFAULT_BEI_PORT,
           autoRotateOnQuota: parsed.autoRotateOnQuota !== undefined ? parsed.autoRotateOnQuota : true,
           accountOrder: parsed.accountOrder || getBEIAccountPriorityOrder(),
+          downloadQuality: parsed.downloadQuality || 'ultra_original',
+          askQualityPreference: parsed.askQualityPreference || 'once',
+          accountDispatchMode: parsed.accountDispatchMode || 'single',
+          askAccountDispatchPreference: parsed.askAccountDispatchPreference || 'once',
         };
       }
     } catch (e) {
@@ -747,7 +755,7 @@ export const cancelBEIGeneration = async (jobId?: string): Promise<boolean> => {
   return false;
 };
 
-export const generateBEIText = async (prompt: string, timeoutSeconds = 60): Promise<string> => {
+export const generateBEIText = async (prompt: string, timeoutSeconds = 60, images: any[] = []): Promise<string> => {
   const config = getBEIConfig();
   const port = config.port || DEFAULT_BEI_PORT;
   const urls = [

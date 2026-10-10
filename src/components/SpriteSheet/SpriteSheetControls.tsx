@@ -474,8 +474,9 @@ export const SpriteSheetControls: React.FC<SpriteSheetControlsProps> = ({ engine
             Clear Results
           </button>
           <button
-            onClick={() => {
-              if (confirm("Are you sure you want to completely reset the Sprite Sheet Studio? This will delete your prompt and all frames.")) {
+            onClick={async () => {
+              const ok = await showInAppConfirm("Are you sure you want to completely reset the Sprite Sheet Studio? This will delete your prompt and all frames.", { title: "Reset Studio", confirmText: "Reset", isDestructive: true });
+              if (ok) {
                 clearAll();
               }
             }}

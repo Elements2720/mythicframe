@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { HistoryEntry } from '../../types';
 import { exportSingleImage } from '../../services/exportService';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { showInAppConfirm } from '../../services/dialogService';
 
 interface HistoryPanelProps {
   history: HistoryEntry[];
@@ -42,7 +43,13 @@ const HistoryPanel: React.FC<HistoryPanelProps> = ({
               <h3 className="font-bold text-slate-200">{t('history')}</h3>
               {onClearAll && history.length > 0 && (
                   <button 
-                    onClick={() => { if(confirm(t('confirm_clear'))) onClearAll(); }} 
+                    onClick={async () => {
+                      const ok = await showInAppConfirm(t('confirm_clear'), {
+                        title: t('clear_all'),
+                        isDestructive: true
+                      });
+                      if (ok) onClearAll();
+                    }} 
                     className="text-[10px] text-red-400 bg-red-900/20 hover:bg-red-900/40 px-2 py-0.5 rounded border border-red-500/20 transition-colors ml-2"
                   >
                       {t('clear_all')}

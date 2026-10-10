@@ -40,7 +40,7 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({ isOpen, onClose, 
       setSelectedId(null); // Reset selection on nav
     } catch (e) {
       console.error(e);
-      alert("Failed to load folders. Make sure you are signed in.");
+      await showInAppAlert("Failed to load folders. Make sure you are signed in.");
     } finally {
       setLoading(false);
     }
@@ -62,7 +62,7 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({ isOpen, onClose, 
       setFolders([newFolder, ...folders]);
       setNewFolderName('');
     } catch (e) {
-      alert("Failed to create folder");
+      await showInAppAlert("Failed to create folder", { isDestructive: true });
     } finally {
       setIsCreating(false);
     }

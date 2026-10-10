@@ -53,7 +53,7 @@ export const useGeneration = (
     if (onError) {
       onError(title, err);
     } else {
-      alert(`${title}: ${err?.message || err}`);
+      showInAppAlert(`${title}: ${err?.message || err}`, { isDestructive: true });
     }
   };
 
@@ -422,7 +422,7 @@ export const useGeneration = (
          ? (activeModel || 'dall-e-3')
          : (activeModel || (useProModel ? GenerationModel.PRO_3 : GenerationModel.FLASH_3_1));
        
-       const count = (isAppend || ['resize', 'animation', 'fullcard', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine'].includes(activeTab.mode)) ? 1 : batchSize;
+       const count = (isAppend || ['resize', 'animation', 'fullcard', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'sprite-strip'].includes(activeTab.mode)) ? 1 : batchSize;
 
        for (let i = 0; i < count; i++) {
            if (abortControllerRef.current?.signal.aborted) break;
@@ -601,7 +601,7 @@ export const useGeneration = (
                });
            } else {
                const { image, metadata } = await generateWithActiveProvider({
-                  prompt: activeTab.prompt,
+                  prompt: activeTab.mode === 'sprite-strip' ? (activeTab.spriteStripConfig?.prompt || activeTab.prompt) : activeTab.prompt,
                   model,
                   size: activeTab.selectedSize,
                   aspectRatio: activeTab.selectedAspectRatio,
@@ -645,7 +645,7 @@ export const useGeneration = (
                   mode: activeTab.mode,
                   thumbnailUrl: resultUrl,
                   fullPrompt: finalPrompt,
-                  userPrompt: activeTab.prompt || 'Generated',
+                  userPrompt: activeTab.mode === 'sprite-strip' ? (activeTab.spriteStripConfig?.prompt || activeTab.prompt || 'Animation Strip') : (activeTab.prompt || 'Generated'),
                   gameContext,
                   styleId: activeTab.selectedStyleId,
                   bgConfig: activeTab.bgConfig,
@@ -699,3 +699,4 @@ export const useGeneration = (
     abortControllerRef
   };
 };
+

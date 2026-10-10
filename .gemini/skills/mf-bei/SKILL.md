@@ -19,16 +19,28 @@ Call `mythic_status` to verify system health.
       - `(Recommended) Open Gemini tab in Chrome` -> Call `mythic_open_tab` with `target: 'gemini'`.
       - `I will open Chrome manually` -> Instruct user to open `https://gemini.google.com` and ensure the MythicFrame BEI extension is enabled.
 
-## Step 2: Generation Dispatch
+## Step 2: Quality & Preferences Gate
+Before dispatching:
+- If quality is not specified and user hasn't chosen "Remember choice":
+  Use `ask_question`:
+  - **Question**: *"What image download quality do you want for this generation?"*
+  - **Options**:
+    - `(Recommended) Ultra Master (Full original uncompressed master asset, highest quality)`
+    - `High Quality (2K resolution web asset)`
+    - `Standard Preview (Fastest extraction, in-chat preview resolution)`
+- If user indicates they want to remember their choice, note it for subsequent generations in this session and use the chosen quality option (`ultra_original`, `high`, or `standard`).
+
+## Step 3: Generation Dispatch
 - Call `mythic_bei_generate` with:
   - `prompt`: the user's prompt (or optimized prompt if style/framing options were specified).
   - `aspectRatio`: requested aspect ratio (default `'1:1'`).
   - `target`: `'gemini'` (default) or `'chatgpt'`.
   - `accountSlot`: selected slot if specified.
+  - `quality`: `'ultra_original'` | `'high'` | `'standard'`.
   - `images`: array of reference images if provided by user.
 
-## Step 3: Present Image & Link
+## Step 4: Present Image & Link
 When `mythic_bei_generate` returns the local file path:
 1. Embed the generated image using standard markdown: `![Generated Image](file:///...)`.
 2. Provide a clickable markdown link: `[filename](file:///...)` so the user can easily open it in their IDE or image viewer.
-3. Show metadata: Account used, Job ID, and resolution.
+3. Show metadata: Account used, Job ID, and chosen download quality mode.

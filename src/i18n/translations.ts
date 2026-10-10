@@ -23,6 +23,8 @@ export const translations = {
     "map-grid": "Map Grid",
     "sprite-sheet": "Sprite Sheet Studio",
     "sprite-strip": "Animation Strip",
+    "style-library": "Style Library",
+    downloads: "Downloads",
     batch: "Batch Studio",
 
     // Dashboard
@@ -172,7 +174,35 @@ export const translations = {
     tut_background: "Background Mode",
     tut_fullcard: "Full Card Layout",
     tut_map_grid: "Map Grid Generator",
-    tut_pose_studio: "Pose Studio"
+    tut_pose_studio: "Pose Studio",
+
+    // Categories & Navigation
+    cat_project: "Project",
+    cat_character: "Character Studio",
+    cat_world: "World & UI",
+    cat_production: "Production",
+    expand_sidebar: "Expand Sidebar",
+    minimize_sidebar: "Minimize Sidebar",
+
+    // Settings
+    settings_subtitle: "Configure global settings for your generated assets.",
+    setting_world_placeholder: "e.g. A cozy alchemy shop in a medieval village. Wooden shelves, warm candlelight, bubbling potions.",
+    tone_mood_placeholder: "e.g. Whimsical, warm",
+    visual_constraints_placeholder: "e.g. No sci-fi, no neon",
+    default_global_style: "Default Global Art Style",
+    default_style_none: "None (User Choice)",
+    default_style_hint: "New tabs will start with this style selected.",
+    ai_engines: "AI Generation Engines",
+    ai_engines_desc: "Select and configure your active AI generation provider or offline prompt copy mode.",
+    active_engine_label: "Active Engine:",
+    active_engine: "Active Engine",
+    set_as_active_engine: "Set as Active Generation Engine",
+    this_is_active_engine: "This is your Active Engine",
+    key_ready: "Key Ready",
+    key_missing: "Key Missing",
+    save_key: "Save Key",
+    saving: "Saving...",
+    clear: "Clear"
   },
   ru: {
     // Modes
@@ -197,6 +227,8 @@ export const translations = {
     "map-grid": "Генератор Карт",
     "sprite-sheet": "Спрайт-лист Студия",
     "sprite-strip": "Анимационная полоса",
+    "style-library": "Библиотека Стилей",
+    downloads: "Загрузки",
     batch: "Пакетная Студия",
 
     // Dashboard
@@ -302,8 +334,8 @@ export const translations = {
     export: "Экспорт",
     batch_queue: "Очередь обработки",
     export_all: "Экспортировать всё",
-    add_images: "Добавить фото",
-    drop_here: "Бросьте сюда",
+    add_images: "Добавить изображения",
+    drop_here: "Перетащите сюда",
     save: "Сохранить",
     select: "Выбрать",
     close: "Закрыть",
@@ -339,14 +371,42 @@ export const translations = {
     ai_model: "Модель ИИ",
     post_process: "Постобработка",
     crop_result: "Обрезать результат",
-    art_style: "Сталь",
+    art_style: "Стиль",
     ref_library: "Библиотека референсов",
     bg_replace_queue: "Очередь замены фона",
     tut_frame: "Режим Рамки",
     tut_background: "Режим Фона",
     tut_fullcard: "Макет Карты",
     tut_map_grid: "Генератор Карт",
-    tut_pose_studio: "Поза Студия"
+    tut_pose_studio: "Поза Студия",
+
+    // Categories & Navigation
+    cat_project: "Проект",
+    cat_character: "Студия Персонажей",
+    cat_world: "Мир и Интерфейс",
+    cat_production: "Производство",
+    expand_sidebar: "Развернуть меню",
+    minimize_sidebar: "Свернуть меню",
+
+    // Settings
+    settings_subtitle: "Настройте глобальные параметры для создаваемых ассетов.",
+    setting_world_placeholder: "напр., Уютная лавка алхимика в средневековой деревне. Деревянные полки, теплый свет свечей, бурлящие зелья.",
+    tone_mood_placeholder: "напр., Причудливый, теплый",
+    visual_constraints_placeholder: "напр., Без научной фантастики, без неона",
+    default_global_style: "Глобальный стиль по умолчанию",
+    default_style_none: "Нет (выбор пользователя)",
+    default_style_hint: "Новые вкладки будут создаваться с выбранным стилем.",
+    ai_engines: "Движки генерации ИИ",
+    ai_engines_desc: "Выберите и настройте активного ИИ-провайдера генерации или режим копирования промптов.",
+    active_engine_label: "Активный движок:",
+    active_engine: "Активный движок",
+    set_as_active_engine: "Сделать активным движком генерации",
+    this_is_active_engine: "Это ваш активный движок",
+    key_ready: "Ключ готов",
+    key_missing: "Ключ отсутствует",
+    save_key: "Сохранить ключ",
+    saving: "Сохранение...",
+    clear: "Очистить"
   }
 };
 

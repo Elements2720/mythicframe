@@ -2,6 +2,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { AnimationFrame, ReferenceAsset } from '../../types';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { showInAppConfirm } from '../../services/dialogService';
 
 interface AnimationTimelineProps {
   frames: AnimationFrame[];
@@ -223,7 +224,7 @@ const AnimationTimeline: React.FC<AnimationTimelineProps> = ({
                ))}
                <button onClick={onAddFrame} className="shrink-0 w-24 h-16 rounded-xl border-2 border-dashed border-slate-800 hover:border-purple-600 hover:bg-purple-900/10 text-slate-600 hover:text-purple-400 transition-all"><Icon name="fa-plus" /></button>
                <div className="h-10 w-px bg-slate-800 mx-2" />
-               <button onClick={() => { if(confirm(t('confirm_clear'))) onClearFrames?.(); }} className="shrink-0 w-10 h-16 rounded-xl hover:bg-red-900/20 text-slate-700 hover:text-red-400 transition-all"><Icon name="fa-trash" /></button>
+               <button onClick={async () => { const ok = await showInAppConfirm(t('confirm_clear'), { title: 'Clear Frames', isDestructive: true }); if (ok) onClearFrames?.(); }} className="shrink-0 w-10 h-16 rounded-xl hover:bg-red-900/20 text-slate-700 hover:text-red-400 transition-all"><Icon name="fa-trash" /></button>
             </div>
 
             {/* Prompt & Action Section */}

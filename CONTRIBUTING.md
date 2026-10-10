@@ -46,6 +46,14 @@ To protect the safety of all contributors and users, pull requests must strictly
    npm run build
    ```
 
+4. **Browser Extension (`bei-extension`) Versioning & Changelog Rule:**
+   Whenever modifying any file inside `bei-extension/` (scripts, manifest, background worker, or protocols):
+   - **Bump the extension version** in `bei-extension/manifest.json` following semantic versioning (`MAJOR.MINOR.PATCH`).
+   - Synchronize the `extensionVersion` constant in `src/server/beiBridge.ts`.
+   - Update `bei-extension/INSTALLATION_AND_USAGE_GUIDE.md` to reference the new version.
+   - Record the changes in `CHANGELOG.md` and `devlog/DEVLOG.md` (Forge Mode log).
+   - This ensures users know when to click **Reload (🔄)** in `chrome://extensions`.
+
 ---
 
 ## 📋 Pull Request Guidelines

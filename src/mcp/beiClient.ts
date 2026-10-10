@@ -43,6 +43,8 @@ export interface BEIGenerateOptions {
   timeoutSeconds?: number;
   tabMode?: 'current' | 'new';
   bringTabToFront?: boolean;
+  quality?: 'standard' | 'high' | 'ultra_original';
+  dispatchMode?: 'single' | 'multi';
 }
 
 export interface BEIGenerateResult {
@@ -281,6 +283,34 @@ export async function scanBEIAccounts(): Promise<{ success: boolean; message: st
 }
 
 /**
+ * Fetches all active settings, accounts, quotas, and preferences from MythicFrame.
+ */
+export async function getMythicSettings(): Promise<any> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/api/bei/status`, {
+      signal: AbortSignal.timeout(3000)
+    });
+    const statusData = res.ok ? await res.json() : null;
+    return {
+      success: true,
+      bridgeRunning: Boolean(statusData),
+      bridgePort: BRIDGE_PORT,
+      webPort: WEB_PORT,
+      extensionVersion: statusData?.extensionVersion || '1.4.0',
+      connected: Boolean(statusData?.connected),
+      accounts: statusData?.accounts || [],
+      tabs: statusData?.tabs || [],
+      activeJobsCount: statusData?.activeJobsCount || 0
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `Could not reach MythicFrame bridge on port ${BRIDGE_PORT}: ${err.message}`
+    };
+  }
+}
+
+/**
  * Dispatches an image generation request directly to the BEI extension bridge.
  */
 export async function generateWithBEI(options: BEIGenerateOptions): Promise<BEIGenerateResult> {
@@ -292,7 +322,9 @@ export async function generateWithBEI(options: BEIGenerateOptions): Promise<BEIG
     images = [],
     timeoutSeconds = 900,
     tabMode = 'new_window_group',
-    bringTabToFront = false
+    bringTabToFront = false,
+    quality = 'ultra_original',
+    dispatchMode = 'single'
   } = options;
 
   // Process reference images (convert local file paths to base64 data URIs if necessary)
@@ -317,7 +349,9 @@ export async function generateWithBEI(options: BEIGenerateOptions): Promise<BEIG
     images: processedImages,
     timeoutSeconds,
     tabMode,
-    bringTabToFront
+    bringTabToFront,
+    quality,
+    dispatchMode
   };
 
   const response = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/api/bei/generate`, {

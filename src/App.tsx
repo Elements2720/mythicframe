@@ -12,6 +12,7 @@ import CropModal from './components/ui/CropModal';
 import FolderPickerModal from './components/ui/FolderPickerModal';
 import ErrorModal from './components/ui/ErrorModal';
 import ShutdownModal from './components/ui/ShutdownModal';
+import { InAppDialogModal } from './components/ui/InAppDialogModal';
 
 // Views
 import Dashboard from './components/views/Dashboard';
@@ -33,7 +34,7 @@ export default function App() {
   }, []);
 
   // Unified check for modes that use the standard Studio Layout (Canvas + Bottom Panels)
-  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch'].includes(engine.mode);
+  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'sprite-strip', 'batch'].includes(engine.mode);
 
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans selection:bg-purple-500 selection:text-white">
@@ -67,6 +68,8 @@ export default function App() {
           engine.setMode('settings');
         }}
       />
+
+      <InAppDialogModal />
 
       <AssetPicker 
         isOpen={engine.showAssetPicker}

@@ -53,6 +53,10 @@ export interface BEIConfig {
   chatSessionMode?: 'temporary_chat' | 'same_chat' | 'new_chat';
   autoRotateOnQuota?: boolean;
   accountOrder?: string[];
+  downloadQuality?: 'standard' | 'high' | 'ultra_original';
+  askQualityPreference?: 'always' | 'once';
+  accountDispatchMode?: 'single' | 'multi';
+  askAccountDispatchPreference?: 'always' | 'once';
 }
 
 export interface AIConfig {

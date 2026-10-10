@@ -1,8 +1,10 @@
 
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import FullScreenPreview from '../ui/FullScreenPreview';
 import { AspectRatio, PixelDimensions, PoseData, PoseJoint } from '../../types';
 import { DEFAULT_POSE_DATA } from '../../constants/pose';
+import { showInAppConfirm } from '../../services/dialogService';
+import { applyPoseConstraints, clampToCanvas } from '../../utils/poseConstraints';
 
 interface PoseStudioCanvasProps {
   generatedImage: string | null;
@@ -35,6 +37,27 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
   const [activeJointId, setActiveJointId] = useState<string | null>(null);
   const [selectedJointIds, setSelectedJointIds] = useState<Set<string>>(new Set());
   const [selectionBox, setSelectionBox] = useState<{ start: { x: number, y: number }, end: { x: number, y: number } } | null>(null);
+
+  // Local joints state for zero-latency 60-144fps dragging
+  const [localJoints, setLocalJoints] = useState<PoseJoint[]>(poseData.joints);
+  const localJointsRef = useRef<PoseJoint[]>(poseData.joints);
+  localJointsRef.current = localJoints;
+  const isDraggingRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+
+  // Synchronize from parent poseData when not dragging
+  useEffect(() => {
+    if (!isDraggingRef.current) {
+      setLocalJoints(poseData.joints);
+      localJointsRef.current = poseData.joints;
+    }
+  }, [poseData.joints]);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   // Pan/Zoom State
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
@@ -74,11 +97,10 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
       const rect = contentRef.current?.getBoundingClientRect();
       if (!rect) return;
 
-      // Check if we clicked a joint (this is handled by the joint's own onMouseDown, 
-      // but we need to know if we clicked the background for selection box)
       const isJointClick = (e.target as HTMLElement).closest('.joint-handle');
       
       if (!isJointClick) {
+        e.preventDefault();
         const x = ((e.clientX - rect.left) / rect.width) * 100;
         const y = ((e.clientY - rect.top) / rect.height) * 100;
         setSelectionBox({ start: { x, y }, end: { x, y } });
@@ -102,14 +124,13 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
        const y = ((e.clientY - rect.top) / rect.height) * 100;
        setSelectionBox(prev => prev ? { ...prev, end: { x, y } } : null);
        
-       // Update selection in real-time
        const xMin = Math.min(selectionBox.start.x, x);
        const xMax = Math.max(selectionBox.start.x, x);
        const yMin = Math.min(selectionBox.start.y, y);
        const yMax = Math.max(selectionBox.start.y, y);
 
        const newSelected = new Set(selectedJointIds);
-       poseData.joints.forEach(j => {
+       localJointsRef.current.forEach(j => {
          if (j.x >= xMin && j.x <= xMax && j.y >= yMin && j.y <= yMax) {
            newSelected.add(j.id);
          } else if (!e.shiftKey) {
@@ -118,76 +139,100 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
        });
        setSelectedJointIds(newSelected);
     } else if (activeJointId) {
+       e.preventDefault();
        const x = ((e.clientX - rect.left) / rect.width) * 100;
        const y = ((e.clientY - rect.top) / rect.height) * 100;
        
-       const joint = poseData.joints.find(j => j.id === activeJointId);
-       if (!joint) return;
+       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+       rafRef.current = requestAnimationFrame(() => {
+         const current = localJointsRef.current;
+         const joint = current.find(j => j.id === activeJointId);
+         if (!joint) return;
 
-       const dx = x - joint.x;
-       const dy = y - joint.y;
+         let nextJoints: PoseJoint[];
+         if (selectedJointIds.size > 1 && selectedJointIds.has(activeJointId)) {
+           // Move multi-selection together, keeping within canvas bounds
+           const dx = x - joint.x;
+           const dy = y - joint.y;
+           nextJoints = current.map(j => {
+             if (selectedJointIds.has(j.id)) {
+               return {
+                 ...j,
+                 x: clampToCanvas(j.x + dx),
+                 y: clampToCanvas(j.y + dy)
+               };
+             }
+             return j;
+           });
+         } else {
+           // Single joint dragged: apply full biomechanical constraints (IK, bone length limits, natural angles)
+           nextJoints = applyPoseConstraints(current, activeJointId, x, y);
+         }
 
-       setPoseData(prev => ({
-         ...prev,
-         joints: prev.joints.map(j => {
-           if (j.id === activeJointId || selectedJointIds.has(j.id)) {
-             return { ...j, x: j.x + dx, y: j.y + dy };
-           }
-           return j;
-         })
-       }));
+         localJointsRef.current = nextJoints;
+         setLocalJoints(nextJoints);
+       });
     }
   };
 
   const handleMouseUp = () => {
     setIsPanning(false);
-    setActiveJointId(null);
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      setActiveJointId(null);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      // Commit to parent state
+      setPoseData(prev => ({
+        ...prev,
+        joints: localJointsRef.current
+      }));
+    }
     setSelectionBox(null);
   };
 
   const handleScale = (factor: number) => {
     if (selectedJointIds.size === 0) return;
 
-    setPoseData(prev => {
-      const selectedJoints = prev.joints.filter(j => selectedJointIds.has(j.id));
-      if (selectedJoints.length === 0) return prev;
+    const current = localJointsRef.current;
+    const selectedJoints = current.filter(j => selectedJointIds.has(j.id));
+    if (selectedJoints.length === 0) return;
 
-      // Find center of selection
-      const centerX = selectedJoints.reduce((sum, j) => sum + j.x, 0) / selectedJoints.length;
-      const centerY = selectedJoints.reduce((sum, j) => sum + j.y, 0) / selectedJoints.length;
+    const centerX = selectedJoints.reduce((sum, j) => sum + j.x, 0) / selectedJoints.length;
+    const centerY = selectedJoints.reduce((sum, j) => sum + j.y, 0) / selectedJoints.length;
 
-      return {
-        ...prev,
-        joints: prev.joints.map(j => {
-          if (selectedJointIds.has(j.id)) {
-            return {
-              ...j,
-              x: centerX + (j.x - centerX) * factor,
-              y: centerY + (j.y - centerY) * factor
-            };
-          }
-          return j;
-        })
-      };
+    const scaled = current.map(j => {
+      if (selectedJointIds.has(j.id)) {
+        return {
+          ...j,
+          x: clampToCanvas(centerX + (j.x - centerX) * factor),
+          y: clampToCanvas(centerY + (j.y - centerY) * factor)
+        };
+      }
+      return j;
     });
+
+    localJointsRef.current = scaled;
+    setLocalJoints(scaled);
+    setPoseData(prev => ({ ...prev, joints: scaled }));
   };
 
   const applyPreset = (type: 'full' | 'waist') => {
+    let newJoints: PoseJoint[];
     if (type === 'full') {
-      setPoseData({ ...DEFAULT_POSE_DATA });
+      newJoints = DEFAULT_POSE_DATA.joints.map(j => ({ ...j }));
     } else {
-      // Waist up: scale up and move down
-      const scale = 1.8;
-      const offsetY = -20;
-      setPoseData({
-        ...DEFAULT_POSE_DATA,
-        joints: DEFAULT_POSE_DATA.joints.map(j => ({
-          ...j,
-          x: 50 + (j.x - 50) * scale,
-          y: 30 + (j.y - 30) * scale + offsetY
-        })).filter(j => j.y < 110 && j.y > -10 && j.x < 110 && j.x > -10)
-      });
+      // Waist up: scale and translate while preserving all bones
+      const scale = 1.6;
+      const offsetY = -15;
+      newJoints = DEFAULT_POSE_DATA.joints.map(j => ({
+        ...j,
+        x: clampToCanvas(50 + (j.x - 50) * scale),
+        y: clampToCanvas(30 + (j.y - 30) * scale + offsetY)
+      }));
     }
+    localJointsRef.current = newJoints;
+    setLocalJoints(newJoints);
+    setPoseData(prev => ({ ...prev, joints: newJoints }));
     setSelectedJointIds(new Set());
   };
 
@@ -226,11 +271,11 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
     if (!poseData.showSkeleton) return null;
 
     return (
-      <svg className="absolute inset-0 w-full h-full pointer-events-none z-40 overflow-visible">
+      <svg className="absolute inset-0 w-full h-full pointer-events-none z-40 overflow-visible select-none">
         {/* Draw Bones */}
-        {poseData.joints.map(joint => {
+        {localJoints.map(joint => {
           if (!joint.parent) return null;
-          const parent = poseData.joints.find(j => j.id === joint.parent);
+          const parent = localJoints.find(j => j.id === joint.parent);
           if (!parent) return null;
           return (
             <line 
@@ -245,8 +290,8 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
         })}
         
         {/* Draw Joints */}
-        {poseData.joints.map(joint => (
-          <g key={`joint-group-${joint.id}`} className="pointer-events-auto cursor-move joint-handle">
+        {localJoints.map(joint => (
+          <g key={`joint-group-${joint.id}`} className="pointer-events-auto cursor-grab active:cursor-grabbing joint-handle select-none">
             <circle 
               cx={`${joint.x}%`} cy={`${joint.y}%`}
               r="8"
@@ -254,7 +299,9 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
               stroke={selectedJointIds.has(joint.id) ? "white" : "rgba(255,255,255,0.5)"}
               strokeWidth={selectedJointIds.has(joint.id) ? "3" : "1"}
               onMouseDown={(e) => { 
+                e.preventDefault();
                 e.stopPropagation(); 
+                isDraggingRef.current = true;
                 setActiveJointId(joint.id); 
                 if (!e.shiftKey && !selectedJointIds.has(joint.id)) {
                   setSelectedJointIds(new Set([joint.id]));
@@ -270,7 +317,7 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
             <text 
               x={`${joint.x}%`} y={`${joint.y - 3}%`}
               textAnchor="middle"
-              className={`text-[10px] fill-white font-bold pointer-events-none drop-shadow-md transition-opacity ${selectedJointIds.has(joint.id) ? 'opacity-100' : 'opacity-40'}`}
+              className={`text-[10px] fill-white font-bold pointer-events-none drop-shadow-md transition-opacity select-none ${selectedJointIds.has(joint.id) ? 'opacity-100' : 'opacity-40'}`}
               style={{ fontSize: '10px' }}
             >
               {joint.name}
@@ -323,7 +370,15 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
              <div className="bg-black/60 backdrop-blur rounded-full p-1.5 flex gap-2 border border-white/10 shadow-xl overflow-x-auto max-w-[80vw] items-center">
                 {onClearSession && (
                     <button 
-                      onClick={() => { if(confirm("Clear all variants?")) onClearSession(); }}
+                      onClick={async () => {
+                        const ok = await showInAppConfirm("Are you sure you want to clear all variants?", {
+                          title: "Clear All Variants",
+                          confirmText: "Clear All",
+                          cancelText: "Keep",
+                          isDestructive: true
+                        });
+                        if (ok) onClearSession();
+                      }}
                       className="w-10 h-10 rounded-full bg-red-900/20 border border-red-500/30 text-red-400 hover:bg-red-900/40 flex items-center justify-center transition-all shrink-0"
                       title="Clear All Variants"
                     >
@@ -452,7 +507,7 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
                       </button>
                   </div>
                   <button 
-                    onClick={() => setSelectedJointIds(new Set(poseData.joints.map(j => j.id)))}
+                    onClick={() => setSelectedJointIds(new Set(localJoints.map(j => j.id)))}
                     className="w-full py-2 px-3 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors flex items-center justify-center gap-2"
                   >
                       Select All
@@ -468,9 +523,18 @@ const PoseStudioCanvas: React.FC<PoseStudioCanvasProps> = ({
                   </button>
                   
                   <button 
-                    onClick={() => {
-                        if (confirm("Reset pose to default?")) {
-                            setPoseData({ ...DEFAULT_POSE_DATA });
+                    onClick={async () => {
+                        const ok = await showInAppConfirm("Reset pose to default?", {
+                          title: "Reset Pose",
+                          confirmText: "Reset to Default",
+                          cancelText: "Cancel",
+                          isDestructive: true
+                        });
+                        if (ok) {
+                            const defJoints = DEFAULT_POSE_DATA.joints.map(j => ({ ...j }));
+                            localJointsRef.current = defJoints;
+                            setLocalJoints(defJoints);
+                            setPoseData({ ...DEFAULT_POSE_DATA, joints: defJoints });
                             setSelectedJointIds(new Set());
                         }
                     }}

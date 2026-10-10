@@ -49,7 +49,7 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
 
   const handleExportBatch = async () => {
      if (config.selectedTabIds.length === 0) {
-        alert("Please select at least one character to export.");
+        await showInAppAlert("Please select at least one character to export.");
         return;
      }
      try {
@@ -57,7 +57,7 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
         onClose();
      } catch (e: any) {
         console.error("Export failed", e);
-        alert(`Export failed: ${e.message || "Unknown error"}`);
+        await showInAppAlert(`Export failed: ${e.message || "Unknown error"}`, { isDestructive: true });
      }
   };
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { showInAppConfirm } from '../../services/dialogService';
 import { 
   getQuotaSummary, getQuotaRecords, clearQuotaRecords, 
   probeGeminiQuota, probeOpenAIQuota, probeBEIQuota, QuotaProbeResult, 
@@ -101,8 +102,9 @@ export const QuotaInspector: React.FC<QuotaInspectorProps> = ({ apiKeyReady, onN
     }
   };
 
-  const handleClearHistory = () => {
-    if (confirm('Clear all local API request usage history?')) {
+  const handleClearHistory = async () => {
+    const ok = await showInAppConfirm('Clear all local API request usage history?', { title: 'Clear History', confirmText: 'Clear', isDestructive: true });
+    if (ok) {
       clearQuotaRecords();
       refreshData();
     }

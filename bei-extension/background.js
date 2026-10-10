@@ -851,7 +851,7 @@ async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds 
       const resp = await new Promise((resolve, reject) => {
         chrome.tabs.sendMessage(tabId, {
           action: "EXECUTE_PROMPT",
-          data: { jobId, target, prompt, timeoutSeconds, images }
+          data: { jobId, target, prompt, timeoutSeconds, images, quality }
         }, (response) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
@@ -935,17 +935,17 @@ async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds 
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
-      func: (jId, pText, tSec, imgs) => {
+      func: (jId, pText, tSec, imgs, qVal) => {
         if (typeof window.__MYTHIC_BEI_EXECUTE_PROMPT__ === 'function') {
-          window.__MYTHIC_BEI_EXECUTE_PROMPT__(jId, pText, tSec, imgs);
+          window.__MYTHIC_BEI_EXECUTE_PROMPT__(jId, pText, tSec, imgs, qVal);
           return { success: true, method: 'global_fn' };
         }
         window.dispatchEvent(new CustomEvent('__MYTHIC_BEI_EXECUTE_PROMPT__', {
-          detail: { jobId: jId, prompt: pText, timeoutSeconds: tSec, images: imgs }
+          detail: { jobId: jId, prompt: pText, timeoutSeconds: tSec, images: imgs, quality: qVal }
         }));
         return { success: true, method: 'custom_event' };
       },
-      args: [jobId, prompt, timeoutSeconds, images]
+      args: [jobId, prompt, timeoutSeconds, images, quality]
     });
 
     if (results && results[0] && results[0].result && results[0].result.success) {
@@ -1054,18 +1054,30 @@ async function handleBridgeCommand(msg) {
   }
 
   if (type === "EXECUTE_PROMPT") {
-    const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'new_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null } = data;
-    const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
+    const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'new_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null, quality = 'ultra_original', dispatchMode = 'single' } = data;
+    let parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
+
+    // Multi-Account Mode: If requested slot is busy and multi mode is enabled, find an idle slot
+    if (dispatchMode === 'multi' && isSlotBusy(target, parsedSlot)) {
+      console.log(`[MythicFrame BEI Worker] Multi-Account Mode: Slot ${target}:${parsedSlot} is busy. Finding idle account slot...`);
+      const candidateSlots = [0, 1, 2, 3];
+      const idleSlot = candidateSlots.find(s => !isSlotBusy(target, s));
+      if (idleSlot !== undefined) {
+        console.log(`[MythicFrame BEI Worker] Multi-Account Mode: Auto-routed job ${jobId} to idle slot ${idleSlot} for parallel execution!`);
+        parsedSlot = idleSlot;
+      }
+    }
+
     const slotKey = getSlotKey(target, parsedSlot);
 
-    // Concurrency Guard: If a job is already in progress for this slot, queue rather than colliding on the same tab
+    // Concurrency Guard: If the assigned slot is still busy, queue rather than colliding on the same tab
     if (isSlotBusy(target, parsedSlot)) {
       console.log(`[MythicFrame BEI Worker] Concurrency Guard: Slot ${slotKey} is currently busy. Queuing job ${jobId}...`);
       if (!slotQueues.has(slotKey)) {
         slotQueues.set(slotKey, []);
       }
       const queue = slotQueues.get(slotKey);
-      if (queue.length >= 4) {
+      if (queue.length >= 8) {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: "GENERATION_FAILED",
@@ -1077,12 +1089,12 @@ async function handleBridgeCommand(msg) {
         }
         return;
       }
-      queue.push({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId });
+      queue.push({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId, quality, dispatchMode });
       return;
     }
 
     try {
-      await startJob({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId });
+      await startJob({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId, quality, dispatchMode });
     } catch (err) {
       activeJobs.delete(jobId);
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1097,7 +1109,7 @@ async function handleBridgeCommand(msg) {
   }
 
   if (type === "EXECUTE_TEXT_PROMPT") {
-    const { jobId, target = "gemini", prompt, accountSlot = 0, timeoutSeconds = 60, tabMode = 'new_window_group', bringTabToFront = false } = data;
+    const { jobId, target = "gemini", prompt, accountSlot = 0, timeoutSeconds = 60, tabMode = 'new_window_group', bringTabToFront = false, images = [] } = data;
     const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
 
     try {
@@ -1109,7 +1121,7 @@ async function handleBridgeCommand(msg) {
 
       chrome.tabs.sendMessage(tabId, {
         action: "EXECUTE_TEXT_PROMPT",
-        data: { jobId, prompt, timeoutSeconds }
+        data: { jobId, prompt, timeoutSeconds, images }
       }, (res) => {
         if (chrome.runtime.lastError) {
           console.warn("[MythicFrame BEI] Direct message warning for text prompt:", chrome.runtime.lastError);

@@ -96,7 +96,7 @@ const StyleLibrary: React.FC<StyleLibraryProps> = ({
     try {
       const url = await generateStyleExample(snippet, testSubject);
       onUpdatePreview(id, url);
-    } catch (e: any) { alert("Failed: " + e.message); } finally { setIsGeneratingExample(null); }
+    } catch (e: any) { await showInAppAlert("Failed: " + e.message, { isDestructive: true }); } finally { setIsGeneratingExample(null); }
   };
 
   // Vision Architect Handler
@@ -116,7 +116,7 @@ const StyleLibrary: React.FC<StyleLibraryProps> = ({
           promptSnippet: analysis.promptSnippet
         }));
       } catch (e: any) {
-        alert("Vision analysis failed: " + e.message);
+        await showInAppAlert("Vision analysis failed: " + e.message, { isDestructive: true });
       } finally {
         setIsArchitecting(false);
       }

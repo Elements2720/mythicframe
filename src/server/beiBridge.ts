@@ -120,7 +120,7 @@ export class BEIBridgeServer {
   }
   private pendingJobs = new Map<string, PendingJob>();
   private lastHeartbeat = Date.now();
-  private extensionVersion = '1.3.6';
+  private extensionVersion = '1.4.1';
   private projectDir = process.cwd();
   public latestProgress: Record<string, { step: string; detail: string; timestamp: number }> = {};
   public globalProgress: { step: string; detail: string; timestamp: number } | null = null;
@@ -822,7 +822,9 @@ export class BEIBridgeServer {
             tabMode,
             bringTabToFront,
             chatSessionMode,
-            tabSessionId
+            tabSessionId,
+            quality: payload.quality || 'ultra_original',
+            dispatchMode: payload.dispatchMode || 'single'
           }
         }));
 
@@ -891,7 +893,7 @@ export class BEIBridgeServer {
   public async handleTextRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     try {
       const payload = await this.parseRequestBody(req);
-      const { prompt, target = 'gemini', accountSlot = 0, timeoutSeconds = 60 } = payload;
+      const { prompt, target = 'gemini', accountSlot = 0, timeoutSeconds = 60, images = [] } = payload;
       if (!prompt) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'MISSING_PROMPT', message: 'Prompt is required' }));

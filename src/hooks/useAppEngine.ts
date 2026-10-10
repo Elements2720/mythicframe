@@ -238,9 +238,10 @@ export const useAppEngine = () => {
     }));
   };
 
-  const removeAllFromCollection = () => {
+  const removeAllFromCollection = async () => {
     if (activeCollection.isLocked) return;
-    if (confirm("Remove all styles from this list?")) {
+    const ok = await showInAppConfirm("Remove all styles from this list?", { title: "Remove Styles", confirmText: "Remove All", isDestructive: true });
+    if (ok) {
       setStyleCollections(prev => prev.map(c => c.id === activeCollectionId ? { ...c, styleIds: ['none'] } : c));
     }
   };
@@ -267,8 +268,9 @@ export const useAppEngine = () => {
     setCustomArtStyles(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
   };
 
-  const deleteCustomStyle = (id: string) => {
-    if (confirm("Delete this art style permanently?")) {
+  const deleteCustomStyle = async (id: string) => {
+    const ok = await showInAppConfirm("Delete this art style permanently?", { title: "Delete Art Style", confirmText: "Delete", isDestructive: true });
+    if (ok) {
       setCustomArtStyles(prev => prev.filter(s => s.id !== id));
       setStyleCollections(prev => prev.map(c => ({ ...c, styleIds: c.styleIds.filter(sid => sid !== id) })));
       setStylePreviews(prev => { const next = { ...prev }; delete next[id]; return next; });
@@ -281,9 +283,10 @@ export const useAppEngine = () => {
     setActiveCollectionId(newId);
   };
 
-  const deleteStyleCollection = (id: string) => {
+  const deleteStyleCollection = async (id: string) => {
     if (id === 'all-built-in') return;
-    if (confirm("Delete this style list?")) {
+    const ok = await showInAppConfirm("Delete this style list?", { title: "Delete Style List", confirmText: "Delete", isDestructive: true });
+    if (ok) {
       setStyleCollections(prev => prev.filter(c => c.id !== id));
       if (activeCollectionId === id) setActiveCollectionId('all-built-in');
     }
@@ -954,8 +957,8 @@ export const useAppEngine = () => {
      try {
         const name = `Mythic_${activeTab.mode}_${Date.now()}`;
         const id = await uploadImageToDrive(generatedImage, name, driveFolderId || undefined);
-        alert(`Saved to Drive! File ID: ${id}`);
-     } catch(e: any) { alert(`Failed to save to Drive: ${e.message}`); }
+        await showInAppAlert(`Saved to Drive! File ID: ${id}`, { title: "Google Drive" });
+     } catch(e: any) { await showInAppAlert(`Failed to save to Drive: ${e.message}`, { title: "Google Drive Error", isDestructive: true }); }
   };
 
   const handleAssetSelect = (url: string) => {
@@ -1006,7 +1009,7 @@ export const useAppEngine = () => {
   };
 
   const handleSuggestTraits = async () => {
-     if (!activeTab.characterName) { alert("Please enter a character name first."); return; }
+     if (!activeTab.characterName) { await showInAppAlert("Please enter a character name first."); return; }
      setIsSuggesting(true);
      try {
         const suggested = await generateCharacterTraits(activeTab.characterName, activeTab.characterSubtitle, activeTab.characterGender, gameContext);

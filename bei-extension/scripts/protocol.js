@@ -126,18 +126,35 @@
       return results;
     },
 
-    upgradeToHighResUrl(url) {
+    upgradeToHighResUrl(url, quality = 'ultra_original') {
       if (!url || typeof url !== 'string') return url;
       try {
-        // Upgrade Google CDN thumbnail sizing (=s\d+, =w\d+-h\d+, etc.) to =s2048
         if (
           url.includes('googleusercontent.com') ||
           url.includes('gstatic.com') ||
           url.includes('photos.google.com')
         ) {
-          if (/=[swh]\d+/i.test(url) || /=w\d+-h\d+/i.test(url)) {
-            return url.replace(/=(?:s\d+|w\d+-h\d+|w\d+|h\d+)(?:-[a-zA-Z0-9_-]+)*(?=[?&#]|$)/i, '=s2048');
+          // If standard quality requested, keep current sizing or default to s1024
+          if (quality === 'standard') {
+            if (/=[swh]\d+/i.test(url) || /=w\d+-h\d+/i.test(url)) {
+              return url.replace(/=(?:s\d+|w\d+-h\d+|w\d+|h\d+)(?:-[a-zA-Z0-9_-]+)*(?=[?&#]|$)/i, '=s1024');
+            }
+            return url;
           }
+
+          // If high quality requested, upgrade to =s2048
+          if (quality === 'high') {
+            if (/=[swh]\d+/i.test(url) || /=w\d+-h\d+/i.test(url)) {
+              return url.replace(/=(?:s\d+|w\d+-h\d+|w\d+|h\d+)(?:-[a-zA-Z0-9_-]+)*(?=[?&#]|$)/i, '=s2048');
+            }
+            return url.includes('=') ? `${url}-s2048` : `${url}=s2048`;
+          }
+
+          // Default: 'ultra_original' - Strip dimension boundaries or use =s0 (original master uncompressed resolution)
+          if (/=[swh]\d+/i.test(url) || /=w\d+-h\d+/i.test(url)) {
+            return url.replace(/=(?:s\d+|w\d+-h\d+|w\d+|h\d+)(?:-[a-zA-Z0-9_-]+)*(?=[?&#]|$)/i, '=s0');
+          }
+          return url.includes('=') ? `${url}-s0` : `${url}=s0`;
         }
       } catch (e) {
         console.debug('[MythicBEI] Error upgrading URL to high-res:', e);
@@ -241,10 +258,22 @@
       return Array.from(new Set(urls));
     },
 
-    async imageToBase64(imgElement) {
+    async imageToBase64(imgElement, quality = 'ultra_original') {
       if (!imgElement) return '';
       const rawSrc = imgElement.currentSrc || imgElement.src || '';
       
+      // If ultra or high quality is requested, first attempt direct high-res blob fetch from upgraded URL
+      if (quality !== 'standard' && rawSrc) {
+        try {
+          const highResData = await this.fetchBlobAsBase64(rawSrc, quality);
+          if (highResData && highResData.startsWith('data:image') && highResData.length > 2048) {
+            return highResData;
+          }
+        } catch (e) {
+          console.debug('[MythicBEI] Direct high-res fetch attempt notice:', e);
+        }
+      }
+
       // Attempt 1: Canvas export on the live element
       try {
         const canvas = document.createElement('canvas');
@@ -290,7 +319,7 @@
               clearTimeout(timer);
               reject(new Error('Failed to load image with anonymous CORS'));
             };
-            img.src = rawSrc;
+            img.src = this.upgradeToHighResUrl(rawSrc, quality);
           });
           if (offscreenDataUrl && offscreenDataUrl.startsWith('data:image') && offscreenDataUrl.length > 512) {
             return offscreenDataUrl;
@@ -303,7 +332,7 @@
       // Attempt 3: Multi-tier fetchBlobAsBase64
       if (rawSrc) {
         try {
-          const fetched = await this.fetchBlobAsBase64(rawSrc);
+          const fetched = await this.fetchBlobAsBase64(rawSrc, quality);
           if (fetched && fetched.startsWith('data:image') && fetched.length > 512) {
             return fetched;
           }
@@ -313,14 +342,14 @@
       }
 
       // Fallback: return upgraded URL
-      return this.upgradeToHighResUrl(rawSrc);
+      return this.upgradeToHighResUrl(rawSrc, quality);
     },
 
-    async fetchBlobAsBase64(url) {
+    async fetchBlobAsBase64(url, quality = 'ultra_original') {
       if (!url) return '';
       if (url.startsWith('data:image')) return url;
 
-      const upgradedUrl = this.upgradeToHighResUrl(url);
+      const upgradedUrl = this.upgradeToHighResUrl(url, quality);
       const urlCandidates = Array.from(new Set([upgradedUrl, url].filter(Boolean)));
 
       for (const targetUrl of urlCandidates) {

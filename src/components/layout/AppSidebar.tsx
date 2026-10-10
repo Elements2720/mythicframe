@@ -63,6 +63,13 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
     if (isMinimized) return <div className="h-px bg-slate-800/80 my-3 mx-2 opacity-50" />;
     
     const isExpanded = expandedSections[section];
+    const categoryKeyMap: Record<string, any> = {
+      project: 'cat_project',
+      character: 'cat_character',
+      world: 'cat_world',
+      production: 'cat_production'
+    };
+    const displayLabel = categoryKeyMap[section] ? t(categoryKeyMap[section]) : label;
     
     return (
       <button 
@@ -73,7 +80,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
           <div className="w-5 h-5 flex items-center justify-center rounded bg-slate-800 text-slate-400 group-hover:text-purple-400 transition-colors">
             <Icon name={icon} className="text-[10px]" />
           </div>
-          <span className="text-[10px] font-black text-slate-200 uppercase tracking-[0.15em]">{label}</span>
+          <span className="text-[10px] font-black text-slate-200 uppercase tracking-[0.15em]">{displayLabel}</span>
         </div>
         <Icon 
           name="fa-chevron-down" 
@@ -185,7 +192,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
            type="button"
            onClick={() => setIsMinimized(!isMinimized)}
            className="w-full h-8 rounded-lg text-slate-500 hover:text-white hover:bg-slate-900 flex items-center justify-center transition-all group cursor-pointer"
-           title={isMinimized ? "Expand Sidebar" : "Minimize Sidebar"}
+           title={isMinimized ? t('expand_sidebar') : t('minimize_sidebar')}
          >
            <i className={`fa-solid fa-chevron-${isMinimized ? 'right' : 'left'} text-xs group-hover:scale-110 transition-transform`} />
          </button>

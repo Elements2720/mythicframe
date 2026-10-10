@@ -38,7 +38,8 @@ import {
   launchMythicServer,
   openBEITab,
   scanBEIAccounts,
-  generateWithBEI
+  generateWithBEI,
+  getMythicSettings
 } from "./beiClient.js";
 
 // Helper to format output instructions for image generation
@@ -333,6 +334,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             accountSlot: { type: "number", description: "Account slot index (default 0)" },
             images: { type: "array", items: { type: "string" }, description: "Array of reference image paths or base64 data URIs" },
             style: { type: "string", description: "Optional art style snippet" },
+            quality: { type: "string", enum: ["standard", "high", "ultra_original"], description: "Image resolution & quality mode: 'ultra_original' (master full-res), 'high' (2K), or 'standard' (preview)" },
             timeoutSeconds: { type: "number", description: "Timeout in seconds (default 120)" }
           },
           required: ["prompt"]
@@ -349,6 +351,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             geminiApiKey: { type: "string", description: "Optional Gemini API key if using gemini-api route" },
             aspectRatio: { type: "string", description: "'1:1', '16:9', '9:16', '3:4', '4:3'" },
             style: { type: "string", description: "Art style snippet" },
+            quality: { type: "string", enum: ["standard", "high", "ultra_original"], description: "Image resolution & quality mode for BEI: 'ultra_original', 'high', or 'standard'" },
             images: { type: "array", items: { type: "string" }, description: "Optional reference images" },
             target: { type: "string", enum: ["gemini", "chatgpt"] },
             accountSlot: { type: "number" }
@@ -359,6 +362,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "launch_web_ui",
         description: "Manually launches the MythicFrame web UI on localhost port 3488 if the auto-launch failed.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      },
+      {
+        name: "mythic_get_settings",
+        description: "Fetches and displays all active MythicFrame settings, BEI configuration, connected browser accounts, slots, and quality/multi-account preferences.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -519,6 +531,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         target: args.target || 'gemini',
         accountSlot: args.accountSlot ?? 0,
         images: args.images || [],
+        quality: args.quality || 'ultra_original',
+        dispatchMode: args.dispatchMode || 'single',
         timeoutSeconds: args.timeoutSeconds || 900
       });
       const formattedPath = beiRes.filePath.replace(/\\/g, '/');
@@ -526,7 +540,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return {
         content: [{
           type: "text",
-          text: `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nImage saved to: ${beiRes.filePath}\nJob ID: ${beiRes.jobId}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${formattedPath}) so they can easily open it!`
+          text: `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nImage saved to: ${beiRes.filePath}\nJob ID: ${beiRes.jobId}\nQuality: ${args.quality || 'ultra_original'}\nDispatch Mode: ${args.dispatchMode || 'single'}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${formattedPath}) so they can easily open it!`
         }]
       };
     }
@@ -548,6 +562,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           aspectRatio: args.aspectRatio || '1:1',
           target: args.target || 'gemini',
           accountSlot: args.accountSlot ?? 0,
+          quality: args.quality || 'ultra_original',
+          dispatchMode: args.dispatchMode || 'single',
           images: args.images || []
         });
         const formattedPath = beiRes.filePath.replace(/\\/g, '/');
@@ -555,7 +571,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{
             type: "text",
-            text: `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nImage saved to: ${beiRes.filePath}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${formattedPath}) so they can easily open it!`
+            text: `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nImage saved to: ${beiRes.filePath}\nQuality: ${args.quality || 'ultra_original'}\nDispatch Mode: ${args.dispatchMode || 'single'}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${formattedPath}) so they can easily open it!`
           }]
         };
       }
@@ -573,6 +589,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           aspectRatio: args.aspectRatio || '1:1',
           target: args.target || 'gemini',
           accountSlot: args.accountSlot ?? 0,
+          quality: args.quality || 'ultra_original',
+          dispatchMode: args.dispatchMode || 'single',
           images: args.images || []
         });
         const formattedPath = beiRes.filePath.replace(/\\/g, '/');
@@ -580,7 +598,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{
             type: "text",
-            text: `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nImage saved to: ${beiRes.filePath}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${formattedPath}) so they can easily open it!`
+            text: `IMAGE GENERATED SUCCESSFULLY VIA BEI!\n\nImage saved to: ${beiRes.filePath}\nQuality: ${args.quality || 'ultra_original'}\nDispatch Mode: ${args.dispatchMode || 'single'}\n\nPlease embed this image for the user, AND provide a clickable markdown link [${fileName}](file:///${formattedPath}) so they can easily open it!`
           }]
         };
       }
@@ -607,6 +625,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     else if (name === "launch_web_ui") {
       const res = await launchMythicServer();
       return { content: [{ type: "text", text: res.message }] };
+    }
+    else if (name === "mythic_get_settings") {
+      const settings = await getMythicSettings();
+      let text = `⚡ MYTHICFRAME ACTIVE SETTINGS & CONFIGURATION\n\n`;
+      text += `• Bridge Status: ${settings.connected ? 'CONNECTED' : 'DISCONNECTED'} (Port ${settings.bridgePort})\n`;
+      text += `• Studio Web UI: http://localhost:${settings.webPort}\n`;
+      text += `• Extension Version: v${settings.extensionVersion}\n`;
+      text += `• Active Jobs Count: ${settings.activeJobsCount}\n\n`;
+      text += `Connected Accounts (${settings.accounts?.length || 0}):\n`;
+      (settings.accounts || []).forEach((acc: any) => {
+        text += `  - Slot ${acc.slot}: ${acc.email} (${acc.tier || 'pro'})\n`;
+      });
+      text += `\nConnected Browser Tabs (${settings.tabs?.length || 0}):\n`;
+      (settings.tabs || []).forEach((tab: any) => {
+        text += `  - [${tab.target}] Tab #${tab.tabId} (Slot ${tab.accountSlot ?? 0}) - ${tab.email || 'pending'}\n`;
+      });
+      return { content: [{ type: "text", text }] };
     }
     else if (name === "prepare_ui_reimagine_prompt") {
       result = buildUIReimaginePrompt(args.prompt, defaultGameContext, args.styleSnippet || "", true, args.uiMood, undefined, undefined, args.uiArchetype, args.uiMaterial, false);

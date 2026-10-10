@@ -951,7 +951,7 @@
     return { ok: false, reason: 'Pre-send verification timed out after 3 remediation cycles.' };
   }
 
-  async function executePrompt(jobId, prompt, timeoutSeconds = 900, images = []) {
+  async function executePrompt(jobId, prompt, timeoutSeconds = 900, images = [], quality = "ultra_original") {
     ensureBackgroundCpuAwake();
     let keepAlivePort = null;
     try {
@@ -1166,7 +1166,7 @@
           finalData = imgOrUrl;
         } else {
           try {
-            finalData = await protocol.fetchBlobAsBase64(srcUrl);
+            finalData = await protocol.fetchBlobAsBase64(srcUrl, quality);
           } catch (e) {
             finalData = srcUrl;
           }
@@ -1176,11 +1176,11 @@
         srcUrl = rawSrc;
         try {
           if (rawSrc.startsWith('blob:')) {
-            finalData = await protocol.fetchBlobAsBase64(rawSrc);
+            finalData = await protocol.fetchBlobAsBase64(rawSrc, quality);
           } else if (rawSrc.startsWith('data:image')) {
             finalData = rawSrc;
           } else {
-            finalData = await protocol.imageToBase64(imgOrUrl);
+            finalData = await protocol.imageToBase64(imgOrUrl, quality);
           }
         } catch (e) {
           finalData = srcUrl;
@@ -1534,7 +1534,7 @@
     return "";
   }
 
-  async function executeTextPrompt(jobId, prompt, timeoutSeconds = 60) {
+  async function executeTextPrompt(jobId, prompt, timeoutSeconds = 60, images = []) {
     let keepAlivePort = null;
     try {
       if (chrome.runtime && chrome.runtime.connect) {
@@ -1624,7 +1624,8 @@
   // CustomEvent listener for direct dispatch from executeScript
   window.addEventListener('__MYTHIC_BEI_EXECUTE_PROMPT__', (e) => {
     if (e.detail) {
-      const { jobId, prompt, timeoutSeconds, images } = e.detail;
+      const { jobId, prompt, timeoutSeconds, images, quality } = e.detail;
+      executePrompt(jobId, prompt, timeoutSeconds, images, quality);
       executePrompt(jobId, prompt, timeoutSeconds, images);
     }
   });

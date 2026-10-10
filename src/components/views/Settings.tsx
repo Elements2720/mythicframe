@@ -44,6 +44,7 @@ const Settings: React.FC<SettingsProps> = ({
   // Active AI Provider State
   const [activeProvider, setActiveProviderState] = useState<AIProvider>(() => getActiveAIProvider());
   const [configTab, setConfigTab] = useState<AIProvider>(() => getActiveAIProvider());
+  const [settingsPageTab, setSettingsPageTab] = useState<'engines' | 'context' | 'drive'>('engines');
 
   // Gemini API Key State
   const [apiKeyInput, setApiKeyInput] = useState(() => {
@@ -456,10 +457,10 @@ const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  const handleEditAccount = (slot: number) => {
+  const handleEditAccount = async (slot: number) => {
     const acc = beiStatus?.accounts?.find(a => a.slot === slot);
     const currentVal = acc?.email || '';
-    const newEmail = window.prompt(`Enter Google Account Email or label for Slot ${slot + 1} (/u/${slot}/):`, currentVal);
+    const newEmail = await showInAppPrompt(`Enter Google Account Email or label for Slot ${slot + 1} (/u/${slot}/):`, currentVal, { title: "Edit Account Label" });
     if (newEmail !== null) {
       updateBEIAccountCustomInfo(slot, { email: newEmail.trim(), name: newEmail.trim().split('@')[0] });
       handleCheckBEI();
@@ -479,7 +480,7 @@ const Settings: React.FC<SettingsProps> = ({
           <div className="border-b border-slate-800 pb-4 flex justify-between items-start">
              <div>
                <h2 className="text-2xl font-bold text-white mb-1">{t('settings')}</h2>
-               <p className="text-slate-400 text-sm">Configure global settings for your generated assets.</p>
+               <p className="text-slate-400 text-sm">{t('settings_subtitle')}</p>
              </div>
              
              {/* Language Selector */}
@@ -502,7 +503,56 @@ const Settings: React.FC<SettingsProps> = ({
              </div>
           </div>
 
+          {/* Primary Settings Navigation Tabs */}
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+             <button
+                type="button"
+                onClick={() => setSettingsPageTab('engines')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                   settingsPageTab === 'engines'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-950/50'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+             >
+                <i className="fa-solid fa-brain" />
+                <span>AI Generation Engines</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/30">
+                   {activeProvider}
+                </span>
+             </button>
+
+             <button
+                type="button"
+                onClick={() => setSettingsPageTab('context')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                   settingsPageTab === 'context'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-950/50'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+             >
+                <i className="fa-solid fa-book" />
+                <span>Game Context</span>
+             </button>
+
+             <button
+                type="button"
+                onClick={() => setSettingsPageTab('drive')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                   settingsPageTab === 'drive'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-950/50'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+             >
+                <i className="fa-brands fa-google-drive" />
+                <span>Google Drive</span>
+                {driveConnected && (
+                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                )}
+             </button>
+          </div>
+
           {/* Game Context Section */}
+          {settingsPageTab === 'context' && (
           <div className="bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-6">
              <div className="flex items-start gap-4">
                 <div className="w-10 h-10 rounded-full bg-blue-900/30 flex items-center justify-center text-blue-400 shrink-0">
@@ -519,7 +569,7 @@ const Settings: React.FC<SettingsProps> = ({
                           <label className="block text-xs uppercase font-bold text-slate-500 mb-1">{t('setting_world')}</label>
                           <textarea 
                             className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-sm h-24 text-slate-200 focus:border-blue-500 outline-none resize-none"
-                            placeholder="e.g. A cozy alchemy shop in a medieval village. Wooden shelves, warm candlelight, bubbling potions."
+                            placeholder={t('setting_world_placeholder')}
                             value={gameContext.setting}
                             onChange={e => setGameContext(p => ({...p, setting: e.target.value}))}
                           />
@@ -529,7 +579,7 @@ const Settings: React.FC<SettingsProps> = ({
                               <label className="block text-xs uppercase font-bold text-slate-500 mb-1">{t('tone_mood')}</label>
                               <input 
                                 className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-sm text-slate-200 focus:border-blue-500 outline-none"
-                                placeholder="e.g. Whimsical, warm"
+                                placeholder={t('tone_mood_placeholder')}
                                 value={gameContext.tone}
                                 onChange={e => setGameContext(p => ({...p, tone: e.target.value}))}
                               />
@@ -538,32 +588,35 @@ const Settings: React.FC<SettingsProps> = ({
                               <label className="block text-xs uppercase font-bold text-slate-500 mb-1">{t('visual_constraints')}</label>
                               <input 
                                 className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-sm text-slate-200 focus:border-blue-500 outline-none"
-                                placeholder="e.g. No sci-fi, no neon"
+                                placeholder={t('visual_constraints_placeholder')}
                                 value={gameContext.visualConstraints}
                                 onChange={e => setGameContext(p => ({...p, visualConstraints: e.target.value}))}
                               />
                           </div>
                        </div>
                        <div>
-                          <label className="block text-xs uppercase font-bold text-slate-500 mb-1">Default Global Art Style</label>
+                          <label className="block text-xs uppercase font-bold text-slate-500 mb-1">{t('default_global_style')}</label>
                           <select 
                             className="w-full bg-slate-950 border border-slate-700 rounded p-3 text-sm text-slate-200 focus:border-blue-500 outline-none"
                             value={gameContext.defaultStyleId || 'none'}
                             onChange={e => setGameContext(p => ({...p, defaultStyleId: e.target.value}))}
                           >
-                            <option value="none">None (User Choice)</option>
+                            <option value="none">{t('default_style_none')}</option>
                             {allArtStyles.map(style => (
                               <option key={style.id} value={style.id}>{style.name}</option>
                             ))}
                           </select>
-                          <p className="text-[10px] text-slate-500 mt-1 italic">New tabs will start with this style selected.</p>
+                          <p className="text-[10px] text-slate-500 mt-1 italic">{t('default_style_hint')}</p>
                        </div>
                    </div>
                 </div>
              </div>
           </div>
 
+          )}
+
           {/* AI GENERATION ENGINE & MULTI-PROVIDER HUB */}
+          {settingsPageTab === 'engines' && (
           <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
              {/* Header */}
              <div className="p-6 border-b border-slate-800 bg-slate-900/60">
@@ -573,9 +626,9 @@ const Settings: React.FC<SettingsProps> = ({
                          <i className="fa-solid fa-brain" />
                       </div>
                       <div>
-                         <h3 className="text-lg font-bold text-slate-200">AI Generation Engines</h3>
+                         <h3 className="text-lg font-bold text-slate-200">{t('ai_engines')}</h3>
                          <p className="text-sm text-slate-400">
-                            Select and configure your active AI generation provider or offline prompt copy mode.
+                            {t('ai_engines_desc')}
                          </p>
                       </div>
                    </div>
@@ -586,10 +639,10 @@ const Settings: React.FC<SettingsProps> = ({
                             onClick={() => onNavigate('quota')}
                             className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
                          >
-                            <i className="fa-solid fa-gauge-high text-xs text-purple-400" /> Quota Inspector
+                            <i className="fa-solid fa-gauge-high text-xs text-purple-400" /> {t('quota')}
                          </button>
                       )}
-                      <span className="text-xs text-slate-400">Active Engine:</span>
+                      <span className="text-xs text-slate-400">{t('active_engine_label')}</span>
                       <span className="px-2.5 py-1 rounded bg-purple-500/20 text-purple-300 font-bold text-xs uppercase tracking-wider border border-purple-500/30">
                          {activeProvider}
                       </span>
@@ -727,11 +780,11 @@ const Settings: React.FC<SettingsProps> = ({
                          onClick={() => handleSelectActiveProvider(configTab)}
                          className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors shadow-sm flex items-center gap-1.5"
                       >
-                         <i className="fa-solid fa-check" /> Set as Active Generation Engine
+                         <i className="fa-solid fa-check" /> {t('set_as_active_engine')}
                       </button>
                    ) : (
                       <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                         <i className="fa-solid fa-circle-check" /> This is your Active Engine
+                         <i className="fa-solid fa-circle-check" /> {t('this_is_active_engine')}
                       </div>
                    )}
                 </div>
@@ -1854,6 +1907,228 @@ const Settings: React.FC<SettingsProps> = ({
                                </button>
                             </div>
                          </div>
+
+                         {/* Image Download Quality & Fetch Strategy */}
+                         <div className="space-y-3 pt-3 border-t border-slate-800/80">
+                            <div className="flex items-center justify-between">
+                               <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                                  <i className="fa-solid fa-file-image text-purple-400" />
+                                  Image Fetch & Download Quality
+                               </label>
+                               <span className="text-[10px] text-purple-300 font-mono bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800/50">
+                                  Original Fidelity
+                               </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400">
+                               Choose how BEI extracts and saves generated artwork from your browser session to disk:
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                               <button
+                                  type="button"
+                                  onClick={() => handleUpdateBEIConfig({ downloadQuality: 'ultra_original' })}
+                                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                                     (beiConfigState.downloadQuality || 'ultra_original') === 'ultra_original'
+                                        ? 'bg-purple-950/40 border-purple-500/80 ring-1 ring-purple-500/30'
+                                        : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                                  }`}
+                               >
+                                  <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                     <span className="flex items-center gap-1.5">
+                                        <i className="fa-solid fa-crown text-amber-400 text-[10px]" /> Ultra Master (Recommended)
+                                     </span>
+                                     {(beiConfigState.downloadQuality || 'ultra_original') === 'ultra_original' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                     Extracts raw original uncompressed master asset (=s0 full-res CDN or native download trigger). Zero compression loss.
+                                  </p>
+                               </button>
+
+                               <button
+                                  type="button"
+                                  onClick={() => handleUpdateBEIConfig({ downloadQuality: 'high' })}
+                                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                                     beiConfigState.downloadQuality === 'high'
+                                        ? 'bg-purple-950/40 border-purple-500/80 ring-1 ring-purple-500/30'
+                                        : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                                  }`}
+                               >
+                                  <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                     <span className="flex items-center gap-1.5">
+                                        <i className="fa-solid fa-high-definition text-cyan-400 text-[10px]" /> High Quality (2K)
+                                     </span>
+                                     {beiConfigState.downloadQuality === 'high' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                     Fetches 2048px upgraded web asset (=s2048). Great balance of speed and high clarity.
+                                  </p>
+                               </button>
+
+                               <button
+                                  type="button"
+                                  onClick={() => handleUpdateBEIConfig({ downloadQuality: 'standard' })}
+                                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                                     beiConfigState.downloadQuality === 'standard'
+                                        ? 'bg-purple-950/40 border-purple-500/80 ring-1 ring-purple-500/30'
+                                        : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                                  }`}
+                               >
+                                  <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                     <span className="flex items-center gap-1.5">
+                                        <i className="fa-solid fa-gauge text-slate-400 text-[10px]" /> Standard Preview
+                                     </span>
+                                     {beiConfigState.downloadQuality === 'standard' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                     Fastest extraction. Directly grabs the active in-chat web element viewport preview (~1024px).
+                                  </p>
+                               </button>
+                            </div>
+
+                            {/* AI Quality Prompting Strategy */}
+                            <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3">
+                               <div>
+                                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                                     <i className="fa-solid fa-brain text-purple-400" />
+                                     AI Agent Prompting Behavior
+                                  </span>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">
+                                     How the AI assistant in chat should handle image quality preferences:
+                                  </p>
+                               </div>
+                               <div className="flex items-center gap-2">
+                                  <button
+                                     type="button"
+                                     onClick={() => handleUpdateBEIConfig({ askQualityPreference: 'once' })}
+                                     className={`px-2.5 py-1.5 rounded text-xs font-semibold border transition-all ${
+                                        (beiConfigState.askQualityPreference || 'once') === 'once'
+                                           ? 'bg-purple-600 border-purple-500 text-white shadow-sm'
+                                           : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                                     }`}
+                                  >
+                                     Remember Choice
+                                  </button>
+                                  <button
+                                     type="button"
+                                     onClick={() => handleUpdateBEIConfig({ askQualityPreference: 'always' })}
+                                     className={`px-2.5 py-1.5 rounded text-xs font-semibold border transition-all ${
+                                        beiConfigState.askQualityPreference === 'always'
+                                           ? 'bg-purple-600 border-purple-500 text-white shadow-sm'
+                                           : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                                     }`}
+                                  >
+                                     Ask on Each One
+                                  </button>
+                               </div>
+                            </div>
+                         </div>
+
+                         {/* Multi-Account & Multi-Tab Parallel Dispatch */}
+                         <div className="space-y-3 pt-3 border-t border-slate-800/80">
+                            <div className="flex items-center justify-between">
+                               <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                                  <i className="fa-solid fa-layer-group text-purple-400" />
+                                  Account Dispatch & Parallel Tab Execution
+                               </label>
+                               <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                                  (beiConfigState.accountDispatchMode || 'single') === 'multi'
+                                     ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/50'
+                                     : 'bg-purple-950/60 text-purple-300 border-purple-800/50'
+                               }`}>
+                                  {(beiConfigState.accountDispatchMode || 'single') === 'multi' ? 'Multi-Account (Parallel)' : 'Single Account (Dedicated)'}
+                               </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400">
+                               Controls what happens when an account tab is busy during queued generations or batch image jobs:
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                               <button
+                                  type="button"
+                                  onClick={() => handleUpdateBEIConfig({ accountDispatchMode: 'single' })}
+                                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                                     (beiConfigState.accountDispatchMode || 'single') === 'single'
+                                        ? 'bg-purple-950/40 border-purple-500/80 ring-1 ring-purple-500/30'
+                                        : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                                  }`}
+                               >
+                                  <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                     <span className="flex items-center gap-1.5">
+                                        <i className="fa-solid fa-user text-blue-400 text-[10px]" /> 1 Account (Single Dedicated)
+                                     </span>
+                                     {(beiConfigState.accountDispatchMode || 'single') === 'single' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                     All images queue on your selected account slot. Sequential generation; keeps history in one thread.
+                                  </p>
+                               </button>
+
+                               <button
+                                  type="button"
+                                  onClick={() => handleUpdateBEIConfig({ accountDispatchMode: 'multi' })}
+                                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                                     beiConfigState.accountDispatchMode === 'multi'
+                                        ? 'bg-purple-950/40 border-purple-500/80 ring-1 ring-purple-500/30'
+                                        : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                                  }`}
+                               >
+                                  <div className="flex items-center justify-between font-bold text-xs text-slate-200 mb-1">
+                                     <span className="flex items-center gap-1.5">
+                                        <i className="fa-solid fa-users text-emerald-400 text-[10px]" /> Multi-Account (Multi-Tab Parallel)
+                                     </span>
+                                     {beiConfigState.accountDispatchMode === 'multi' && (
+                                        <i className="fa-solid fa-circle-check text-purple-400 text-xs" />
+                                     )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                     If current account tab is busy, automatically dispatches to idle Google accounts in parallel across multiple tabs.
+                                  </p>
+                               </button>
+                            </div>
+
+                            {/* AI Account Dispatch Prompting Behavior */}
+                            <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3">
+                               <div>
+                                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                                     <i className="fa-solid fa-brain text-purple-400" />
+                                     AI Agent Multi-Account Prompting
+                                  </span>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">
+                                     How the AI assistant should ask before batching or generating:
+                                  </p>
+                               </div>
+                               <div className="flex items-center gap-2">
+                                  <button
+                                     type="button"
+                                     onClick={() => handleUpdateBEIConfig({ askAccountDispatchPreference: 'once' })}
+                                     className={`px-2.5 py-1.5 rounded text-xs font-semibold border transition-all ${
+                                        (beiConfigState.askAccountDispatchPreference || 'once') === 'once'
+                                           ? 'bg-purple-600 border-purple-500 text-white shadow-sm'
+                                           : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                                     }`}
+                                  >
+                                     Remember Choice
+                                  </button>
+                                  <button
+                                     type="button"
+                                     onClick={() => handleUpdateBEIConfig({ askAccountDispatchPreference: 'always' })}
+                                     className={`px-2.5 py-1.5 rounded text-xs font-semibold border transition-all ${
+                                        beiConfigState.askAccountDispatchPreference === 'always'
+                                           ? 'bg-purple-600 border-purple-500 text-white shadow-sm'
+                                           : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                                     }`}
+                                  >
+                                     Ask on Each One
+                                  </button>
+                               </div>
+                            </div>
+                         </div>
                       </div>
 
                       {/* Quick-Launch & Auto-Open Notice */}
@@ -1914,7 +2189,10 @@ const Settings: React.FC<SettingsProps> = ({
              </div>
           </div>
 
+          )}
+
           {/* Google Drive Section */}
+          {settingsPageTab === 'drive' && (
           <div className="bg-slate-900 border border-slate-800 rounded-lg p-6">
              <div className="flex items-start gap-4">
                 <div className="w-10 h-10 rounded-full bg-green-900/30 flex items-center justify-center text-green-500 shrink-0">
@@ -2018,6 +2296,8 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
              </div>
           </div>
+
+          )}
 
           <div className="mt-12 pt-6 border-t border-slate-900 text-center">
              <p className="text-xs text-slate-600 font-mono">MythicFrame v{APP_VERSION}</p>

@@ -7,7 +7,7 @@ const WORKSPACE_STORAGE_KEY = 'mythic_workspace_tabs_light';
 
 export const useTabs = (defaultStyleId: string = 'none') => {
   const initialMode = getHashMode();
-  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'batch'].includes(initialMode);
+  const isStudioMode = ['illustration', 'frame', 'background', 'fullcard', 'animation', 'resize', 'clothes', 'bg-replace', 'pixelize', 'gacha', 'ui-reimagine', 'pose-studio', 'map-grid', 'sprite-sheet', 'sprite-strip', 'batch'].includes(initialMode);
   
   // Fast initial hydration from localStorage cache
   const [tabs, setTabs] = useState<WorkspaceTab[]>(() => {
@@ -146,9 +146,10 @@ export const useTabs = (defaultStyleId: string = 'none') => {
       setActiveTabId(newId);
   };
 
-  const handleCloseTab = (id: string) => {
+  const handleCloseTab = async (id: string) => {
       if (tabs.length === 1) {
-          if(confirm("Reset this project?")) {
+          const ok = await showInAppConfirm("Reset this project?", { title: "Reset Project", confirmText: "Reset", isDestructive: true });
+          if (ok) {
              setTabs([createNewTab(id, 'Character 1', activeTab.mode, defaultStyleId)]);
           }
           return;

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { showInAppAlert, showInAppPrompt } from '../../services/dialogService';
 import { BatchItem, BatchVariation, AspectRatio } from '../../types';
 import { parseBatchFile } from '../../utils/batchParser';
 import { useModalDismiss } from '../../hooks/useModalDismiss';
@@ -836,7 +837,7 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
         try {
             const data = JSON.parse(event.target?.result as string);
             updateActiveTab({
@@ -849,7 +850,7 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
             });
         } catch(err) {
             console.error("Failed to parse batch import", err);
-            alert("Invalid batch project file.");
+            await showInAppAlert("Invalid batch project file.", { isDestructive: true });
         }
         if (importFileInputRef.current) importFileInputRef.current.value = '';
     };
@@ -1746,8 +1747,8 @@ export const BatchStudio: React.FC<BatchStudioProps> = ({ engine }) => {
                  </button>
                  
                  <button 
-                    onClick={() => {
-                        const newP = window.prompt("Edit your prompt:", engine.batchIntervention!.itemPrompt);
+                    onClick={async () => {
+                        const newP = await showInAppPrompt("Edit your prompt:", engine.batchIntervention!.itemPrompt, { title: "Edit Prompt" });
                         if (newP !== null) {
                             engine.batchIntervention!.resolve({ action: 'edit', newPrompt: newP });
                         }

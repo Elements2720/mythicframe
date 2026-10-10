@@ -33,13 +33,16 @@ If the user didn't specify an engine, or if neither is immediately configured, u
   - If no API key is set, prompt: *"Please enter your Gemini API key or set it at http://localhost:3488"* (link: https://ai.google.dev/gemini-api/docs/api-key).
 
 ## Step 3: Generation Execution
-Call `mythic_smart_generate` with:
-- `prompt`: the user's prompt.
-- `engine`: `'bei'` | `'gemini-api'` | `'auto'` | `'prompt-only'`.
-- `aspectRatio`: '1:1', '16:9', '9:16', '3:4', '4:3'.
-- `style`: optional style snippet if requested.
+- If BEI is being used, respect or ask user for quality preference (`'ultra_original'` [Recommended], `'high'`, or `'standard'`).
+- Call `mythic_smart_generate` with:
+  - `prompt`: the user's prompt.
+  - `engine`: `'bei'` | `'gemini-api'` | `'auto'` | `'prompt-only'`.
+  - `aspectRatio`: '1:1', '16:9', '9:16', '3:4', '4:3'.
+  - `quality`: `'ultra_original'` | `'high'` | `'standard'`.
+  - `style`: optional style snippet if requested.
 
 ## Step 4: Presentation
 1. Embed the generated image: `![Generated Image](file:///...)`.
 2. Provide a clickable markdown link: `[filename](file:///...)`.
-3. Report engine used and generation time.
+3. Report engine used, download quality, and generation time.
+
