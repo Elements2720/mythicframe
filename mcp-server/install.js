@@ -21,13 +21,16 @@ try {
     configData.mcpServers = {};
   }
 
+  const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
   const serverConfig = {
     command: "node",
     args: [
       path.resolve(path.dirname(fileURLToPath(import.meta.url)), "index.js")
     ],
     env: {
-      NODE_ENV: "production"
+      NODE_ENV: "production",
+      MYTHICFRAME_ROOT: projectRoot
     },
     type: "stdio",
     disabled: false

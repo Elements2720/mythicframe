@@ -20,3 +20,10 @@ This document defines mandatory operational guardrails for AI coding assistants 
   1. Explain **how the tool is used** and what arguments it accepts.
   2. Ask for the user's confirmation before executing tools that generate external assets, invoke third-party APIs, or consume quotas/credits.
   3. Never trigger automated bulk generations without prior user consent.
+
+## 4. Social Media & External Publishing Guardrails
+* **Mandatory Confirmation**: Never publish any post or comment to public social platforms without explicit user approval of the exact text and media.
+* **Zero Emojis Policy**: Do not use emojis in post text or comments unless explicitly requested by the user.
+* **Link Placement**: Never place outbound URLs in the main post text. Always publish outbound links (GitHub repository, articles, docs) in the first comment or reply to prevent algorithmic reach throttling.
+* **Dedicated Browser Port**: Always use port `9223` for Brave browser CDP automation to avoid port conflicts with Chrome.
+

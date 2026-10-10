@@ -45,12 +45,50 @@ const tabEmailsCache = new Map(); // tabId -> email string
 const knownGoogleAccounts = new Map(); // slot -> { slot, email, name }
 const inFlightTabCreations = new Map(); // target:slot -> Promise<tabId>
 
+let cachedBrowserInfo = { browser: 'chrome', browserName: 'Google Chrome' };
+async function detectExtensionBrowser() {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.brave && typeof navigator.brave.isBrave === 'function') {
+      if (await navigator.brave.isBrave()) {
+        cachedBrowserInfo = { browser: 'brave', browserName: 'Brave' };
+        return cachedBrowserInfo;
+      }
+    }
+  } catch (e) {}
+  try {
+    if (typeof chrome !== 'undefined' && ((chrome && chrome.brave) || (chrome && chrome.braveWallet))) {
+      cachedBrowserInfo = { browser: 'brave', browserName: 'Brave' };
+      return cachedBrowserInfo;
+    }
+  } catch (e) {}
+  const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '';
+  if (ua.includes('Edg/')) {
+    cachedBrowserInfo = { browser: 'edge', browserName: 'Microsoft Edge' };
+    return cachedBrowserInfo;
+  }
+  if (ua.includes('Chrome')) {
+    cachedBrowserInfo = { browser: 'chrome', browserName: 'Google Chrome' };
+    return cachedBrowserInfo;
+  }
+  cachedBrowserInfo = { browser: 'chrome', browserName: 'Google Chrome' };
+  return cachedBrowserInfo;
+}
+detectExtensionBrowser().catch(() => {});
+
 // Load saved project folder path and cached Google accounts
 let currentProjectDir = DEFAULT_PROJECT_DIR;
+let storedDefaultModelQuality = 'auto';
+let storedDefaultAspectRatio = '1:1';
 if (chrome.storage && chrome.storage.local) {
-  chrome.storage.local.get(['mythicProjectDir', 'mythicKnownGoogleAccounts'], (result) => {
+  chrome.storage.local.get(['mythicProjectDir', 'mythicKnownGoogleAccounts', 'defaultModelQuality', 'defaultAspectRatio'], (result) => {
     if (result && result.mythicProjectDir) {
       currentProjectDir = result.mythicProjectDir;
+    }
+    if (result && result.defaultModelQuality) {
+      storedDefaultModelQuality = result.defaultModelQuality;
+    }
+    if (result && result.defaultAspectRatio) {
+      storedDefaultAspectRatio = result.defaultAspectRatio;
     }
     if (result && Array.isArray(result.mythicKnownGoogleAccounts)) {
       result.mythicKnownGoogleAccounts.forEach(acc => {
@@ -61,6 +99,16 @@ if (chrome.storage && chrome.storage.local) {
       console.log(`[MythicFrame BEI] Restored ${knownGoogleAccounts.size} known Google accounts from cache.`);
     }
   });
+
+  if (chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local') {
+        if (changes.defaultModelQuality) storedDefaultModelQuality = changes.defaultModelQuality.newValue || 'auto';
+        if (changes.defaultAspectRatio) storedDefaultAspectRatio = changes.defaultAspectRatio.newValue || '1:1';
+        if (changes.mythicProjectDir) currentProjectDir = changes.mythicProjectDir.newValue || DEFAULT_PROJECT_DIR;
+      }
+    });
+  }
 }
 
 function persistKnownAccounts() {
@@ -70,6 +118,32 @@ function persistKnownAccounts() {
     });
   }
 }
+
+function persistSessionJobs() {
+  if (chrome.storage && chrome.storage.session) {
+    try {
+      chrome.storage.session.set({
+        beiActiveJobs: Array.from(activeJobs.entries())
+      });
+    } catch (e) {}
+  }
+}
+
+function restoreSessionJobs() {
+  if (chrome.storage && chrome.storage.session) {
+    chrome.storage.session.get(['beiActiveJobs'], (res) => {
+      if (res && Array.isArray(res.beiActiveJobs)) {
+        for (const [id, job] of res.beiActiveJobs) {
+          if (!activeJobs.has(id)) {
+            activeJobs.set(id, job);
+          }
+        }
+        console.log(`[MythicFrame BEI] Restored ${res.beiActiveJobs.length} active jobs from session storage.`);
+      }
+    });
+  }
+}
+restoreSessionJobs();
 
 // Keep-alive port connection handler to prevent worker sleep during long generations
 const activeKeepAlivePorts = new Set();
@@ -296,12 +370,15 @@ function connectBridge() {
       await injectAllExistingTabs();
 
       // Report discovered tabs & detected emails to bridge
+      await detectExtensionBrowser();
       const tabs = await discoverTabs();
       ws.send(JSON.stringify({
         type: "browser_bridge_connected",
         data: {
           version: chrome.runtime?.getManifest?.()?.version || "1.2.0",
           name: "MythicFrame BEI Bridge",
+          browser: cachedBrowserInfo.browser,
+          browserName: cachedBrowserInfo.browserName,
           projectDir: currentProjectDir,
           tabs,
           accounts: Array.from(knownGoogleAccounts.values()),
@@ -847,7 +924,7 @@ async function findOrCreateTab(target, accountSlot = 0, tabMode = 'new_window_gr
  * 3. If needed, opens a fresh background tab and dispatches
  * 4. 100% eliminates "Receiving end does not exist" failure
  */
-async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds = 900, accountSlot = 0, images = [], tabMode = 'new_window_group', bringTabToFront = false) {
+async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds = 900, accountSlot = 0, images = [], tabMode = 'new_window_group', bringTabToFront = false, aspectRatio = '1:1', quality = 'ultra_original', modelQuality = 'auto') {
   // Step 1: Attempt direct message dispatch with script injection
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -855,7 +932,7 @@ async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds 
       const resp = await new Promise((resolve, reject) => {
         chrome.tabs.sendMessage(tabId, {
           action: "EXECUTE_PROMPT",
-          data: { jobId, target, prompt, timeoutSeconds, images, quality }
+          data: { jobId, target, prompt, timeoutSeconds, images, quality, aspectRatio, modelQuality }
         }, (response) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
@@ -885,7 +962,7 @@ async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds 
     const resp = await new Promise((resolve, reject) => {
       chrome.tabs.sendMessage(tabId, {
         action: "EXECUTE_PROMPT",
-        data: { jobId, target, prompt, timeoutSeconds, images }
+        data: { jobId, target, prompt, timeoutSeconds, images, quality, aspectRatio, modelQuality }
       }, (response) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
@@ -895,7 +972,7 @@ async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds 
       });
     });
     if (resp && resp.success) {
-      return { success: true, method: 'reload_message' };
+      return { success: true, method: 'reloaded_tab_message' };
     }
   } catch (reloadErr) {
     console.warn(`[MythicFrame BEI] Background tab reload notice:`, reloadErr.message);
@@ -918,7 +995,7 @@ async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds 
     const resp = await new Promise((resolve, reject) => {
       chrome.tabs.sendMessage(newTab.id, {
         action: "EXECUTE_PROMPT",
-        data: { jobId, target, prompt, timeoutSeconds, images }
+        data: { jobId, target, prompt, timeoutSeconds, images, quality, aspectRatio, modelQuality }
       }, (response) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
@@ -939,17 +1016,17 @@ async function dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds 
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
-      func: (jId, pText, tSec, imgs, qVal) => {
+      func: (jId, pText, tSec, imgs, qVal, arVal, mqVal) => {
         if (typeof window.__MYTHIC_BEI_EXECUTE_PROMPT__ === 'function') {
-          window.__MYTHIC_BEI_EXECUTE_PROMPT__(jId, pText, tSec, imgs, qVal);
+          window.__MYTHIC_BEI_EXECUTE_PROMPT__(jId, pText, tSec, imgs, qVal, arVal, mqVal);
           return { success: true, method: 'global_fn' };
         }
         window.dispatchEvent(new CustomEvent('__MYTHIC_BEI_EXECUTE_PROMPT__', {
-          detail: { jobId: jId, prompt: pText, timeoutSeconds: tSec, images: imgs, quality: qVal }
+          detail: { jobId: jId, prompt: pText, timeoutSeconds: tSec, images: imgs, quality: qVal, aspectRatio: arVal, modelQuality: mqVal }
         }));
         return { success: true, method: 'custom_event' };
       },
-      args: [jobId, prompt, timeoutSeconds, images, quality]
+      args: [jobId, prompt, timeoutSeconds, images, quality, aspectRatio, modelQuality]
     });
 
     if (results && results[0] && results[0].result && results[0].result.success) {
@@ -977,14 +1054,15 @@ function isSlotBusy(target, slot) {
 }
 
 async function startJob(jobData) {
-  const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'new_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null } = jobData;
+  const { jobId, target, prompt, fullPrompt, aspectRatio = (storedDefaultAspectRatio || '1:1'), modelQuality = (storedDefaultModelQuality || 'auto'), accountSlot = 0, timeoutSeconds, images = [], tabMode = 'new_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null, quality = 'ultra_original' } = jobData;
   const parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
   const tabId = await findOrCreateTab(target, parsedSlot, tabMode, bringTabToFront, chatSessionMode, tabSessionId);
   if (!tabId) {
     throw new Error(`No available browser tab found or created for target: ${target} (slot: ${parsedSlot})`);
   }
 
-  activeJobs.set(jobId, { tabId, target, prompt, fullPrompt, accountSlot: parsedSlot });
+  activeJobs.set(jobId, { tabId, target, prompt, fullPrompt, accountSlot: parsedSlot, aspectRatio, modelQuality, submitted: false });
+  persistSessionJobs();
 
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
@@ -992,13 +1070,13 @@ async function startJob(jobData) {
       data: {
         jobId,
         step: "tab_routed",
-        detail: `Routed to ${target} tab (slot /u/${parsedSlot}/)...`,
+        detail: `Routed to ${target} tab (slot /u/${parsedSlot}/, AR: ${aspectRatio}, Quality: ${modelQuality})...`,
         timestamp: Date.now()
       }
     }));
   }
 
-  await dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds, parsedSlot, images, tabMode, bringTabToFront);
+  await dispatchPromptToTab(tabId, jobId, target, prompt, timeoutSeconds, parsedSlot, images, tabMode, bringTabToFront, aspectRatio, quality, modelQuality);
 }
 
 async function processNextInQueue(target, slot) {
@@ -1058,7 +1136,7 @@ async function handleBridgeCommand(msg) {
   }
 
   if (type === "EXECUTE_PROMPT") {
-    const { jobId, target, prompt, fullPrompt, aspectRatio, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'new_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null, quality = 'ultra_original', dispatchMode = 'single' } = data;
+    const { jobId, target, prompt, fullPrompt, aspectRatio, modelQuality, accountSlot = 0, timeoutSeconds, images = [], tabMode = 'new_window_group', bringTabToFront = false, chatSessionMode = 'temporary_chat', tabSessionId = null, quality = 'ultra_original', dispatchMode = 'single' } = data;
     let parsedSlot = (typeof accountSlot === 'number') ? accountSlot : (parseInt(accountSlot, 10) || 0);
 
     // Multi-Account Mode: If requested slot is busy and multi mode is enabled, find an idle slot
@@ -1093,12 +1171,12 @@ async function handleBridgeCommand(msg) {
         }
         return;
       }
-      queue.push({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId, quality, dispatchMode });
+      queue.push({ jobId, target, prompt, fullPrompt, aspectRatio, modelQuality, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId, quality, dispatchMode });
       return;
     }
 
     try {
-      await startJob({ jobId, target, prompt, fullPrompt, aspectRatio, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId, quality, dispatchMode });
+      await startJob({ jobId, target, prompt, fullPrompt, aspectRatio, modelQuality, accountSlot: parsedSlot, timeoutSeconds, images, tabMode, bringTabToFront, chatSessionMode, tabSessionId, quality, dispatchMode });
     } catch (err) {
       activeJobs.delete(jobId);
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1420,12 +1498,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
+  if (message.type === "PROMPT_SUBMITTED") {
+    const { jobId, chatUrl } = message.data || {};
+    if (activeJobs.has(jobId)) {
+      const job = activeJobs.get(jobId);
+      job.submitted = true;
+      if (chatUrl) job.chatUrl = chatUrl;
+      persistSessionJobs();
+      console.log(`[MythicFrame BEI] Job ${jobId} marked as submitted (chatUrl: ${chatUrl}).`);
+    }
+    sendResponse({ ack: true });
+    return true;
+  }
+
   if (message.type === "GENERATION_COMPLETED") {
     let { jobId, image, target, metadata } = message.data;
     const job = activeJobs.get(jobId);
     const jobTarget = job?.target || target;
     const jobSlot = job?.accountSlot ?? 0;
     activeJobs.delete(jobId);
+    persistSessionJobs();
 
     // Concurrency Guard: Process next queued job for this slot
     processNextInQueue(jobTarget, jobSlot);
@@ -1634,14 +1726,187 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ projectDir: currentProjectDir });
     return true;
   }
+
+  if (message.type === "GET_PERFORMANCE_METRICS") {
+    getPerformanceMetrics().then(metrics => {
+      sendResponse(metrics);
+    }).catch(err => {
+      sendResponse({ error: err?.message || String(err) });
+    });
+    return true;
+  }
+
+  if (message.type === "DISCARD_BEI_TABS") {
+    discardBEITabs().then(result => {
+      sendResponse(result);
+    }).catch(err => {
+      sendResponse({ error: err?.message || String(err), discardedCount: 0 });
+    });
+    return true;
+  }
 });
 
-// Update tabs list when tabs are updated/removed
+/**
+ * Collects runtime memory and performance metrics for the BEI Extension
+ */
+async function getPerformanceMetrics() {
+  const metrics = {
+    workerHeapMB: null,
+    systemMemory: null,
+    systemCpu: null,
+    tabsCount: {
+      geminiTotal: 0,
+      geminiActive: 0,
+      geminiDiscarded: 0,
+      chatgptTotal: 0,
+      chatgptActive: 0,
+      chatgptDiscarded: 0
+    },
+    activeJobsCount: activeJobs.size,
+    estimatedTabRamMB: 0,
+    estimatedRamSavedMB: 0
+  };
+
+  // 1. Worker JS Heap
+  if (typeof performance !== 'undefined' && performance.memory) {
+    metrics.workerHeapMB = Math.round((performance.memory.usedJSHeapSize / (1024 * 1024)) * 10) / 10;
+  }
+
+  // 2. Open BEI Tabs (Gemini & ChatGPT)
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+      const url = (t.url || t.pendingUrl || '').toLowerCase();
+      if (url.includes('gemini.google.com')) {
+        metrics.tabsCount.geminiTotal++;
+        if (t.discarded) metrics.tabsCount.geminiDiscarded++;
+        else metrics.tabsCount.geminiActive++;
+      } else if (url.includes('chatgpt.com')) {
+        metrics.tabsCount.chatgptTotal++;
+        if (t.discarded) metrics.tabsCount.chatgptDiscarded++;
+        else metrics.tabsCount.chatgptActive++;
+      }
+    }
+  } catch (e) {}
+
+  // Estimated RAM: typical live Gemini/ChatGPT web app uses ~400MB
+  metrics.estimatedTabRamMB = (metrics.tabsCount.geminiActive + metrics.tabsCount.chatgptActive) * 400;
+  metrics.estimatedRamSavedMB = (metrics.tabsCount.geminiDiscarded + metrics.tabsCount.chatgptDiscarded) * 400;
+
+  // 3. System RAM info
+  if (chrome.system && chrome.system.memory) {
+    try {
+      const memInfo = await new Promise(r => chrome.system.memory.getInfo(r));
+      if (memInfo) {
+        metrics.systemMemory = {
+          totalGB: Math.round((memInfo.capacity / (1024 * 1024 * 1024)) * 10) / 10,
+          availableGB: Math.round((memInfo.availableCapacity / (1024 * 1024 * 1024)) * 10) / 10,
+          usedPercent: Math.round(((memInfo.capacity - memInfo.availableCapacity) / memInfo.capacity) * 100)
+        };
+      }
+    } catch (e) {}
+  }
+
+  // 4. System CPU info
+  if (chrome.system && chrome.system.cpu) {
+    try {
+      const cpuInfo = await new Promise(r => chrome.system.cpu.getInfo(r));
+      if (cpuInfo) {
+        metrics.systemCpu = {
+          modelName: cpuInfo.modelName,
+          numOfProcessors: cpuInfo.numOfProcessors
+        };
+      }
+    } catch (e) {}
+  }
+
+  return metrics;
+}
+
+/**
+ * Hibernates (discards from RAM) inactive background Gemini and ChatGPT tabs
+ * Keeps tab alive in tab bar/groups but frees hundreds of megabytes of RAM.
+ */
+async function discardBEITabs() {
+  const busyTabIds = new Set();
+  for (const job of activeJobs.values()) {
+    if (job.tabId) busyTabIds.add(job.tabId);
+  }
+
+  let discardedCount = 0;
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const t of tabs) {
+      if (!t.id || busyTabIds.has(t.id) || t.active || t.discarded) continue;
+      const url = (t.url || t.pendingUrl || '').toLowerCase();
+      if (url.includes('gemini.google.com') || url.includes('chatgpt.com')) {
+        try {
+          await chrome.tabs.discard(t.id);
+          discardedCount++;
+        } catch (e) {
+          console.warn(`[MythicFrame BEI] Could not discard tab ${t.id}:`, e);
+        }
+      }
+    }
+  } catch (e) {}
+  return { discardedCount, freedRamMBEstimate: discardedCount * 400 };
+}
+
+// Update tabs list when tabs are updated/removed & handle reload recovery
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Session URL Tracking: If tab URL transitions to /app/<chat_id>, store for recovery
+  for (const [jobId, job] of activeJobs.entries()) {
+    if (job.tabId === tabId && tab.url && tab.url.includes("gemini.google.com/u/")) {
+      if (tab.url.includes("/app/")) {
+        job.chatUrl = tab.url;
+        persistSessionJobs();
+      }
+    }
+  }
+
   if (changeInfo.status === "complete" && tab.url && (tab.url.includes("gemini.google.com") || tab.url.includes("chatgpt.com"))) {
     tabEmailsCache.delete(tabId);
     const target = tab.url.includes("gemini.google.com") ? "gemini" : "chatgpt";
     await ensureContentScriptInjected(tabId, target);
+
+    // Reload Recovery: Check if this reloaded tab has an active job
+    for (const [jobId, job] of activeJobs.entries()) {
+      if (job.tabId === tabId) {
+        console.log(`[MythicFrame BEI] Tab ${tabId} reloaded with active job ${jobId} (submitted: ${job.submitted}). Initiating recovery...`);
+        if (job.submitted) {
+          // Submitted case: Run DOM recovery scan without duplicate prompt
+          chrome.tabs.sendMessage(tabId, {
+            action: "RECOVER_JOB",
+            data: {
+              jobId,
+              prompt: job.prompt,
+              chatUrl: job.chatUrl,
+              quality: job.quality,
+              aspectRatio: job.aspectRatio,
+              modelQuality: job.modelQuality
+            }
+          });
+        } else {
+          // Draft Loss case: Re-dispatch prompt to composer
+          console.log(`[MythicFrame BEI] Tab ${tabId} reloaded before submission. Re-dispatching prompt for job ${jobId}...`);
+          await dispatchPromptToTab(
+            tabId,
+            jobId,
+            job.target,
+            job.prompt,
+            job.timeoutSeconds,
+            job.accountSlot,
+            job.images,
+            job.tabMode,
+            job.bringTabToFront,
+            job.aspectRatio,
+            job.quality,
+            job.modelQuality
+          );
+        }
+      }
+    }
+
     const tabs = await discoverTabs();
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ 

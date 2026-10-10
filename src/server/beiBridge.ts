@@ -39,6 +39,14 @@ export interface BEIPayloadStatus {
   steps: Array<{ step: string; detail: string; timestamp: number }>;
 }
 
+export interface ConnectedBrowserInfo {
+  browser: string;
+  browserName: string;
+  tabsCount: number;
+  accountsCount: number;
+  lastSeen: number;
+}
+
 export interface BEIBridgeStatus {
   connected: boolean;
   port: number;
@@ -49,6 +57,18 @@ export interface BEIBridgeStatus {
   lastHeartbeat?: number;
   projectDir?: string;
   recentPayloads?: BEIPayloadStatus[];
+  connectedBrowsers?: ConnectedBrowserInfo[];
+  activeBrowser?: string;
+}
+
+interface ExtensionClient {
+  ws: WebSocket;
+  browser: string;
+  browserName: string;
+  version: string;
+  tabs: BEITabInfo[];
+  accounts: BEIAccountInfo[];
+  lastSeen: number;
 }
 
 interface PendingJob {
@@ -67,6 +87,7 @@ export class BEIBridgeServer {
   private httpServer: http.Server | null = null;
   private wss: WebSocketServer | null = null;
   private extensionSocket: WebSocket | null = null;
+  private clients = new Map<WebSocket, ExtensionClient>();
   private knownTabs: BEITabInfo[] = [];
   private knownAccounts: BEIAccountInfo[] = [];
 
@@ -137,7 +158,31 @@ export class BEIBridgeServer {
   }
 
   public isConnected(): boolean {
+    for (const [ws] of this.clients.entries()) {
+      if (ws.readyState === WebSocket.OPEN) return true;
+    }
     return this.extensionSocket !== null && this.extensionSocket.readyState === WebSocket.OPEN;
+  }
+
+  public getClientSocket(preferredBrowser?: string): WebSocket | null {
+    const norm = (preferredBrowser || '').toLowerCase().trim();
+    if (norm && norm !== 'auto') {
+      for (const [ws, client] of this.clients.entries()) {
+        if (ws.readyState === WebSocket.OPEN && client.browser.toLowerCase() === norm) {
+          return ws;
+        }
+      }
+    }
+
+    let latestClient: ExtensionClient | null = null;
+    for (const [ws, client] of this.clients.entries()) {
+      if (ws.readyState === WebSocket.OPEN) {
+        if (!latestClient || client.lastSeen > latestClient.lastSeen) {
+          latestClient = client;
+        }
+      }
+    }
+    return latestClient?.ws || (this.extensionSocket?.readyState === WebSocket.OPEN ? this.extensionSocket : null);
   }
 
   public getPayloadHistory(): BEIPayloadStatus[] {
@@ -196,6 +241,25 @@ export class BEIBridgeServer {
         this.extensionSocket?.send(JSON.stringify({ type: 'LIST_TABS' }));
       } catch (e) {}
     }
+    const connectedBrowsers: ConnectedBrowserInfo[] = [];
+    let latestBrowser = 'chrome';
+    let maxSeen = 0;
+    for (const [ws, client] of this.clients.entries()) {
+      if (ws.readyState === WebSocket.OPEN) {
+        connectedBrowsers.push({
+          browser: client.browser,
+          browserName: client.browserName,
+          tabsCount: client.tabs.length,
+          accountsCount: client.accounts.length,
+          lastSeen: client.lastSeen
+        });
+        if (client.lastSeen > maxSeen) {
+          maxSeen = client.lastSeen;
+          latestBrowser = client.browser;
+        }
+      }
+    }
+
     return {
       connected: this.isConnected(),
       port: this.port,
@@ -206,6 +270,8 @@ export class BEIBridgeServer {
       lastHeartbeat: this.lastHeartbeat,
       projectDir: this.projectDir,
       recentPayloads: Array.from(this.payloadHistory.values()).sort((a, b) => b.createdAt - a.createdAt).slice(0, 10),
+      connectedBrowsers,
+      activeBrowser: latestBrowser,
     };
   }
 
@@ -345,6 +411,15 @@ export class BEIBridgeServer {
       this.wss.on('connection', (ws: WebSocket, req) => {
         console.log(`[MythicFrame BEI Bridge] Extension client connected to ws://127.0.0.1:${this.port}`);
         this.extensionSocket = ws;
+        this.clients.set(ws, {
+          ws,
+          browser: 'chrome',
+          browserName: 'Google Chrome',
+          version: '1.2.0',
+          tabs: [],
+          accounts: [],
+          lastSeen: Date.now()
+        });
         this.lastHeartbeat = Date.now();
 
         // Welcome handshake
@@ -372,8 +447,9 @@ export class BEIBridgeServer {
 
         ws.on('close', () => {
           console.log('[MythicFrame BEI Bridge] Extension client disconnected');
+          this.clients.delete(ws);
           if (this.extensionSocket === ws) {
-            this.extensionSocket = null;
+            this.extensionSocket = this.getClientSocket();
           }
         });
 
@@ -439,13 +515,24 @@ export class BEIBridgeServer {
 
     if (type === 'browser_bridge_connected' || type === 'extension_connected') {
       this.lastHeartbeat = Date.now();
+      const client = this.clients.get(ws);
+      const browser = data?.browser || 'chrome';
+      const browserName = data?.browserName || (browser === 'brave' ? 'Brave' : browser === 'edge' ? 'Microsoft Edge' : 'Google Chrome');
+      if (client) {
+        client.browser = browser;
+        client.browserName = browserName;
+        if (data?.version) client.version = data.version;
+        if (Array.isArray(data?.tabs)) client.tabs = data.tabs;
+        if (Array.isArray(data?.accounts)) client.accounts = data.accounts;
+        client.lastSeen = Date.now();
+      }
       if (data?.version) this.extensionVersion = data.version;
       if (data?.projectDir) this.projectDir = data.projectDir;
       if (Array.isArray(data?.tabs)) {
         this.knownTabs = data.tabs;
       }
       this.syncKnownAccounts(data?.accounts);
-      console.log(`[MythicFrame BEI Bridge] Extension registered. Discovered tabs: ${this.knownTabs.length}, Accounts: ${this.knownAccounts.length}`);
+      console.log(`[MythicFrame BEI Bridge] Extension registered (${browserName}). Discovered tabs: ${this.knownTabs.length}, Accounts: ${this.knownAccounts.length}`);
       return;
     }
 
@@ -736,7 +823,7 @@ export class BEIBridgeServer {
   public async handleGenerateRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     try {
       const payload = await this.parseRequestBody(req);
-      const { target = 'gemini', prompt, fullPrompt, aspectRatio = '16:9', accountSlot = 0, timeoutSeconds = 120, images = [], tabMode = 'new_window_group', bringTabToFront, chatSessionMode = 'temporary_chat', tabSessionId } = payload;
+      const { target = 'gemini', prompt, fullPrompt, aspectRatio = '16:9', accountSlot = 0, timeoutSeconds = 120, images = [], tabMode = 'new_window_group', bringTabToFront, chatSessionMode = 'temporary_chat', tabSessionId, preferredBrowser, browser } = payload;
 
         if (!prompt) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -807,8 +894,20 @@ export class BEIBridgeServer {
           detail: `Dispatched generation request to Chrome Extension (${target}, slot ${accountSlot})...`
         });
 
-        // Send command to extension
-        this.extensionSocket!.send(JSON.stringify({
+        // Send command to targeted extension socket
+        const targetSocket = this.getClientSocket(preferredBrowser || browser);
+        if (!targetSocket) {
+          clearTimeout(timeoutTimer);
+          this.pendingJobs.delete(jobId);
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'TARGET_BROWSER_NOT_CONNECTED',
+            message: `The BEI Extension is not currently connected in the requested browser (${preferredBrowser || 'auto'}). Please ensure the extension is active in that browser.`
+          }));
+          return;
+        }
+
+        targetSocket.send(JSON.stringify({
           type: 'EXECUTE_PROMPT',
           data: {
             jobId,
@@ -893,7 +992,7 @@ export class BEIBridgeServer {
   public async handleTextRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     try {
       const payload = await this.parseRequestBody(req);
-      const { prompt, target = 'gemini', accountSlot = 0, timeoutSeconds = 60, images = [] } = payload;
+      const { prompt, target = 'gemini', accountSlot = 0, timeoutSeconds = 60, images = [], preferredBrowser, browser } = payload;
       if (!prompt) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'MISSING_PROMPT', message: 'Prompt is required' }));
@@ -929,7 +1028,8 @@ export class BEIBridgeServer {
         });
       });
 
-      this.extensionSocket!.send(JSON.stringify({
+      const targetSocket = this.getClientSocket(preferredBrowser || browser) || this.extensionSocket;
+      targetSocket!.send(JSON.stringify({
         type: 'EXECUTE_TEXT_PROMPT',
         data: {
           jobId,
@@ -959,11 +1059,12 @@ export class BEIBridgeServer {
   public async handleResetSessionRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     try {
       const payload = await this.parseRequestBody(req);
-      const { target = 'gemini', accountSlot = 0, tabSessionId } = payload;
+      const { target = 'gemini', accountSlot = 0, tabSessionId, preferredBrowser, browser } = payload;
       console.log(`[MythicFrame BEI Bridge] Resetting session for ${target} slot ${accountSlot} (TabSession: ${tabSessionId || 'none'})`);
 
       if (this.isConnected()) {
-        this.extensionSocket!.send(JSON.stringify({
+        const targetSocket = this.getClientSocket(preferredBrowser || browser) || this.extensionSocket;
+        targetSocket?.send(JSON.stringify({
           type: 'RESET_SESSION',
           data: { target, accountSlot, tabSessionId }
         }));
@@ -1010,7 +1111,7 @@ export class BEIBridgeServer {
   public async handleOpenTabRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     try {
       const payload = await this.parseRequestBody(req);
-      const { target = 'gemini', accountSlot = 0, tabMode, bringTabToFront } = payload;
+      const { target = 'gemini', accountSlot = 0, tabMode, bringTabToFront, preferredBrowser, browser } = payload;
 
       if (!this.isConnected()) {
         res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -1018,7 +1119,8 @@ export class BEIBridgeServer {
         return;
       }
 
-      this.extensionSocket!.send(JSON.stringify({
+      const targetSocket = this.getClientSocket(preferredBrowser || browser) || this.extensionSocket;
+      targetSocket?.send(JSON.stringify({
         type: 'OPEN_TAB',
         data: { target, accountSlot, tabMode, bringTabToFront }
       }));
@@ -1031,19 +1133,23 @@ export class BEIBridgeServer {
     }
   }
 
-  public handleScanAccountsRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+  public async handleScanAccountsRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     if (!this.isConnected()) {
       res.writeHead(503, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'EXTENSION_NOT_CONNECTED', message: 'BEI Chrome Extension is not connected.' }));
       return;
     }
 
-    this.extensionSocket!.send(JSON.stringify({
+    const payload = await this.parseRequestBody(req).catch(() => ({}));
+    const { preferredBrowser, browser } = payload || {};
+    const targetSocket = this.getClientSocket(preferredBrowser || browser) || this.extensionSocket;
+
+    targetSocket?.send(JSON.stringify({
       type: 'SCAN_ACCOUNTS'
     }));
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, scanning: true, message: 'Google account scan initiated in Chrome background.' }));
+    res.end(JSON.stringify({ success: true, scanning: true, message: 'Google account scan initiated in browser background.' }));
   }
 
   public handleReloadExtensionRequest(req: http.IncomingMessage, res: http.ServerResponse) {

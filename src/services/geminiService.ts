@@ -1,7 +1,7 @@
 
 // Service for interacting with Gemini API
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { GenerationModel, ImageSize, AspectRatio, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, AIConfig, PoseData, MapGridConfig, AvailableModel, SpriteStripConfig } from "../types";
+import { GenerationModel, ImageSize, AspectRatio, ReferenceAsset, BackgroundConfig, GameContext, UIMode, FrameElement, BackgroundPatternType, SafeZoneConfig, ClothesParams, ChibiProportion, ChibiConfig, AIConfig, PoseData, MapGridConfig, AvailableModel, SpriteStripConfig, CharacterToolState } from "../types";
 import { 
   buildIllustrationPrompt, 
   buildFramePrompt,
@@ -606,7 +606,8 @@ export const generateIllustration = async (
   noCharacters?: boolean,
   framing?: 'full-body' | 'waist-up' | 'bust' | 'head-only',
   seed?: number | null,
-  spriteStripConfig?: SpriteStripConfig
+  spriteStripConfig?: SpriteStripConfig,
+  characterTool?: CharacterToolState
 ): Promise<{ image: string; metadata: any }> => {
   // CRITICAL: Always create instance right before call as per Coding Guidelines
   const ai = getClient();
@@ -638,7 +639,7 @@ export const generateIllustration = async (
      finalPrompt = built.textPrompt;
      referenceParts = built.referenceParts;
   } else {
-     const built = buildIllustrationPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone, continuityFlags, chibiProportion, chibiConfig, viewpoint, noCharacters, framing);
+     const built = buildIllustrationPrompt(prompt, gameContext, styleSnippet, bgConfig, referenceAssets, safeZone, continuityFlags, chibiProportion, chibiConfig, viewpoint, noCharacters, framing, characterTool);
      finalPrompt = built.textPrompt;
      referenceParts = built.referenceParts;
   }

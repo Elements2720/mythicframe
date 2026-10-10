@@ -141,7 +141,8 @@ export function buildFullPromptBundle(
       tab.chibiConfig,
       tab.viewpoint,
       tab.noCharacters,
-      tab.framing
+      tab.framing,
+      tab.characterTool
     );
     assembledPrompt = built.textPrompt;
   }

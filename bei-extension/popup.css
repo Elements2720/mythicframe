@@ -328,3 +328,31 @@ body {
   font-size: 10px;
   color: #64748b;
 }
+
+/* Performance Monitor */
+.perf-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background-color: rgba(15, 23, 42, 0.7);
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.perf-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.perf-label {
+  color: #94a3b8;
+}
+
+.perf-val {
+  color: #38bdf8;
+  font-weight: 600;
+  font-size: 11px;
+}

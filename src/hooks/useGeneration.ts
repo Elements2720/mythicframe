@@ -624,6 +624,7 @@ export const useGeneration = (
                   viewpoint: activeTab.viewpoint,
                   noCharacters: activeTab.noCharacters,
                   framing: activeTab.framing,
+                  characterTool: activeTab.characterTool,
                   seed: activeTab.seed,
                   hasHoldingImages: Boolean(activeTab.sessionImages && activeTab.sessionImages.length > 0),
                   tabSessionId: activeTab.id,

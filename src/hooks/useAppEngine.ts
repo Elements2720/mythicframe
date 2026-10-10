@@ -192,7 +192,18 @@ export const useAppEngine = () => {
 
   const [styleCollections, setStyleCollections] = useState<StyleCollection[]>(() => {
     const saved = localStorage.getItem('mythic_style_collections');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      try {
+        const parsed: StyleCollection[] = JSON.parse(saved);
+        const builtInIds = ART_STYLES.map(s => s.id);
+        const gameIds = ART_STYLES.filter(s => s.category === 'Game Art').map(s => s.id);
+        return parsed.map(c => {
+          if (c.id === 'all-built-in') return { ...c, styleIds: Array.from(new Set([...c.styleIds, ...builtInIds])) };
+          if (c.id === 'optimized-games') return { ...c, styleIds: Array.from(new Set([...c.styleIds, ...gameIds])) };
+          return c;
+        });
+      } catch (e) {}
+    }
     
     return [
       { id: 'all-built-in', name: 'Standard Library', styleIds: ART_STYLES.map(s => s.id), isLocked: true },
