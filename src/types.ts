@@ -51,6 +51,8 @@ export interface BEIConfig {
   tabMode?: BEITabMode;
   bringTabToFront?: boolean;
   chatSessionMode?: 'temporary_chat' | 'same_chat' | 'new_chat';
+  autoRotateOnQuota?: boolean;
+  accountOrder?: string[];
 }
 
 export interface AIConfig {

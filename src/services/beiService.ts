@@ -11,10 +11,77 @@ export const DEFAULT_BEI_CONFIG: BEIConfig = {
   accountSlot: 0,
   port: DEFAULT_BEI_PORT,
   timeoutSeconds: 900,
-  tabMode: 'same_window_group',
+  tabMode: 'new_window_group',
   bringTabToFront: false,
   chatSessionMode: 'temporary_chat',
+  autoRotateOnQuota: true,
+  accountOrder: ['gemini:0', 'gemini:1', 'gemini:2', 'gemini:3', 'chatgpt:0'],
 };
+
+export const BEI_PRIORITY_ORDER_KEY = 'mythic_bei_priority_order';
+
+export function getTabAccountKey(tab: { target: string; accountSlot?: number; tabId?: number; email?: string }): string {
+  if (tab.target === 'gemini') {
+    return `gemini:${tab.accountSlot ?? 0}`;
+  }
+  return `chatgpt:${tab.tabId || 0}`;
+}
+
+export function getBEIAccountPriorityOrder(): string[] {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(BEI_PRIORITY_ORDER_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+  }
+  return ['gemini:0', 'gemini:1', 'gemini:2', 'gemini:3', 'chatgpt:0'];
+}
+
+export function setBEIAccountPriorityOrder(order: string[]): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(BEI_PRIORITY_ORDER_KEY, JSON.stringify(order));
+    setBEIConfig({ accountOrder: order });
+    window.dispatchEvent(new CustomEvent('mythic_bei_priority_order_changed', { detail: order }));
+    window.dispatchEvent(new Event('storage'));
+  }
+}
+
+export function getBEIPrioritySlots(initialSlot: number = 0): number[] {
+  const order = getBEIAccountPriorityOrder();
+  const geminiSlots: number[] = [];
+  for (const key of order) {
+    if (key.startsWith('gemini:')) {
+      const slotNum = parseInt(key.replace('gemini:', ''), 10);
+      if (!isNaN(slotNum) && !geminiSlots.includes(slotNum)) {
+        geminiSlots.push(slotNum);
+      }
+    }
+  }
+  for (let s = 0; s < 4; s++) {
+    if (!geminiSlots.includes(s)) {
+      geminiSlots.push(s);
+    }
+  }
+  const filtered = geminiSlots.filter(s => s !== initialSlot);
+  return [initialSlot, ...filtered];
+}
+
+export function sortTabsByPriorityOrder(tabs: BEITabDetail[], order?: string[]): BEITabDetail[] {
+  const priorityOrder = order || getBEIAccountPriorityOrder();
+  return [...tabs].sort((a, b) => {
+    const keyA = getTabAccountKey(a);
+    const keyB = getTabAccountKey(b);
+    let indexA = priorityOrder.indexOf(keyA);
+    let indexB = priorityOrder.indexOf(keyB);
+    if (indexA === -1) indexA = 999;
+    if (indexB === -1) indexB = 999;
+    if (indexA !== indexB) return indexA - indexB;
+    return (a.accountSlot ?? 0) - (b.accountSlot ?? 0);
+  });
+}
 
 export const getBEIConfig = (): BEIConfig => {
   if (typeof window !== 'undefined') {
@@ -26,6 +93,8 @@ export const getBEIConfig = (): BEIConfig => {
           ...DEFAULT_BEI_CONFIG,
           ...parsed,
           port: parsed.port || DEFAULT_BEI_PORT,
+          autoRotateOnQuota: parsed.autoRotateOnQuota !== undefined ? parsed.autoRotateOnQuota : true,
+          accountOrder: parsed.accountOrder || getBEIAccountPriorityOrder(),
         };
       }
     } catch (e) {
@@ -40,6 +109,7 @@ export const setBEIConfig = (config: Partial<BEIConfig>): void => {
     const current = getBEIConfig();
     const updated: BEIConfig = { ...current, ...config };
     localStorage.setItem(BEI_CONFIG_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('mythic_bei_config_changed', { detail: updated }));
   }
 };
 
@@ -408,192 +478,252 @@ export const generateWithBEI = async (
 
   const chatSessionMode = params.chatSessionMode || (params.hasHoldingImages ? 'same_chat' : (config.chatSessionMode || 'temporary_chat'));
 
-  const payload = {
-    target: config.target,
-    prompt: assembled.imagePromptDirective,
-    fullPrompt: assembled.fullPrompt,
-    aspectRatio: params.aspectRatio || '16:9',
-    accountSlot: config.accountSlot || 0,
-    timeoutSeconds: Math.max(config.timeoutSeconds || 900, 900),
-    tabMode: config.tabMode || 'new_window_group',
-    bringTabToFront: Boolean(config.bringTabToFront),
-    chatSessionMode,
-    tabSessionId: params.tabSessionId,
-    images: processedImages,
-  };
+  const autoRotate = config.autoRotateOnQuota !== false;
+  const initialSlot = config.accountSlot || 0;
+  const prioritySlots = getBEIPrioritySlots(initialSlot);
 
-  if (params.signal) {
-    if (params.signal.aborted) {
-      cancelBEIGeneration().catch(() => {});
-      throw new DOMException('Generation aborted', 'AbortError');
-    }
-    params.signal.addEventListener('abort', () => {
-      cancelBEIGeneration().catch(() => {});
-    });
+  let slotIndex = 0;
+  if (config.target === 'gemini' && autoRotate) {
+    try {
+      const { getBEIAccountQuota } = await import('./quotaTrackerService');
+      const initQuota = getBEIAccountQuota('gemini', initialSlot);
+      if (initQuota.status === 'rate_limited') {
+        const readyIdx = prioritySlots.findIndex(s => getBEIAccountQuota('gemini', s).status !== 'rate_limited');
+        if (readyIdx !== -1) {
+          slotIndex = readyIdx;
+          const chosenSlot = prioritySlots[slotIndex];
+          console.log(`[MythicFrame BEI] Slot ${initialSlot} in cooldown. Advancing to ready priority Slot ${chosenSlot}...`);
+          setBEIConfig({ accountSlot: chosenSlot });
+        }
+      }
+    } catch {}
   }
 
-  setLastBEIJobContext({
-    target: config.target,
-    accountSlot: config.accountSlot || 0,
-    prompt: assembled.imagePromptDirective,
-    status: 'generating',
-    error: undefined,
-  });
+  const triedSlots = new Set<number>();
+  let lastQuotaError = '';
 
-  const directUrl = `http://127.0.0.1:${port}/api/bei/generate`;
-  const fallbackUrl = `/api/bei/generate`;
+  while (slotIndex < prioritySlots.length) {
+    const currentSlot = config.target === 'gemini' ? prioritySlots[slotIndex] : (config.accountSlot || 0);
+    triedSlots.add(currentSlot);
 
-  let response: Response | null = null;
-  let lastError: any = null;
-  const maxAttempts = 3;
+    const payload = {
+      target: config.target,
+      prompt: assembled.imagePromptDirective,
+      fullPrompt: assembled.fullPrompt,
+      aspectRatio: params.aspectRatio || '16:9',
+      accountSlot: currentSlot,
+      timeoutSeconds: Math.max(config.timeoutSeconds || 900, 900),
+      tabMode: config.tabMode || 'new_window_group',
+      bringTabToFront: Boolean(config.bringTabToFront),
+      chatSessionMode,
+      tabSessionId: params.tabSessionId,
+      images: processedImages,
+    };
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (params.signal?.aborted) {
-      cancelBEIGeneration().catch(() => {});
-      throw new DOMException('Generation aborted', 'AbortError');
+    if (params.signal) {
+      if (params.signal.aborted) {
+        cancelBEIGeneration().catch(() => {});
+        throw new DOMException('Generation aborted', 'AbortError');
+      }
+      params.signal.addEventListener('abort', () => {
+        cancelBEIGeneration().catch(() => {});
+      });
     }
 
-    try {
-      response = await fetch(directUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: params.signal,
-      });
-      if (response && response.ok) break;
-    } catch (err: any) {
-      if (params.signal?.aborted || err?.name === 'AbortError') {
+    setLastBEIJobContext({
+      target: config.target,
+      accountSlot: currentSlot,
+      prompt: assembled.imagePromptDirective,
+      status: 'generating',
+      error: undefined,
+    });
+
+    const directUrl = `http://127.0.0.1:${port}/api/bei/generate`;
+    const fallbackUrl = `/api/bei/generate`;
+
+    let response: Response | null = null;
+    let lastError: any = null;
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (params.signal?.aborted) {
         cancelBEIGeneration().catch(() => {});
-        throw err;
+        throw new DOMException('Generation aborted', 'AbortError');
       }
-      lastError = err;
+
       try {
-        response = await fetch(fallbackUrl, {
+        response = await fetch(directUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
           signal: params.signal,
         });
         if (response && response.ok) break;
-      } catch (fallbackErr: any) {
-        if (params.signal?.aborted || fallbackErr?.name === 'AbortError') {
+      } catch (err: any) {
+        if (params.signal?.aborted || err?.name === 'AbortError') {
           cancelBEIGeneration().catch(() => {});
-          throw fallbackErr;
+          throw err;
         }
-        lastError = fallbackErr;
+        lastError = err;
+        try {
+          response = await fetch(fallbackUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: params.signal,
+          });
+          if (response && response.ok) break;
+        } catch (fallbackErr: any) {
+          if (params.signal?.aborted || fallbackErr?.name === 'AbortError') {
+            cancelBEIGeneration().catch(() => {});
+            throw fallbackErr;
+          }
+          lastError = fallbackErr;
+        }
+      }
+
+      // Candidate Rescue Check: If fetch broke or timed out, see if server already captured the completed image
+      const rescued = await refetchBEIAsset();
+      if (rescued && rescued.image) {
+        const { recordBEISlotUsage } = await import('./quotaTrackerService');
+        recordBEISlotUsage(config.target, currentSlot, 'success');
+        setBEIConfig({ accountSlot: currentSlot });
+        return {
+          image: rescued.image,
+          metadata: {
+            fullPrompt: assembled.fullPrompt,
+            directivePrompt: assembled.imagePromptDirective,
+            provider: 'bei',
+            target: config.target,
+            accountSlot: currentSlot,
+            jobId: rescued.jobId,
+          },
+        };
+      }
+
+      if (attempt < maxAttempts) {
+        window.dispatchEvent(new CustomEvent('mythic_bei_progress', {
+          detail: {
+            step: 'retrying',
+            detail: `Connecting to bridge (attempt ${attempt}/${maxAttempts}). Waiting for generation to finalize...`
+          }
+        }));
+        await new Promise(r => setTimeout(r, attempt * 2000));
       }
     }
 
-    // Candidate Rescue Check: If fetch broke or timed out, see if server already captured the completed image
-    const rescued = await refetchBEIAsset();
-    if (rescued && rescued.image) {
-      const { recordBEISlotUsage } = await import('./quotaTrackerService');
-      recordBEISlotUsage(config.target, config.accountSlot || 0, 'success');
-      return {
-        image: rescued.image,
-        metadata: {
-          fullPrompt: assembled.fullPrompt,
-          directivePrompt: assembled.imagePromptDirective,
-          provider: 'bei',
-          target: config.target,
-          accountSlot: config.accountSlot,
-          jobId: rescued.jobId,
-        },
-      };
+    if (!response) {
+      // One last rescue attempt
+      const finalRescue = await refetchBEIAsset();
+      if (finalRescue && finalRescue.image) {
+        const { recordBEISlotUsage } = await import('./quotaTrackerService');
+        recordBEISlotUsage(config.target, currentSlot, 'success');
+        setBEIConfig({ accountSlot: currentSlot });
+        return {
+          image: finalRescue.image,
+          metadata: {
+            fullPrompt: assembled.fullPrompt,
+            directivePrompt: assembled.imagePromptDirective,
+            provider: 'bei',
+            target: config.target,
+            accountSlot: currentSlot,
+            jobId: finalRescue.jobId,
+          },
+        };
+      }
+
+      const errorMsg = `BEI Request failed: ${lastError?.message || 'Network error connecting to bridge'}`;
+      setLastBEIJobContext({ status: 'failed', error: errorMsg });
+      throw new Error(errorMsg);
     }
 
-    if (attempt < maxAttempts) {
-      window.dispatchEvent(new CustomEvent('mythic_bei_progress', {
-        detail: {
-          step: 'retrying',
-          detail: `Connecting to bridge (attempt ${attempt}/${maxAttempts}). Waiting for generation to finalize...`
+    if (!response.ok) {
+      const errorJson = await response.json().catch(() => ({}));
+      const message = errorJson.message || errorJson.error || `HTTP ${response.status}: ${response.statusText}`;
+      const isCancelled = /cancel|abort|stopped/i.test(message) || response.status === 499;
+      if (isCancelled) {
+        throw new Error(`Generation cancelled: ${message}`);
+      }
+
+      const { recordBEISlotUsage, getBEIAccountQuota } = await import('./quotaTrackerService');
+      const isRateLimit = /limit|quota|exceeded|try again|too many requests|cooldown/i.test(message) || response.status === 429;
+      recordBEISlotUsage(config.target, currentSlot, isRateLimit ? 'rate_limited' : 'error');
+
+      // AUTO-ROTATE / FAILOVER: If rate limit hit and auto-rotate is enabled, try next priority slot
+      if (isRateLimit && autoRotate && config.target === 'gemini') {
+        lastQuotaError = message;
+        const nextIdx = prioritySlots.findIndex((s, idx) => idx > slotIndex && !triedSlots.has(s) && getBEIAccountQuota('gemini', s).status !== 'rate_limited');
+        const fallbackIdx = nextIdx !== -1 ? nextIdx : prioritySlots.findIndex((s, idx) => idx > slotIndex && !triedSlots.has(s));
+
+        if (fallbackIdx !== -1) {
+          const nextSlot = prioritySlots[fallbackIdx];
+          window.dispatchEvent(new CustomEvent('mythic_bei_progress', {
+            detail: {
+              step: 'rotating_account',
+              detail: `Slot ${currentSlot + 1} reached quota. Auto-rotating to priority Slot ${nextSlot + 1}...`
+            }
+          }));
+          setBEIConfig({ accountSlot: nextSlot });
+          slotIndex = fallbackIdx;
+          await new Promise(r => setTimeout(r, 1000));
+          continue; // Retry with next priority account!
         }
-      }));
-      await new Promise(r => setTimeout(r, attempt * 2000));
-    }
-  }
+      }
 
-  if (!response) {
-    // One last rescue attempt
-    const finalRescue = await refetchBEIAsset();
-    if (finalRescue && finalRescue.image) {
-      const { recordBEISlotUsage } = await import('./quotaTrackerService');
-      recordBEISlotUsage(config.target, config.accountSlot || 0, 'success');
-      return {
-        image: finalRescue.image,
-        metadata: {
-          fullPrompt: assembled.fullPrompt,
-          directivePrompt: assembled.imagePromptDirective,
-          provider: 'bei',
-          target: config.target,
-          accountSlot: config.accountSlot,
-          jobId: finalRescue.jobId,
-        },
-      };
-    }
-
-    const errorMsg = `BEI Request failed: ${lastError?.message || 'Network error connecting to bridge'}`;
-    setLastBEIJobContext({ status: 'failed', error: errorMsg });
-    throw new Error(errorMsg);
-  }
-
-  if (!response.ok) {
-    const errorJson = await response.json().catch(() => ({}));
-    const message = errorJson.message || errorJson.error || `HTTP ${response.status}: ${response.statusText}`;
-    const isCancelled = /cancel|abort|stopped/i.test(message) || response.status === 499;
-    if (!isCancelled) {
-      const { recordBEISlotUsage } = await import('./quotaTrackerService');
-      const isRateLimit = /limit|quota|exceeded|try again/i.test(message);
-      recordBEISlotUsage(config.target, config.accountSlot || 0, isRateLimit ? 'rate_limited' : 'error');
       setLastBEIJobContext({ status: 'failed', error: message });
+      if (triedSlots.size > 1) {
+        throw new Error(`BEI Generation Failed: Tried ${triedSlots.size} priority accounts, but all reached quota/rate limits. (${message})`);
+      }
       throw new Error(`BEI Generation Failed: ${message}`);
     }
-    throw new Error(`Generation cancelled: ${message}`);
-  }
 
-  const result = await response.json();
-  if (!result || !result.image) {
-    // Final rescue check if result payload has no image
-    const rescued = await refetchBEIAsset();
-    if (rescued && rescued.image) {
-      const { recordBEISlotUsage } = await import('./quotaTrackerService');
-      recordBEISlotUsage(config.target, config.accountSlot || 0, 'success');
-      return {
-        image: rescued.image,
-        metadata: {
-          fullPrompt: assembled.fullPrompt,
-          directivePrompt: assembled.imagePromptDirective,
-          provider: 'bei',
-          target: config.target,
-          accountSlot: config.accountSlot,
-          jobId: rescued.jobId,
-        },
-      };
+    const result = await response.json();
+    if (!result || !result.image) {
+      const rescued = await refetchBEIAsset();
+      if (rescued && rescued.image) {
+        const { recordBEISlotUsage } = await import('./quotaTrackerService');
+        recordBEISlotUsage(config.target, currentSlot, 'success');
+        setBEIConfig({ accountSlot: currentSlot });
+        return {
+          image: rescued.image,
+          metadata: {
+            fullPrompt: assembled.fullPrompt,
+            directivePrompt: assembled.imagePromptDirective,
+            provider: 'bei',
+            target: config.target,
+            accountSlot: currentSlot,
+            jobId: rescued.jobId,
+          },
+        };
+      }
+      setLastBEIJobContext({ status: 'failed', error: 'BEI Bridge completed but did not return image data.' });
+      throw new Error('BEI Bridge completed but did not return image data.');
     }
-    setLastBEIJobContext({ status: 'failed', error: 'BEI Bridge completed but did not return image data.' });
-    throw new Error('BEI Bridge completed but did not return image data.');
+
+    setLastBEIJobContext({
+      jobId: result.jobId,
+      status: 'completed',
+      error: undefined
+    });
+
+    const { recordBEISlotUsage } = await import('./quotaTrackerService');
+    recordBEISlotUsage(config.target, currentSlot, 'success');
+    setBEIConfig({ accountSlot: currentSlot });
+
+    return {
+      image: result.image,
+      metadata: {
+        fullPrompt: assembled.fullPrompt,
+        directivePrompt: assembled.imagePromptDirective,
+        provider: 'bei',
+        target: config.target,
+        accountSlot: currentSlot,
+        jobId: result.jobId,
+      },
+    };
   }
 
-  setLastBEIJobContext({
-    jobId: result.jobId,
-    status: 'completed',
-    error: undefined
-  });
-
-  const { recordBEISlotUsage } = await import('./quotaTrackerService');
-  recordBEISlotUsage(config.target, config.accountSlot || 0, 'success');
-
-  return {
-    image: result.image,
-    metadata: {
-      fullPrompt: assembled.fullPrompt,
-      directivePrompt: assembled.imagePromptDirective,
-      provider: 'bei',
-      target: config.target,
-      accountSlot: config.accountSlot,
-      jobId: result.jobId,
-    },
-  };
+  throw new Error(`BEI Generation Failed: All priority accounts were exhausted. ${lastQuotaError}`);
 };
 
 export const cancelBEIGeneration = async (jobId?: string): Promise<boolean> => {

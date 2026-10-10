@@ -8,7 +8,12 @@ import {
 import { getActiveAIProvider, setActiveAIProvider } from '../../services/aiProviderService';
 import { getOpenAIApiKey, setOpenAIApiKey, testOpenAIConnection } from '../../services/openAIService';
 import { getOpenCodeConfig, setOpenCodeConfig, testOpenCodeConnection, OpenCodeConfig } from '../../services/openCodeService';
-import { getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAccounts, updateBEIAccountCustomInfo, BEIStatusResponse, DEFAULT_BEI_PORT } from '../../services/beiService';
+import { 
+  getBEIConfig, setBEIConfig, checkBEIConnection, openBEITab, scanBEIAccounts, 
+  updateBEIAccountCustomInfo, BEIStatusResponse, DEFAULT_BEI_PORT,
+  getBEIAccountPriorityOrder, setBEIAccountPriorityOrder, sortTabsByPriorityOrder, 
+  getTabAccountKey, BEITabDetail 
+} from '../../services/beiService';
 import { getBEIAccountQuota, resetBEISlotCooldown } from '../../services/quotaTrackerService';
 import { getIncognitoMode, setIncognitoMode, formatDisplayEmail } from '../../services/privacyService';
 import { APP_VERSION } from '../../constants';
@@ -70,6 +75,17 @@ const Settings: React.FC<SettingsProps> = ({
   const [isOpeningTab, setIsOpeningTab] = useState(false);
   const [quotaRefreshKey, setQuotaRefreshKey] = useState(0);
   const [isIncognito, setIsIncognito] = useState(() => getIncognitoMode());
+  const [accountPriorityOrder, setAccountPriorityOrder] = useState<string[]>(() => getBEIAccountPriorityOrder());
+
+  useEffect(() => {
+    const handleOrderChange = (e: any) => {
+      if (Array.isArray(e?.detail)) {
+        setAccountPriorityOrder(e.detail);
+      }
+    };
+    window.addEventListener('mythic_bei_priority_order_changed', handleOrderChange);
+    return () => window.removeEventListener('mythic_bei_priority_order_changed', handleOrderChange);
+  }, []);
 
   // Model Discovery State
   const [discoveredModels, setDiscoveredModels] = useState<AvailableModel[]>(() => {
@@ -342,6 +358,75 @@ const Settings: React.FC<SettingsProps> = ({
       setIsOpeningTab(false);
       setTimeout(() => setBeiFeedback(null), 4000);
     }
+  };
+
+  const handleMovePriority = (idx: number, direction: 'up' | 'down') => {
+    const currentTabs = sortTabsByPriorityOrder(beiStatus?.tabs || [], accountPriorityOrder);
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= currentTabs.length) return;
+
+    const reordered = [...currentTabs];
+    const temp = reordered[idx];
+    reordered[idx] = reordered[targetIdx];
+    reordered[targetIdx] = temp;
+
+    const newOrder = reordered.map(t => getTabAccountKey(t));
+    for (const k of accountPriorityOrder) {
+      if (!newOrder.includes(k)) {
+        newOrder.push(k);
+      }
+    }
+
+    setAccountPriorityOrder(newOrder);
+    setBEIAccountPriorityOrder(newOrder);
+    setBeiFeedback(`Priority updated: #${targetIdx + 1} is now ${reordered[targetIdx].email || reordered[targetIdx].target}`);
+    setTimeout(() => setBeiFeedback(null), 3000);
+  };
+
+  const handleSetActiveAccount = (tab: BEITabDetail) => {
+    if (tab.target === 'gemini') {
+      handleUpdateBEIConfig({ target: 'gemini', accountSlot: tab.accountSlot ?? 0 });
+    } else {
+      handleUpdateBEIConfig({ target: 'chatgpt' });
+    }
+  };
+
+  const isAutoRotate = beiConfigState.autoRotateOnQuota !== false;
+  const handleToggleAutoRotate = () => {
+    const next = !isAutoRotate;
+    handleUpdateBEIConfig({ autoRotateOnQuota: next });
+    setBeiFeedback(next ? 'Auto-failover on quota enabled' : 'Auto-failover on quota disabled');
+    setTimeout(() => setBeiFeedback(null), 3000);
+  };
+
+  const handleAutoSortByQuota = () => {
+    const currentTabs = beiStatus?.tabs || [];
+    if (currentTabs.length <= 1) return;
+
+    const sorted = [...currentTabs].sort((a, b) => {
+      const quotaA = a.target === 'gemini' ? getBEIAccountQuota('gemini', a.accountSlot ?? 0) : getBEIAccountQuota('chatgpt', 0);
+      const quotaB = b.target === 'gemini' ? getBEIAccountQuota('gemini', b.accountSlot ?? 0) : getBEIAccountQuota('chatgpt', 0);
+
+      const isCoolA = quotaA.status === 'rate_limited';
+      const isCoolB = quotaB.status === 'rate_limited';
+      if (isCoolA !== isCoolB) return isCoolA ? 1 : -1;
+
+      const remA = quotaA.dailyLimit - quotaA.callsToday;
+      const remB = quotaB.dailyLimit - quotaB.callsToday;
+      return remB - remA;
+    });
+
+    const newOrder = sorted.map(t => getTabAccountKey(t));
+    for (const k of accountPriorityOrder) {
+      if (!newOrder.includes(k)) {
+        newOrder.push(k);
+      }
+    }
+
+    setAccountPriorityOrder(newOrder);
+    setBEIAccountPriorityOrder(newOrder);
+    setBeiFeedback('Auto-sorted accounts by available quota!');
+    setTimeout(() => setBeiFeedback(null), 3000);
   };
 
   const [isScanningAccounts, setIsScanningAccounts] = useState(false);
@@ -1072,47 +1157,203 @@ const Settings: React.FC<SettingsProps> = ({
                          </div>
 
                          {/* Active Tabs Detected */}
-                         <div className="space-y-2 pt-1">
-                            <div className="flex items-center justify-between">
-                               <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">Detected Browser Sessions & Accounts</span>
-                               {beiStatus?.tabs && beiStatus.tabs.length > 0 && (
-                                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                     {beiStatus.tabs.length} tab{beiStatus.tabs.length > 1 ? 's' : ''} connected
+                         <div className="space-y-2.5 pt-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                               <div className="flex items-center gap-2">
+                                  <span className="text-[11px] uppercase tracking-wider font-bold text-slate-300">
+                                     Detected Browser Sessions & Accounts
                                   </span>
-                               )}
+                                  <span className="text-[10px] text-slate-500 font-normal">
+                                     (Priority Order for Generation & Auto-Failover)
+                                  </span>
+                               </div>
+                               <div className="flex items-center gap-2">
+                                  {beiStatus?.tabs && beiStatus.tabs.length > 0 && (
+                                     <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                        {beiStatus.tabs.length} tab{beiStatus.tabs.length > 1 ? 's' : ''} connected
+                                     </span>
+                                  )}
+                               </div>
+                            </div>
+
+                            {/* Auto-Rotation & Reorder Controls Toolbar */}
+                            <div className="flex flex-wrap items-center justify-between bg-slate-900/80 border border-slate-800 p-2.5 rounded-lg text-xs gap-2 shadow-inner">
+                               <div className="flex items-center gap-2">
+                                  <button
+                                     type="button"
+                                     onClick={handleToggleAutoRotate}
+                                     className={`px-2.5 py-1 rounded text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 ${
+                                        isAutoRotate
+                                           ? 'bg-purple-600 hover:bg-purple-500 text-white border-purple-400 shadow-sm'
+                                           : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700'
+                                     }`}
+                                     title="When active account hits daily limit or rate-limit cooldown, automatically fails over to the next priority account"
+                                  >
+                                     <i className={`fa-solid ${isAutoRotate ? 'fa-toggle-on text-sm' : 'fa-toggle-off text-sm'}`} />
+                                     <span>Auto-Failover on Quota Limit: <b>{isAutoRotate ? 'ON' : 'OFF'}</b></span>
+                                  </button>
+                                  <span className="text-[11px] text-slate-400 hidden md:inline">
+                                     Uses accounts in priority order if active account runs out of quota.
+                                  </span>
+                               </div>
+
+                               <div className="flex items-center gap-2">
+                                  <button
+                                     type="button"
+                                     onClick={handleAutoSortByQuota}
+                                     className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer flex items-center gap-1.5"
+                                     title="Auto-ranks accounts: ready accounts with higher remaining quota placed on top"
+                                  >
+                                     <i className="fa-solid fa-arrow-down-wide-short text-[10px]" />
+                                     <span>Auto-Sort by Available Quota</span>
+                                  </button>
+                               </div>
                             </div>
 
                             {beiStatus?.tabs && beiStatus.tabs.length > 0 ? (
-                               <div className="space-y-1.5">
-                                  {beiStatus.tabs.map((tab, idx) => (
-                                     <div key={idx} className="flex flex-wrap items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs gap-2">
-                                        <div className="flex items-center gap-2.5">
-                                           <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                                           <span className="font-semibold text-slate-200 capitalize">{tab.target} Web</span>
-                                           {tab.email ? (
-                                              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 font-mono font-medium flex items-center gap-1">
-                                                 <i className="fa-solid fa-envelope text-[10px]" />
-                                                 {tab.email}
+                               <div className="space-y-2">
+                                  {sortTabsByPriorityOrder(beiStatus.tabs, accountPriorityOrder).map((tab, idx, arr) => {
+                                     const isSelected = beiConfigState.target === tab.target && (
+                                        tab.target !== 'gemini' || (beiConfigState.accountSlot ?? 0) === (tab.accountSlot ?? 0)
+                                     );
+                                     const quota = tab.target === 'gemini' 
+                                        ? getBEIAccountQuota('gemini', tab.accountSlot ?? 0)
+                                        : getBEIAccountQuota('chatgpt', 0);
+                                     const isCooldown = quota.status === 'rate_limited';
+
+                                     return (
+                                        <div 
+                                           key={`${tab.tabId || idx}-${quotaRefreshKey}`} 
+                                           className={`flex flex-wrap items-center justify-between p-2.5 rounded-lg border text-xs gap-2 transition-all ${
+                                              isSelected 
+                                                 ? 'bg-purple-950/40 border-purple-500 ring-1 ring-purple-500/40 text-slate-100 shadow-sm' 
+                                                 : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                                           }`}
+                                        >
+                                           <div className="flex items-center gap-2.5">
+                                              {/* Move Up / Move Down buttons */}
+                                              <div className="flex items-center gap-0.5">
+                                                 <button
+                                                    type="button"
+                                                    disabled={idx === 0}
+                                                    onClick={() => handleMovePriority(idx, 'up')}
+                                                    className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-25 text-slate-300 hover:text-white text-[9px] flex items-center justify-center transition-colors cursor-pointer disabled:cursor-not-allowed border border-slate-700/60"
+                                                    title="Move up in priority"
+                                                 >
+                                                    <i className="fa-solid fa-chevron-up" />
+                                                 </button>
+                                                 <button
+                                                    type="button"
+                                                    disabled={idx === arr.length - 1}
+                                                    onClick={() => handleMovePriority(idx, 'down')}
+                                                    className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-25 text-slate-300 hover:text-white text-[9px] flex items-center justify-center transition-colors cursor-pointer disabled:cursor-not-allowed border border-slate-700/60"
+                                                    title="Move down in priority"
+                                                 >
+                                                    <i className="fa-solid fa-chevron-down" />
+                                                 </button>
+                                              </div>
+
+                                              {/* Priority Rank Pill */}
+                                              <div className="shrink-0">
+                                                 {idx === 0 ? (
+                                                    <span className="px-2 py-0.5 rounded bg-purple-900/60 border border-purple-400/50 text-purple-200 font-mono font-bold text-[10px] flex items-center gap-1 shadow-sm">
+                                                       <i className="fa-solid fa-crown text-amber-400 text-[9px]" /> #1 Primary
+                                                    </span>
+                                                 ) : (
+                                                    <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400 font-mono text-[10px]">
+                                                       #{idx + 1} Fallback
+                                                    </span>
+                                                 )}
+                                              </div>
+
+                                              {/* Dot & Target Name */}
+                                              <span className={`w-2 h-2 rounded-full shrink-0 ${isCooldown ? 'bg-rose-500 animate-pulse' : 'bg-emerald-400'}`} />
+                                              <span className="font-semibold text-slate-200 capitalize flex items-center gap-1.5">
+                                                 {tab.target === 'gemini' ? (
+                                                    <i className="fa-brands fa-google text-amber-400 text-xs" />
+                                                 ) : (
+                                                    <i className="fa-solid fa-robot text-emerald-400 text-xs" />
+                                                 )}
+                                                 {tab.target} Web
                                               </span>
-                                           ) : (
-                                              <span className="text-[10px] text-cyan-400 font-mono italic">Account scanning...</span>
-                                           )}
+
+                                              {tab.email ? (
+                                                 <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 font-mono font-medium flex items-center gap-1 max-w-[210px] truncate">
+                                                    <i className="fa-solid fa-envelope text-[10px]" />
+                                                    {isIncognito ? formatDisplayEmail(tab.email, true) : tab.email}
+                                                 </span>
+                                              ) : (
+                                                 <span className="text-[10px] text-cyan-400 font-mono italic">Account scanning...</span>
+                                              )}
+
+                                              {tab.target === 'gemini' && (
+                                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                                                    /u/{tab.accountSlot ?? 0}/
+                                                 </span>
+                                              )}
+                                           </div>
+
+                                           <div className="flex items-center gap-2">
+                                              {/* Real-time Quota Status Pill */}
+                                              <div className="font-mono text-[10px]">
+                                                 {isCooldown ? (
+                                                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950/60 border border-rose-500/40 text-rose-300">
+                                                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                                                       <span>Cooldown {quota.cooldownRemainingMinutes}m</span>
+                                                       <button
+                                                          type="button"
+                                                          onClick={(e) => {
+                                                             e.stopPropagation();
+                                                             handleResetCooldown(tab.target as any, tab.accountSlot ?? 0);
+                                                          }}
+                                                          className="text-[9px] text-rose-300 hover:text-white underline ml-1 cursor-pointer"
+                                                          title="Clear rate-limit cooldown"
+                                                       >
+                                                          Reset
+                                                       </button>
+                                                    </div>
+                                                 ) : quota.status === 'high_usage' ? (
+                                                    <span className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-500/40 text-amber-300">
+                                                       🟡 {quota.callsToday}/{quota.dailyLimit} reqs
+                                                    </span>
+                                                 ) : (
+                                                    <span className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 text-emerald-300">
+                                                       🟢 Ready ({quota.callsToday}/{quota.dailyLimit})
+                                                    </span>
+                                                 )}
+                                              </div>
+
+                                              {/* Set Active / Active Status */}
+                                              {isSelected ? (
+                                                 <span className="px-2.5 py-1 rounded bg-purple-600/30 text-purple-300 border border-purple-500/50 font-bold text-[11px] flex items-center gap-1">
+                                                    <i className="fa-solid fa-check text-[10px]" /> Active
+                                                 </span>
+                                              ) : (
+                                                 <button
+                                                    type="button"
+                                                    onClick={() => handleSetActiveAccount(tab)}
+                                                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-purple-600/70 text-slate-300 hover:text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
+                                                    title="Select as primary active session"
+                                                 >
+                                                    Use Account
+                                                 </button>
+                                              )}
+
+                                              {/* Open / Focus Tab */}
+                                              <button
+                                                 type="button"
+                                                 onClick={() => handleOpenBEITab(tab.target as any, tab.accountSlot)}
+                                                 disabled={isOpeningTab}
+                                                 className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
+                                                 title="Focus or re-open this tab in Chrome"
+                                              >
+                                                 <i className="fa-solid fa-arrow-up-right-from-square text-[10px]" />
+                                              </button>
+                                           </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                           <span className="text-[11px] text-slate-500 font-mono truncate max-w-[180px]" title={tab.url}>{tab.url}</span>
-                                           <button
-                                              type="button"
-                                              onClick={() => handleOpenBEITab(tab.target as any, tab.accountSlot)}
-                                              disabled={isOpeningTab}
-                                              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
-                                              title="Focus or re-open this tab"
-                                           >
-                                              <i className="fa-solid fa-arrow-up-right-from-square text-[10px]" />
-                                           </button>
-                                        </div>
-                                     </div>
-                                  ))}
+                                     );
+                                  })}
                                </div>
                             ) : (
                                <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-500/30 text-xs text-amber-300/90 flex items-center justify-between gap-3">
