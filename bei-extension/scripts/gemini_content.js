@@ -177,12 +177,7 @@
       const stopBtn = getStopButton();
       if (stopBtn) return true;
 
-      const bodyText = (document.body.innerText || '').toLowerCase();
-      if (bodyText.includes('creating your image') || bodyText.includes('generating your image') || bodyText.includes('creating image')) {
-        return true;
-      }
-
-      const shimmerEl = document.querySelector('.shimmer, .loading, mat-progress-bar, mat-progress-spinner, [aria-label*="creating" i], [aria-label*="loading" i]');
+      const shimmerEl = document.querySelector('.shimmer, .loading, mat-progress-bar, mat-progress-spinner, [aria-label*="creating" i], [aria-label*="loading" i], [role="progressbar"]');
       if (shimmerEl && shimmerEl.offsetParent !== null) return true;
 
       return false;
@@ -1213,14 +1208,9 @@
 
     function isModelResponseGenerating(node) {
       if (!node) return false;
-      const text = (node.innerText || node.textContent || '').toLowerCase();
-      if (text.includes('creating your image') || 
-          text.includes('generating your image') || 
-          text.includes('creating image') ||
-          text.includes('generating image')) {
-        return true;
-      }
-      if (node.querySelector('.loading, .shimmer, [aria-label*="creating" i], [aria-label*="loading" i], mat-progress-bar, mat-progress-spinner, .progress-bar')) {
+      if (getStopButton()) return true;
+      const progress = node.querySelector('.loading, .shimmer, mat-progress-bar, mat-progress-spinner, .progress-bar, [role="progressbar"]');
+      if (progress && progress.offsetParent !== null) {
         return true;
       }
       return false;
@@ -1244,7 +1234,7 @@
         }
 
         if (elapsed > timeoutMs) {
-          // If Gemini is still actively generating (Stop button is present OR "... Creating your image" / shimmer is visible),
+          // If Gemini is still actively generating (Stop button is present or progress indicator visible),
           // allow up to 30s grace period, but do not hang indefinitely.
           if (isGeminiActivelyGenerating() && elapsed < timeoutMs + 30000) {
             return;
@@ -1274,12 +1264,7 @@
           : (currentModelResponses.length > 0 ? currentModelResponses[currentModelResponses.length - 1] : null);
 
         if (latestResponse) {
-          // If Gemini is still in "Creating your image" state, WAIT and DO NOT deliver anything!
-          if (isModelResponseGenerating(latestResponse)) {
-            return;
-          }
-
-          // 1A: Check images strictly inside this latest model response
+          // 1A: First, check if latest model response already has a completed generated image
           const respImages = protocol.getAllImagesRecursively(latestResponse);
           for (const img of respImages) {
             if (isUserAttachedImage(img)) continue;
@@ -1301,6 +1286,11 @@
               await deliverImage(u);
               return;
             }
+          }
+
+          // If no image is rendered yet and Gemini is actively generating, wait for next tick
+          if (isModelResponseGenerating(latestResponse)) {
+            return;
           }
         }
 
